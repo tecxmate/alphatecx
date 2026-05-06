@@ -1,0 +1,261 @@
+Can we use twse api to Prairie what made international investment banks buy and sell
+Analyzing the Core Question
+
+I've clarified the core question: predicting international investment bank behavior using the TWSE API.
+
+Assessing the API Capabilities
+
+I've determined the TWSE API gives net buy/sell data, not investment rationales, for foreign investors.
+
+Refining the Approach
+
+I'm now clarifying how to directly answer the question about deducing investment rationales from the TWSE API data, focusing on the available data.
+
+Parsing Relevant Data
+
+I've specified relevant macro data, including exchange rates, tech indexes, and TWSE announcements.
+
+I've clarified the TWSE endpoints and the real-time FINI data availability for context.
+
+Clarifying Core Response
+
+I've clarified the response by addressing a typo and providing a direct "no" answer, while outlining possibilities for prediction with correlation.
+
+Defining Data Frameworks
+
+I'm now identifying critical data endpoints within the TWSE API, especially daily net buy/sell for FINI.
+
+Expanding Data Points
+
+I've specified additional TWSE endpoints, BFI82U, T86, and MI_QFIIS, for deeper investor insights.
+
+Are you looking to build a real-time trading agent based on this data, or is your goal to create an end-of-day predictive model for broader market analysis?
+
+Predicting International Behavior
+
+I'm now integrating external datasets, like economic indicators, with TWSE data for predictive model development.
+
+Developing Predictive Models
+
+I've outlined a standard quantitative approach for predicting trading behavior using a pipeline with the TWSE and external data.
+
+Assuming "Prairie" is a typo for "predict," "parse," or "track," the straightforward answer is: No, the TWSE API cannot directly tell you why international investment banks made specific trades. The API provides raw quantitative transaction data—the "what," "when," and "how much"—but it does not contain the internal rationale, proprietary algorithms, or specific strategies of these institutions.
+
+However, it is entirely feasible to ingest this API data and correlate it with external datasets to predict or deduce their trading behavior using predictive models or autonomous AI frameworks.
+
+What the TWSE API Actually Provides
+
+In Taiwan's financial regulatory system, international investment banks and foreign asset managers are categorized collectively as Foreign Institutional Investors (FINI), which falls under the broader "Foreign Investors" (外資及陸資) classification.
+
+The TWSE Open Data portal provides several highly reliable, end-of-day datasets crucial for tracking this group:
+
+Total Market Net Buy/Sell: Daily aggregate trading volume and transaction value for Foreign Investors across the entire exchange.
+
+Individual Stock Net Buy/Sell: A precise daily breakdown of which specific tickers (e.g., TSMC, Quanta, Alchip) Foreign Investors bought or sold, and the net volume of shares accumulated or distributed.
+
+Holdings Data: The total percentage of outstanding shares currently held by Foreign Investors for each listed company.
+
+Critical Limitations to Consider
+
+Firm-Level Anonymity: Due to strict privacy rules and regulatory protections, the API aggregates all foreign entities into a single category. You cannot query the API to separate Morgan Stanley's algorithmic trades from Goldman Sachs' block trades.
+
+Lagged Reporting: The precise breakdown of institutional net buy/sell is an end-of-day report, typically published around 15:00 CST. While real-time market data feeds show trades executing intraday, they do not tag the buyer or seller's institutional identity on a tick-by-tick basis.
+
+Lack of Causality: The data is purely transactional and retrospective.
+
+Building a Predictive Pipeline
+
+To deduce the "what made them buy and sell" aspect, a standard quantitative approach involves building a robust data pipeline—potentially leveraging scalable cloud databases like Supabase for storage and API gateways for data ingestion—to run AI models against the TWSE data alongside the external variables that dictate global capital flows:
+
+Macroeconomic Indicators: TWD/USD exchange rates, US Treasury yields, and Federal Reserve policy shifts. Foreign capital allocations are highly sensitive to currency risk and shifting global liquidity.
+
+Global Tech Correlation: Because the Taiwanese economy and equity market are heavily anchored by the semiconductor and electronics supply chain, foreign institutional behavior on the TWSE is strongly correlated with US tech indices (like the NASDAQ or SOX) and the upstream demands of global AI and computing companies.
+
+Alternative Data: Parsing corporate material information disclosures (also accessible via TWSE APIs), tracking supply chain bottlenecks, and analyzing sentiment from earnings calls.
+
+Relevant TWSE Open Data Endpoints
+
+If you are looking to pull this data programmatically, these are the primary endpoints to target:
+
+BFI82U: Daily Trading Value of Investors (Total market summary).
+
+T86: Daily Net Buy/Sell of Individual Securities by Institutional Investors.
+
+MI_QFIIS: Foreign Investors' Stock Holdings by Security.
+
+Are you aiming to build an automated trading agent based on this historical data, or is your primary goal to create an end-of-day predictive model for broader market analysis?
+
+Is a market analysis to plan the next day action and then next three month action
+This dual-horizon approach is the hallmark of sophisticated institutional desks: balancing the daily "noise" (tactical execution) with the quarterly "signal" (strategic positioning).
+
+To bridge the gap between raw TWSE data and actionable intelligence, your analysis should be structured into two distinct workstreams.
+
+1. Next-Day Action: The Tactical "Momentum" Play
+For 24-hour planning, you are essentially trying to front-run or follow the immediate liquidity of Foreign Institutional Investors (FINIs).
+
+The Data Trigger (15:00 CST): Analyze the T86 (Daily Net Buy/Sell) report. Look for "abnormal" accumulation—stocks where FINIs have been net buyers for 3–5 consecutive days despite price consolidation.
+
+The Overnight Correlation: Compare TWSE tech heavyweights (TSMC, Quanta, Alchip) against their US-listed ADRs and the Philadelphia Semiconductor Index (SOX) performance. If the ADRs closed +2% in New York, the local shares will likely gap up at the Taipei open.
+
+The Liquidity Filter: Use your data pipeline to track the TWD/USD exchange rate. A sudden strengthening of the Taiwan Dollar usually precedes a wave of FINI buying, as they need to convert USD to TWD to purchase shares.
+
+Immediate Next-Day Checklist:
+
+Identify the top 5 stocks with the highest FINI net buy volume today.
+
+Check the "Short Interest" on those stocks to see if a "Short Squeeze" is imminent.
+
+Set price alerts at the 5-day Moving Average (MA) for entry points.
+
+2. Three-Month Action: The Strategic "Cycle" Play
+Medium-term planning moves away from daily flows and focuses on earnings cycles and macro-allocation.
+
+The Quarterly Earnings Pivot
+
+International banks rebalance their portfolios based on forward guidance. For the next three months, your focus should be on the "Inventory Cycle" and "AI Infrastructure Capex."
+
+Earnings Calendar: Track the Q2/Q3 earnings calls for the "Big Three" (NVIDIA, TSMC, and MediaTek). Their guidance on AI server demand dictates the capital flow for the entire Taiwan electronics ecosystem for the next 90 days.
+
+The "Vietnam +1" Factor: Monitor trade data and foreign direct investment (FDI) trends between Taiwan and Southeast Asia. As companies diversify manufacturing out of China, those with strong logistics and assembly footprints in Northern Vietnam often see long-term institutional accumulation.
+
+Technical & Macro Analysis Table
+
+Variable	Impact on 3-Month Trend	Actionable Metric
+Fed Interest Rates	High (US yields vs. TWD yields)	US 10-Year Treasury Yield
+AI Capex	High (Revenue growth for HBM/Foundry)	NVDA/MSFT/GOOG Capex Guidance
+Institutional Holding %	Medium (Room for growth)	TWSE MI_QFIIS Endpoint
+Integrating Your Tech Stack
+To make this analysis repeatable, consider automating the "Next Day" portion using an autonomous framework. By pushing daily TWSE API exports into a relational database like Supabase, you can run a Python script every evening at 16:00 CST to rank stocks based on a "FINI Accumulation Score."
+
+For the "Three Month" view, use a Large Language Model (LLM) via AI Studio to parse and summarize the transcripts of 10-K filings and quarterly earnings calls from the top 10 companies in your portfolio to identify sentiment shifts that aren't visible in the raw numbers.
+
+Are you primarily focusing your three-month outlook on the semiconductor supply chain, or are you looking to diversify into broader Vietnamese-Taiwanese economic opportunities?
+
+Semiconductor. AI energy. Ai infrastructure and it’s beneficiaries. Semiconductor equipment. we better have a concrete supply chain of map of the whole Taiwan industry too, and the US customers
+Mapping Taiwan's Supply Chain
+
+I've defined key segments, aligning them with the user's investment strategy focus, to refine the action plan.
+
+Refining Response Structure
+
+I have organized the response into a detailed supply chain map, focusing on Taiwanese players and US end-customers.
+
+Defining AI Energy Impact
+
+I've added data-driven insights on AI energy demand and linked relevant Taiwanese power and supply firms.
+
+To map out this ecosystem for a 3-month strategic outlook, we have to follow the capital expenditure (CapEx). In 2026, the top US Cloud Service Providers (CSPs)—Microsoft, Google, Meta, and AWS—are projecting a combined CapEx of roughly $830 billion, primarily dedicated to AI infrastructure.  
+
+Because Taiwan manufactures the physical backbone of this infrastructure, international investment banks track the flow of this US capital directly into the Taiwanese supply chain.
+
+Here is the concrete supply chain map of the Taiwan industry across your four requested pillars, mapped directly to their US customers and partners.
+
+1. Semiconductor: Foundry & Custom ASIC
+
+Taiwan doesn't just build the standard AI chips; it designs the custom silicon that US cloud giants are increasingly using to lower their reliance on NVIDIA.  
+
+Supply Chain Node	Key Taiwanese Companies	Major US Customers / Partners	Strategic Catalyst
+Advanced Foundry	TSMC	NVIDIA, AMD, Apple, Broadcom	TSMC's 2026 sales are projected to grow ~30%. Watch their monthly revenue releases (around the 10th).
+ASIC / Custom IP	Alchip Technologies, Global Unichip (GUC), Faraday	AWS (Trainium/Inferentia), Microsoft (Maia), Intel	High-margin custom silicon design for US hyperscalers building proprietary AI chips.
+Advanced Packaging	ASE Technology, SPIL	NVIDIA, AMD	CoWoS (Chip-on-Wafer-on-Substrate) packaging capacity remains a critical global bottleneck.
+2. Semiconductor Equipment & Testing
+
+As TSMC increases its 2026 CapEx to the $52B–$56B range, the local companies that build the cleanrooms, supply the chemicals, and test the final chips see massive downstream benefits.  
+
+Supply Chain Node	Key Taiwanese Companies	Major US Customers / Partners	Strategic Catalyst
+Testing & Probing	King Yuan Electronics (KYEC), Winway	NVIDIA, AMD, Intel	Increased complexity of AI chips means longer testing times, driving up testing revenue.
+Facility & Cleanroom	Marketech International, United Integrated Services	Micron (US fabs), Applied Materials	Direct beneficiaries of global fab expansions (US CHIPS Act buildouts).
+Equipment/Materials	Scientech, GlobalWafers	KLA, Lam Research, Texas Instruments	Essential nodes for extreme ultraviolet (EUV) lithography support and silicon wafers.
+3. AI Infrastructure: Servers, Cooling, & Materials
+
+This is where the "spillover" effect is most aggressive in 2026. The shift from standard servers to liquid-cooled AI server racks has completely reshaped the profit margins of Taiwanese hardware makers.
+
+Supply Chain Node	Key Taiwanese Companies	Major US Customers / Partners	Strategic Catalyst
+Server ODMs	Quanta Computer, Wistron, Hon Hai (Foxconn)	Meta, Google, AWS, Microsoft	Assembly of the GB200 NVL72 racks. Quanta specifically dominates Tier-1 CSP orders.
+Thermal / Cooling	Asia Vital Components (AVC), Auras Tech, Jentech	NVIDIA, Dell, HPE, Supermicro	The transition from air-cooling to direct-to-chip liquid cooling. This sector is currently seeing the highest stock premiums.
+High-Speed PCBs	Elite Material (EMC), Unimicron, Zhen Ding	Broadcom, Arista Networks, NVIDIA	Shortages in high-end fiberglass cloth and low-loss copper foil substrates are driving massive price hikes.
+BMC (Management)	Aspeed Technology	Entire US Server Market	Baseboard Management Controller chips; Aspeed holds a near-monopoly on global server management chips.
+4. AI Energy: Power Supplies & Grid Infrastructure
+
+Energy consumption for AI data centers is rivaling that of the semiconductor industry itself. Taipower estimates AI sector energy needs will grow by 5 million kWh by 2030, putting immense strain on grids and turning "boring" power companies into high-growth AI stocks.  
+
+Supply Chain Node	Key Taiwanese Companies	Major US Customers / Partners	Strategic Catalyst
+Server Power Supply	Delta Electronics, Lite-On Technology	Global Data Centers, Meta, AWS	Upgrading data center power supplies from standard wattages to 5,000W+ AI-grade power units.
+Heavy Electrical	Fortune Electric, Chung-Hsin Electric	US Utility Companies, Tesla	Exporting massive electrical transformers to the US to help rebuild the aging American power grid for AI data centers.
+Green Energy / Smart Grid	HDRE, Century Wind Power	Corporate ESG buyers (Google, Microsoft)	Providing renewable energy credits and grid stabilization as tech giants mandate carbon-neutral supply chains.
+How to Trade This Map over 3 Months
+
+To execute your three-month plan using this specific map and the TWSE API data:
+
+Track the "Trickle Down": International investment banks usually buy TSMC first as the safest proxy. Once their TSMC allocation is full, the capital flows down into the Server ODMs (Quanta, Foxconn), then into the components (Cooling, PCBs), and finally into the Equipment/Energy sectors. Use the TWSE T86 endpoint to track which layer of the map the FINI (Foreign Institutional Investors) are currently accumulating.
+
+Monitor US CapEx Announcements: The major catalyst for this entire map is the quarterly earnings calls of Microsoft, Meta, Google, and Amazon. If Meta announces they are increasing their data center CapEx for the quarter, you immediately look at the Server ODMs and Thermal Cooling companies on the TWSE the next morning.
+
+Watch the Bottlenecks: In 2026, the biggest constraints are Advanced Packaging (CoWoS), Liquid Cooling parts, and Energy/Transformers. Companies solving these bottlenecks (like Auras or Fortune Electric) often show the strongest momentum decoupled from broader market dips.
+
+Next map out the technical infrastructure to of the system for me to handover to the tech team. Keep it lean and Nimble data rich and fast and easy to maintain and change, I also plan to integrated with an existing TWSE MCP I have connected to Claude, I only query data per question chat not systematic yet so this is a big upgrade
+Defining the Architecture
+
+I am now structuring the architecture, focusing on a lean, nimble, and maintainable technical map for handover.
+
+Mapping the Infrastructure
+
+I've specified data ingestion with TWSE API and GitHub Actions, and detailed Supabase (PostgreSQL) for storage and state.
+
+This is the perfect pivot. Moving from ad-hoc, stateless MCP queries to a systematic, stateful architecture is what separates a neat AI trick from an institutional-grade trading system.
+
+To keep this lean, fast, and easy to maintain, we will avoid heavy orchestration tools like Kubernetes or Airflow. Instead, we are building a serverless, modular pipeline centered around a modern Postgres backend.
+
+Here is the technical infrastructure map to hand over to your tech team.
+
+1. Architecture Overview: The "Stateful" Upgrade
+
+Currently, your Claude MCP likely acts as a simple proxy: you ask a question, the MCP pings the TWSE API, and Claude reads the raw JSON. It has no memory of yesterday.
+
+The Upgrade: We are introducing a Database (Supabase) in the middle. The TWSE API is only queried once a day by a background worker to store the data. Your Claude MCP will now query the database, not the TWSE API. This allows Claude to instantly see 5-day trends, cross-reference supply chain mappings, and analyze sectors in milliseconds without API rate limits.
+
+2. The Tech Stack (Lean & Nimble)
+
+Data Ingestion: GitHub Actions + Python (Polars). Polars is faster and lighter than Pandas for manipulating large TWSE datasets. GitHub Actions provides free, zero-maintenance daily scheduling.
+
+Storage & Brain: Supabase (PostgreSQL). It is nimble, provides instant REST/GraphQL APIs, and critically, has an official MCP server integration.
+
+The AI Bridge: Supabase MCP Server. This replaces your custom TWSE MCP. It connects Claude directly to your Supabase Postgres database using standard SQL or API requests.
+
+Alerting/Delivery: Simple webhooks (Slack, Telegram, or Linear) triggered by Supabase Edge Functions for daily summaries.
+
+3. Database Schema: Mapping the Supply Chain
+
+To make the data "rich," we must blend the raw TWSE numbers with the strategic map we discussed earlier. The tech team should set up these three core tables/views:
+
+Table/View Name	Purpose	Key Fields
+dim_supply_chain	Static. Maps tickers to your US customer / AI sector strategy.	ticker_id, company_name, ai_pillar (e.g., AI Energy), node (e.g., Liquid Cooling), us_partner.
+raw_twse_t86	Dynamic. The daily raw institutional buy/sell data pulled at 16:00 CST.	date, ticker_id, foreign_buy_vol, foreign_sell_vol, net_diff.
+view_sector_momentum	Analytical (Materialized View). The magic layer. It joins the two tables above to aggregate capital flows by sector.	ai_pillar, node, 3_day_net_flow, 5_day_net_flow, top_accumulated_ticker.
+4. The MCP Configuration & Security (Crucial for Handover)
+
+When your tech team connects the Supabase MCP to Claude, they must follow the "Principle of Least Privilege" to prevent the LLM from accidentally modifying your data.
+
+Use the Official Package: Run the Supabase MCP via standard protocols (e.g., npx @supabase/mcp).
+
+Database Roles: Do not give the MCP server the Postgres postgres (admin) password. Create a dedicated read-only role (e.g., mcp_viewer).
+
+Row-Level Security (RLS): Supabase natively supports RLS. The tech team should configure it so Claude can only SELECT from the view_sector_momentum and dim_supply_chain tables.
+
+Prompt Engineering the MCP: In Claude's system prompt, instruct it: "You are connected to a database containing TWSE institutional flows mapped to the AI supply chain. Do not query raw tables; only query view_sector_momentum to identify macro trends."
+
+5. The Daily Systematic Workflow
+
+Once built, the system runs autonomously on this schedule:
+
+15:30 CST (Market Close): TWSE officially publishes the daily T86 (Institutional) and MI_QFIIS (Holdings) data.
+
+16:00 CST (The Harvester): GitHub Actions wakes up, runs a Python script to pull the TWSE APIs, cleans the data using Polars, and upserts it into Supabase.
+
+16:05 CST (The Engine): Supabase automatically refreshes the view_sector_momentum materialized view.
+
+16:10 CST (The Alert): A Supabase Edge function sends a simple webhook to your phone/Slack: "Top 3 Supply Chain Nodes accumulated by Foreign Investors today: 1. Liquid Cooling, 2. Advanced Packaging, 3. Testing."
+
+Evening Strategy (You & Claude): You open Claude. Because the database is pre-processed, you can ask complex questions like, "Compare the 5-day foreign capital flow between AI Energy and Server ODMs." Claude uses the MCP to instantly read the materialized views and gives you your exact next-day and 3-month action plan.
+
+This architecture requires minimal code, costs pennies to run, and completely offloads the heavy lifting from your chat context window into a robust SQL backend. Let me know if the tech team needs the exact Python/Polars extraction script for the TWSE endpoints.

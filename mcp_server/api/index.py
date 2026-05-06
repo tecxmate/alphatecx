@@ -1,0 +1,363 @@
+"""alphatecx v2 MCP server — supply chain intelligence.
+
+Tool naming convention:
+  sc_*     supply chain views — pre-computed sector & ticker momentum
+  raw_*    raw data queries   — drill-down into historical flow/holdings
+
+Every response includes:
+  _source     — e.g. "view_sector_momentum", "raw_twse_t86"
+  _as_of      — ISO date of the data
+  _freshness  — "T+1" (data from previous trading day)
+
+Auth: URL-as-secret. Mount path is /mcp/<MCP_BEARER_TOKEN>/.
+"""
+from __future__ import annotations
+
+import contextlib
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from dotenv import load_dotenv
+
+_HERE = Path(__file__).resolve().parent
+load_dotenv(_HERE.parent / ".env")
+sys.path.insert(0, str(_HERE))
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
+
+import db_v2
+
+MCP_BEARER_TOKEN = os.getenv("MCP_BEARER_TOKEN", "")
+
+
+def _stamp(payload: dict, source: str, as_of: Optional[str], freshness: str) -> dict:
+    """Annotate a response with provenance + freshness."""
+    return {
+        "_source": source,
+        "_as_of": as_of,
+        "_freshness": freshness,
+        **payload,
+    }
+
+
+def _today_iso() -> str:
+    return datetime.utcnow().date().isoformat()
+
+
+# ── MCP server ──────────────────────────────────────────────────────────────
+
+mcp = FastMCP(
+    "alphatecx-v2",
+    streamable_http_path="/",
+    stateless_http=True,
+    json_response=True,
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False,
+    ),
+)
+
+
+# ── Tool: Sector Momentum ──────────────────────────────────────────────────
+
+@mcp.tool()
+def sc_sector_momentum(
+    pillar: Optional[str] = None,
+    window: str = "5d",
+    top_n: int = 10,
+) -> dict:
+    """Get sector-level institutional flow momentum across AI supply chain pillars.
+
+    Shows aggregated foreign investor (FINI), investment trust, and dealer
+    net flows by AI pillar and supply chain node. Useful for detecting which
+    parts of the Taiwan AI supply chain are being accumulated or distributed.
+
+    Args:
+        pillar: Filter to a specific AI pillar: 'semiconductor', 'equipment',
+                'infrastructure', 'energy', or None for all.
+        window: Flow aggregation window: '1d', '3d', '5d', '10d', '20d'.
+        top_n: Number of results (default 10).
+    """
+    col = f"foreign_{window}"
+    valid_cols = ["foreign_1d", "foreign_3d", "foreign_5d", "foreign_10d", "foreign_20d"]
+    if col not in valid_cols:
+        return {"error": f"Invalid window '{window}'. Use: 1d, 3d, 5d, 10d, 20d"}
+
+    rows = db_v2.query_sector_momentum(pillar=pillar, order_col=col, limit=top_n)
+    return _stamp(
+        {"sectors": rows, "window": window, "count": len(rows)},
+        source="view_sector_momentum",
+        as_of=_today_iso(),
+        freshness="T+1",
+    )
+
+
+# ── Tool: Ticker Momentum ──────────────────────────────────────────────────
+
+@mcp.tool()
+def sc_ticker_momentum(
+    pillar: Optional[str] = None,
+    node: Optional[str] = None,
+    ticker_id: Optional[str] = None,
+    window: str = "5d",
+    top_n: int = 15,
+    min_streak: int = 0,
+) -> dict:
+    """Get per-ticker institutional flow momentum with consecutive buy streak tracking.
+
+    Drill down to individual stocks within a supply chain pillar or node.
+    Shows multi-day net flows and how many consecutive days foreign investors
+    have been net buying.
+
+    Args:
+        pillar: Filter by AI pillar: 'semiconductor', 'equipment',
+                'infrastructure', 'energy'.
+        node: Filter by supply chain node: e.g. 'server-odm', 'thermal-cooling',
+              'advanced-foundry', 'asic-custom-ip', etc.
+        ticker_id: Look up a specific ticker (e.g. '2330' for TSMC).
+        window: Sort by flow window: '1d', '3d', '5d', '10d', '20d'.
+        top_n: Number of results (default 15).
+        min_streak: Minimum consecutive foreign buy days to filter (default 0).
+    """
+    col = f"foreign_{window}"
+    valid_cols = ["foreign_1d", "foreign_3d", "foreign_5d", "foreign_10d", "foreign_20d"]
+    if col not in valid_cols:
+        return {"error": f"Invalid window '{window}'. Use: 1d, 3d, 5d, 10d, 20d"}
+
+    rows = db_v2.query_ticker_momentum(
+        pillar=pillar, node=node, ticker_id=ticker_id,
+        order_col=col, limit=top_n, min_streak=min_streak,
+    )
+    return _stamp(
+        {"tickers": rows, "window": window, "count": len(rows)},
+        source="view_ticker_momentum",
+        as_of=_today_iso(),
+        freshness="T+1",
+    )
+
+
+# ── Tool: Supply Chain Map ─────────────────────────────────────────────────
+
+@mcp.tool()
+def sc_supply_chain_map(
+    pillar: Optional[str] = None,
+    node: Optional[str] = None,
+    search: Optional[str] = None,
+) -> dict:
+    """Look up the Taiwan AI supply chain classification for tickers.
+
+    Returns which AI pillar, node, and US partners each company maps to.
+    Use this to understand the strategic position of a ticker before
+    analyzing its flow data.
+
+    Args:
+        pillar: Filter by pillar: 'semiconductor', 'equipment',
+                'infrastructure', 'energy'.
+        node: Filter by node: 'server-odm', 'thermal-cooling', etc.
+        search: Search by ticker_id or company name (partial match).
+    """
+    rows = db_v2.query_supply_chain(pillar=pillar, node=node, search=search)
+    return _stamp(
+        {"companies": rows, "count": len(rows)},
+        source="dim_supply_chain",
+        as_of=_today_iso(),
+        freshness="static",
+    )
+
+
+# ── Tool: Flow History (time series) ───────────────────────────────────────
+
+@mcp.tool()
+def raw_flow_history(
+    ticker_id: str,
+    days: int = 20,
+) -> dict:
+    """Get daily institutional flow history for a specific ticker.
+
+    Returns a time series of daily foreign/trust/dealer net flows.
+    Useful for charting accumulation patterns and identifying entry points.
+
+    Args:
+        ticker_id: TWSE/TPEX ticker code (e.g. '2330', '3324').
+        days: Number of trading days to return (default 20, max 90).
+    """
+    days = min(days, 90)
+    rows = db_v2.query_flow_history(ticker_id=ticker_id, days=days)
+    return _stamp(
+        {"ticker_id": ticker_id, "history": rows, "count": len(rows)},
+        source="raw_twse_t86",
+        as_of=_today_iso(),
+        freshness="T+1",
+    )
+
+
+# ── Tool: Compare Nodes ───────────────────────────────────────────────────
+
+@mcp.tool()
+def sc_compare_nodes(
+    nodes: list[str],
+    window: str = "5d",
+) -> dict:
+    """Compare institutional flow between supply chain nodes.
+
+    Side-by-side comparison of foreign capital flow across different parts
+    of the AI supply chain. Useful for detecting "trickle down" rotation
+    patterns (e.g., money flowing from foundry → server ODM → cooling).
+
+    Args:
+        nodes: List of node names to compare (e.g. ['server-odm',
+               'thermal-cooling', 'advanced-foundry']).
+        window: Flow window: '1d', '3d', '5d', '10d', '20d'.
+    """
+    col = f"foreign_{window}"
+    total_col = f"total_{window}"
+    valid_cols = ["foreign_1d", "foreign_3d", "foreign_5d", "foreign_10d", "foreign_20d"]
+    if col not in valid_cols:
+        return {"error": f"Invalid window '{window}'. Use: 1d, 3d, 5d, 10d, 20d"}
+
+    results = db_v2.query_compare_nodes(nodes=nodes, foreign_col=col, total_col=total_col)
+    return _stamp(
+        {"comparison": results, "window": window, "nodes_requested": nodes},
+        source="view_sector_momentum",
+        as_of=_today_iso(),
+        freshness="T+1",
+    )
+
+
+# ── Tool: Accumulation Screener ────────────────────────────────────────────
+
+@mcp.tool()
+def sc_accumulation_screen(
+    min_streak: int = 3,
+    min_foreign_5d: int = 0,
+    pillar: Optional[str] = None,
+    top_n: int = 20,
+) -> dict:
+    """Screen for tickers with sustained foreign accumulation.
+
+    Finds stocks where foreign investors have been consistently net buying.
+    Combines consecutive buy days with absolute flow volume.
+
+    Args:
+        min_streak: Minimum consecutive days of foreign net buying (default 3).
+        min_foreign_5d: Minimum 5-day foreign net flow (shares, default 0).
+        pillar: Optional pillar filter.
+        top_n: Max results (default 20).
+    """
+    rows = db_v2.query_ticker_momentum(
+        pillar=pillar, order_col="consecutive_foreign_buy_days",
+        limit=top_n, min_streak=min_streak,
+    )
+    # Filter by min_foreign_5d
+    if min_foreign_5d > 0:
+        rows = [r for r in rows if (r.get("foreign_5d") or 0) >= min_foreign_5d]
+
+    return _stamp(
+        {"accumulated_tickers": rows, "min_streak": min_streak, "count": len(rows)},
+        source="view_ticker_momentum",
+        as_of=_today_iso(),
+        freshness="T+1",
+    )
+
+
+# ── Tool: Data Status ─────────────────────────────────────────────────────
+
+@mcp.tool()
+def sc_data_status() -> dict:
+    """Check the status of the alphatecx v2 data pipeline.
+
+    Returns row counts, latest ingestion date, and data freshness
+    for all tables. Use this to verify data is up to date before analysis.
+    """
+    stats = db_v2.query_data_status()
+    return _stamp(
+        stats,
+        source="ingestion_log",
+        as_of=_today_iso(),
+        freshness="real_time",
+    )
+
+
+# ── Tool: Capabilities ────────────────────────────────────────────────────
+
+@mcp.tool()
+def sc_capabilities() -> dict:
+    """Describe all available tools and what this MCP server provides.
+
+    alphatecx v2 is a Taiwan AI supply chain intelligence system.
+    It tracks institutional capital flows (foreign investors, investment
+    trusts, dealers) across ~7000 TWSE/TPEX stocks, classified into
+    4 AI pillars: semiconductor, equipment, infrastructure, energy.
+
+    The system detects "trickle down" accumulation patterns as foreign
+    capital flows from foundry (TSMC) → server ODMs → cooling/PCB → power.
+    """
+    return {
+        "server": "alphatecx-v2",
+        "description": "Taiwan AI supply chain intelligence — institutional flow tracking",
+        "data_coverage": {
+            "tickers": "~7000 TWSE + TPEX stocks",
+            "classified": "~27 stocks across 4 AI pillars",
+            "history": "up to 90 trading days",
+            "update_frequency": "daily after 16:00 CST",
+        },
+        "ai_pillars": {
+            "semiconductor": "Foundry (TSMC), ASIC/Custom IP (Alchip, GUC), Advanced Packaging (ASE, SPIL)",
+            "equipment": "Testing (KYEC), Facility/Cleanroom (Marketech), Materials (GlobalWafers)",
+            "infrastructure": "Server ODMs (Quanta, Wistron, Foxconn), Cooling (AVC, Auras), PCB (Unimicron), BMC (Aspeed)",
+            "energy": "Power Supply (Delta, Lite-On), Heavy Electrical (Fortune), Green Energy (HDRE)",
+        },
+        "tools": [
+            {"name": "sc_sector_momentum", "purpose": "Sector-level flow aggregation by pillar/node"},
+            {"name": "sc_ticker_momentum", "purpose": "Per-ticker flow with buy streak tracking"},
+            {"name": "sc_supply_chain_map", "purpose": "Look up ticker → pillar/node/US partner"},
+            {"name": "raw_flow_history", "purpose": "Daily flow time series for one ticker"},
+            {"name": "sc_compare_nodes", "purpose": "Side-by-side node flow comparison"},
+            {"name": "sc_accumulation_screen", "purpose": "Find tickers with sustained FINI buying"},
+            {"name": "sc_data_status", "purpose": "Pipeline health and data freshness"},
+        ],
+    }
+
+
+# ── FastAPI mount ──────────────────────────────────────────────────────────
+
+mcp_app = mcp.streamable_http_app()
+
+
+@contextlib.asynccontextmanager
+async def lifespan(app):
+    async with mcp._session_manager.run():
+        yield
+
+
+app = FastAPI(title="alphatecx-v2", version="0.2", lifespan=lifespan)
+
+
+@app.get("/")
+def root():
+    return {"name": "alphatecx-v2", "ok": True}
+
+
+@app.get("/health")
+def health():
+    return {"ok": True, "server": "alphatecx-v2"}
+
+
+@app.middleware("http")
+async def auth_gate(request: Request, call_next):
+    path = request.url.path
+    if path in ("/", "/health"):
+        return await call_next(request)
+    if MCP_BEARER_TOKEN and path.startswith(f"/mcp/{MCP_BEARER_TOKEN}"):
+        return await call_next(request)
+    return JSONResponse(status_code=404, content={"error": "not_found"})
+
+
+if MCP_BEARER_TOKEN:
+    app.mount(f"/mcp/{MCP_BEARER_TOKEN}", mcp_app)
+
