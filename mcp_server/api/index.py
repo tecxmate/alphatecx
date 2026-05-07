@@ -305,23 +305,32 @@ def q_screener(
     macd_hist_above: Optional[float] = None,
     above_sma_200: Optional[bool] = None,
     rs_above: Optional[float] = None,
+    foreign_z_above: Optional[float] = None,
+    pct_below_52w_high_above: Optional[float] = None,
 ) -> dict:
     """Filter the classified universe by indicator conditions (AND-combined).
 
-    Use to find candidates: oversold + uptrend (rsi_below=30 + above_sma_200=true),
-    momentum stack (macd_hist_above=0 + rs_above=1.0), etc.
+    Combines technical + flow signals. Examples:
+      - oversold-in-uptrend: rsi_below=40, above_sma_200=true, macd_hist_above=0
+      - foreign-buying surge: foreign_z_above=1.5
+      - near-highs momentum: pct_below_52w_high_above=-3, rs_above=1.0
 
     Args:
-        rsi_below: include only tickers with RSI-14 below this value.
-        rsi_above: include only tickers with RSI-14 above this value.
-        macd_hist_above: include only tickers with MACD histogram > this.
+        rsi_below: RSI-14 below this value.
+        rsi_above: RSI-14 above this value.
+        macd_hist_above: MACD histogram above this value.
         above_sma_200: True = price above 200-day MA; False = below.
-        rs_above: relative strength vs market threshold (1.0 = matching market).
+        rs_above: 60d relative strength vs market threshold (1.0 = neutral).
+        foreign_z_above: 20-day z-score of daily foreign net flow.
+        pct_below_52w_high_above: Filter to tickers within X% of 52w high
+            (pass -3 to mean "within 3% of the high"; pass -10 for "within 10%").
     """
     rows = db_v2.query_screener(
         rsi_below=rsi_below, rsi_above=rsi_above,
         macd_hist_above=macd_hist_above,
         above_sma_200=above_sma_200, rs_above=rs_above,
+        foreign_z_above=foreign_z_above,
+        pct_below_52w_high_above=pct_below_52w_high_above,
     )
     return _stamp(
         {"matches": rows, "count": len(rows)},
@@ -368,6 +377,46 @@ def q_backtest(
     payload = db_v2.query_backtest(
         signal_name, threshold, direction, forward_days, lookback_days,
     )
+    if "error" in payload:
+        return payload
+    return _stamp(
+        payload,
+        source="signal_value + raw_twse_ohlcv",
+        as_of=_today_iso(),
+        freshness="T+1",
+    )
+
+
+# ── Tool: Compound Backtest ───────────────────────────────────────────────
+
+@mcp.tool()
+def q_backtest_compound(
+    conditions: list[dict],
+    forward_days: int = 5,
+    lookback_days: int = 365,
+) -> dict:
+    """Backtest a multi-condition AND rule. Up to 4 conditions.
+
+    Each condition is {'signal': str, 'op': '<' | '>', 'threshold': float}.
+    All must hold on the same (ticker, date) to count as a trigger.
+
+    Use this to test combined hypotheses that single signals miss. For
+    example: naive RSI < 30 has weak edge in a strong uptrend, but
+    "RSI < 40 AND MACD histogram > 0" (oversold dip within an uptrend)
+    historically has stronger expectancy.
+
+    Args:
+        conditions: list of {'signal','op','threshold'} dicts.
+        forward_days: trading days to measure forward return (default 5).
+        lookback_days: history to scan (default 365).
+
+    Example:
+        q_backtest_compound(
+          [{"signal":"rsi_14","op":"<","threshold":40},
+           {"signal":"macd_histogram","op":">","threshold":0}],
+          forward_days=5)
+    """
+    payload = db_v2.query_backtest_compound(conditions, forward_days, lookback_days)
     if "error" in payload:
         return payload
     return _stamp(
@@ -433,9 +482,10 @@ def sc_capabilities() -> dict:
             {"name": "sc_compare_nodes", "purpose": "Side-by-side node flow comparison"},
             {"name": "sc_accumulation_screen", "purpose": "Find tickers with sustained FINI buying"},
             {"name": "sc_data_status", "purpose": "Pipeline health and data freshness"},
-            {"name": "q_indicators", "purpose": "Latest technical indicators for one ticker (RSI/MACD/BB/ATR/SMA/RS)"},
-            {"name": "q_screener", "purpose": "Filter classified universe by indicator conditions (AND-combined)"},
-            {"name": "q_backtest", "purpose": "Backtest a signal threshold; returns hit-rate, avg/median return, sample stats"},
+            {"name": "q_indicators", "purpose": "Latest technical + flow indicators for one ticker"},
+            {"name": "q_screener", "purpose": "Filter classified universe by AND-combined indicator conditions"},
+            {"name": "q_backtest", "purpose": "Backtest a single-threshold signal rule"},
+            {"name": "q_backtest_compound", "purpose": "Backtest multi-condition (AND) compound rules; up to 4 conditions"},
         ],
     }
 

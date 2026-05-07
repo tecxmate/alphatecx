@@ -34,6 +34,7 @@ BENCHMARK = "0050"
 SIGNAL_NAMES = [
     "rsi_14", "macd_line", "macd_signal_line", "macd_histogram",
     "bb_pct_b", "atr_14", "sma_50", "sma_200", "rs_vs_market_60",
+    "pct_below_52w_high",
 ]
 
 
@@ -93,6 +94,9 @@ def compute_for_ticker(ticker_id: str, benchmark_close_by_date: dict, c) -> int:
     sma50 = ind.sma(close, 50)
     sma200 = ind.sma(close, 200)
     rs60 = ind.relative_strength(close, aligned_bench, 60)
+    # Use 252 if we have a full year, otherwise the largest available
+    # window — the indicator gracefully degrades (NaN early bars).
+    pct_high = ind.pct_below_52w_high(close, period=min(252, df.height))
 
     # Pivot to long form: one row per (signal_name, ticker, date). Skip null
     # values — they're just "indicator hasn't stabilized yet" and would
@@ -108,6 +112,7 @@ def compute_for_ticker(ticker_id: str, benchmark_close_by_date: dict, c) -> int:
         "sma_50": sma50,
         "sma_200": sma200,
         "rs_vs_market_60": rs60,
+        "pct_below_52w_high": pct_high,
     }
     dates = df["date"].to_list()
     for name, series in series_by_name.items():

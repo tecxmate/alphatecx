@@ -47,15 +47,19 @@ latest AS (
 SELECT
     ticker_id,
     MAX(date) AS as_of,
-    MAX(CASE WHEN signal_name = 'rsi_14'           THEN value END) AS rsi_14,
-    MAX(CASE WHEN signal_name = 'macd_line'        THEN value END) AS macd_line,
-    MAX(CASE WHEN signal_name = 'macd_signal_line' THEN value END) AS macd_signal_line,
-    MAX(CASE WHEN signal_name = 'macd_histogram'   THEN value END) AS macd_histogram,
-    MAX(CASE WHEN signal_name = 'bb_pct_b'         THEN value END) AS bb_pct_b,
-    MAX(CASE WHEN signal_name = 'atr_14'           THEN value END) AS atr_14,
-    MAX(CASE WHEN signal_name = 'sma_50'           THEN value END) AS sma_50,
-    MAX(CASE WHEN signal_name = 'sma_200'          THEN value END) AS sma_200,
-    MAX(CASE WHEN signal_name = 'rs_vs_market_60'  THEN value END) AS rs_vs_market_60
+    MAX(CASE WHEN signal_name = 'rsi_14'              THEN value END) AS rsi_14,
+    MAX(CASE WHEN signal_name = 'macd_line'           THEN value END) AS macd_line,
+    MAX(CASE WHEN signal_name = 'macd_signal_line'    THEN value END) AS macd_signal_line,
+    MAX(CASE WHEN signal_name = 'macd_histogram'      THEN value END) AS macd_histogram,
+    MAX(CASE WHEN signal_name = 'bb_pct_b'            THEN value END) AS bb_pct_b,
+    MAX(CASE WHEN signal_name = 'atr_14'              THEN value END) AS atr_14,
+    MAX(CASE WHEN signal_name = 'sma_50'              THEN value END) AS sma_50,
+    MAX(CASE WHEN signal_name = 'sma_200'             THEN value END) AS sma_200,
+    MAX(CASE WHEN signal_name = 'rs_vs_market_60'     THEN value END) AS rs_vs_market_60,
+    MAX(CASE WHEN signal_name = 'pct_below_52w_high'  THEN value END) AS pct_below_52w_high,
+    MAX(CASE WHEN signal_name = 'foreign_net_z20'     THEN value END) AS foreign_net_z20,
+    MAX(CASE WHEN signal_name = 'foreign_net_5d_sum'  THEN value END) AS foreign_net_5d_sum,
+    MAX(CASE WHEN signal_name = 'total_net_z20'       THEN value END) AS total_net_z20
 FROM latest
 GROUP BY ticker_id;
 

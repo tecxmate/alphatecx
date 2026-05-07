@@ -154,3 +154,14 @@ attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
 - Three new MCP tools: `q_indicators(ticker_id)`, `q_screener(...)`, `q_backtest(signal, threshold, direction, forward_days, lookback_days)`. Deployed to Vercel; smoke-tested end-to-end on production URL.
 - **First honest backtest result:** RSI < 30 oversold rule on this universe (84 obs) shows hit_rate=50%, avg_return=-1.1% — counter to textbook "mean reversion" intuition. RSI > 70 (901 obs) shows hit_rate=56.6%, avg=+1.9% — the AI-rally regime favors trend continuation over mean reversion. MACD histogram > 0 (3013 obs, hit_rate=56.7%, avg=+2.0%) is the strongest single-signal expectancy. The discipline tool is doing its job: it's already telling us not to trust an "obvious" signal.
 - Phase 1 entry criteria for Phase 3 digests: any signal added to a daily digest must first produce a hit-rate report from `q_backtest` showing the rule's historical expectancy on this universe.
+
+## [2026-05-08] decision | Phase 1.5 — flow signals + compound backtests
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Extended `src/quant/indicators.py` with `pct_below_52w_high`, rolling `zscore`, `rolling_sum`. Added `pct_below_52w_high` to the price-signal compute path.
+- New `src/quant/compute_flow_signals.py` orchestrator reads T86 (instead of OHLCV) and writes flow z-scores: `foreign_net_z20`, `foreign_net_5d_sum`, `total_net_z20`. Same `signal_value` table; downstream consumers don't care about source.
+- 1,116 flow signal-rows added (sparse — T86's 45-day depth allows ~25 days of usable rolling-z output per ticker after the 20-day burn-in).
+- New MCP tool `q_backtest_compound(conditions, forward_days, lookback_days)` — multi-condition AND backtest via self-joins on signal_value, capped at 4 conditions. Strict allowlist on signal name + op (`<`/`>` only).
+- Screener extended: `foreign_z_above`, `pct_below_52w_high_above` filters; matview adds the 4 new columns.
+- **Compound discovery surfaced by the harness:** naive `RSI<30` had **negative** expectancy (avg -1.1%, 84 obs); `RSI<40 AND MACD_hist>0` (oversold-dip-within-uptrend) jumps to **69.2% hit rate over 39 observations**. Compound rule discovers something the simple rule misses — exactly why we built the harness.
+- Universe sanity check: `pct_below_52w_high < -10` returns **zero observations**. Every classified ticker is within 10% of its 52-week high. Confirms the regime is uniformly bullish.
+- 6 names show `foreign_net_z20 > 1.0`: 2317 Foxconn (z=2.93), 2301 Lite-On (z=2.74), 3231 Wistron (z=1.54), 4958 Zhen Ding (z=1.36), 2382 Quanta (z=1.30), 2308 Delta (z=1.19). 4/6 are server-ODM infrastructure pillar — clean read on where foreign capital is concentrated.

@@ -231,6 +231,8 @@ def query_compare_nodes(
 _ALLOWED_SIGNALS = frozenset({
     "rsi_14", "macd_line", "macd_signal_line", "macd_histogram",
     "bb_pct_b", "atr_14", "sma_50", "sma_200", "rs_vs_market_60",
+    "pct_below_52w_high",
+    "foreign_net_z20", "foreign_net_5d_sum", "total_net_z20",
 })
 
 
@@ -239,7 +241,8 @@ def query_indicators(ticker_id: str) -> dict:
     sql = """
         SELECT ticker_id, as_of, rsi_14, macd_line, macd_signal_line,
                macd_histogram, bb_pct_b, atr_14, sma_50, sma_200,
-               rs_vs_market_60
+               rs_vs_market_60, pct_below_52w_high,
+               foreign_net_z20, foreign_net_5d_sum, total_net_z20
         FROM view_latest_signals WHERE ticker_id = %s
     """
     rows = _fetch(sql, (ticker_id,))
@@ -254,6 +257,8 @@ def query_screener(
     macd_hist_above: Optional[float] = None,
     above_sma_200: Optional[bool] = None,
     rs_above: Optional[float] = None,
+    foreign_z_above: Optional[float] = None,
+    pct_below_52w_high_above: Optional[float] = None,
 ) -> list[dict]:
     """Screen latest signals across all classified tickers.
 
@@ -279,13 +284,23 @@ def query_screener(
     if rs_above is not None:
         conditions.append("ls.rs_vs_market_60 > %s")
         params.append(rs_above)
+    if foreign_z_above is not None:
+        conditions.append("ls.foreign_net_z20 > %s")
+        params.append(foreign_z_above)
+    if pct_below_52w_high_above is not None:
+        # Stored as a negative or zero number; "above" a threshold like -5
+        # means "within 5% of the high" (i.e. closer to high than -5%).
+        conditions.append("ls.pct_below_52w_high > %s")
+        params.append(pct_below_52w_high_above)
 
     where = " AND ".join(conditions) if conditions else "1=1"
     sql = f"""
         SELECT ls.ticker_id, sc.company_name, sc.ai_pillar, sc.node,
                o.close AS latest_close, ls.as_of,
                ls.rsi_14, ls.macd_histogram, ls.bb_pct_b,
-               ls.sma_50, ls.sma_200, ls.rs_vs_market_60
+               ls.sma_50, ls.sma_200, ls.rs_vs_market_60,
+               ls.pct_below_52w_high, ls.foreign_net_z20,
+               ls.foreign_net_5d_sum, ls.total_net_z20
         FROM view_latest_signals ls
         JOIN dim_supply_chain sc ON sc.ticker_id = ls.ticker_id
         LEFT JOIN raw_twse_ohlcv o
@@ -370,6 +385,92 @@ def query_backtest(
         "best_return_pct": round(max(returns), 3),
         "worst_return_pct": round(min(returns), 3),
         "sample_warning": sample_warning,
+        "samples_by_ticker": dict(sorted(by_ticker.items())),
+    }
+
+
+def query_backtest_compound(
+    conditions: list[dict],
+    forward_days: int = 5,
+    lookback_days: int = 365,
+) -> dict:
+    """AND-combined multi-condition backtest. Each condition self-joins
+    signal_value once; capped at 4 conditions to keep planner happy."""
+    if not conditions:
+        return {"error": "compound rule needs at least one condition"}
+    if len(conditions) > 4:
+        return {"error": "max 4 conditions"}
+
+    for i, cond in enumerate(conditions):
+        if cond.get("signal") not in _ALLOWED_SIGNALS:
+            return {"error": f"condition {i}: unknown signal '{cond.get('signal')}'"}
+        if cond.get("op") not in ("<", ">"):
+            return {"error": f"condition {i}: op must be '<' or '>'"}
+
+    joins, where_clauses = [], []
+    params: list = []
+    for i, cond in enumerate(conditions):
+        alias = f"s{i}"
+        if i == 0:
+            joins.append(f"FROM signal_value {alias}")
+        else:
+            joins.append(
+                f"JOIN signal_value {alias} "
+                f"ON {alias}.ticker_id = s0.ticker_id "
+                f"AND {alias}.date = s0.date"
+            )
+        where_clauses.append(f"{alias}.signal_name = %s AND {alias}.value {cond['op']} %s")
+        params.extend([cond["signal"], cond["threshold"]])
+
+    where_clauses.append("s0.date >= current_date - (%s || ' days')::interval")
+    params.append(str(lookback_days))
+
+    rule = " AND ".join(f"{c['signal']} {c['op']} {c['threshold']}" for c in conditions)
+    sql = f"""
+        WITH triggers AS (
+            SELECT s0.ticker_id, s0.date AS trigger_date
+            {' '.join(joins)}
+            WHERE {' AND '.join(where_clauses)}
+        ),
+        bars AS (
+            SELECT ticker_id, date, close,
+                   LEAD(close, %s) OVER (PARTITION BY ticker_id ORDER BY date) AS forward_close
+            FROM raw_twse_ohlcv
+        )
+        SELECT t.ticker_id, t.trigger_date,
+               (b.forward_close / b.close - 1.0) * 100.0 AS pct_return
+        FROM triggers t
+        JOIN bars b ON b.ticker_id = t.ticker_id AND b.date = t.trigger_date
+        WHERE b.forward_close IS NOT NULL
+    """
+    params.append(forward_days)
+    rows = _fetch(sql, tuple(params))
+
+    if not rows:
+        return {"rule": rule, "n_observations": 0,
+                "sample_warning": "No triggers met all conditions"}
+
+    returns = [float(r["pct_return"]) for r in rows]
+    n = len(returns)
+    n_winners = sum(1 for r in returns if r > 0)
+    by_ticker: dict[str, int] = {}
+    for r in rows:
+        by_ticker[r["ticker_id"]] = by_ticker.get(r["ticker_id"], 0) + 1
+
+    sorted_r = sorted(returns)
+    median = sorted_r[n // 2] if n % 2 == 1 else (sorted_r[n // 2 - 1] + sorted_r[n // 2]) / 2
+
+    return {
+        "rule": rule,
+        "forward_days": forward_days,
+        "lookback_days": lookback_days,
+        "n_observations": n,
+        "hit_rate_pct": round(100.0 * n_winners / n, 2),
+        "avg_return_pct": round(sum(returns) / n, 3),
+        "median_return_pct": round(median, 3),
+        "best_return_pct": round(max(returns), 3),
+        "worst_return_pct": round(min(returns), 3),
+        "sample_warning": (f"Only {n} obs — illustrative" if n < 30 else None),
         "samples_by_ticker": dict(sorted(by_ticker.items())),
     }
 

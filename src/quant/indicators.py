@@ -109,3 +109,31 @@ def relative_strength(
     ticker_ret = ticker_close / ticker_close.shift(period)
     bench_ret = benchmark_close / benchmark_close.shift(period)
     return ticker_ret / bench_ret.replace(0.0, float("nan"))
+
+
+def pct_below_52w_high(close: pl.Series, period: int = 252) -> pl.Series:
+    """Distance from rolling-period high, as a percentage.
+
+    Returns 0.0 at the high, -10.0 means 10% below the high. Negative
+    values are normal — the metric tracks how deep into a drawdown the
+    name is. Period defaults to 252 (≈ 1 trading year).
+    """
+    rolling_high = close.rolling_max(window_size=period)
+    return (close / rolling_high - 1.0) * 100.0
+
+
+def zscore(series: pl.Series, period: int = 20) -> pl.Series:
+    """Rolling z-score: (value - rolling_mean) / rolling_std.
+
+    Magnitude > 2 means a meaningful deviation from recent baseline.
+    Useful for "is today's foreign net flow unusual?" — feed it the
+    foreign_net column directly.
+    """
+    mean = series.rolling_mean(window_size=period)
+    std = series.rolling_std(window_size=period)
+    return (series - mean) / std.replace(0.0, float("nan"))
+
+
+def rolling_sum(series: pl.Series, period: int) -> pl.Series:
+    """Plain rolling sum — used to materialize N-day flow accumulation."""
+    return series.rolling_sum(window_size=period)
