@@ -165,3 +165,12 @@ attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
 - **Compound discovery surfaced by the harness:** naive `RSI<30` had **negative** expectancy (avg -1.1%, 84 obs); `RSI<40 AND MACD_hist>0` (oversold-dip-within-uptrend) jumps to **69.2% hit rate over 39 observations**. Compound rule discovers something the simple rule misses — exactly why we built the harness.
 - Universe sanity check: `pct_below_52w_high < -10` returns **zero observations**. Every classified ticker is within 10% of its 52-week high. Confirms the regime is uniformly bullish.
 - 6 names show `foreign_net_z20 > 1.0`: 2317 Foxconn (z=2.93), 2301 Lite-On (z=2.74), 3231 Wistron (z=1.54), 4958 Zhen Ding (z=1.36), 2382 Quanta (z=1.30), 2308 Delta (z=1.19). 4/6 are server-ODM infrastructure pillar — clean read on where foreign capital is concentrated.
+
+## [2026-05-08] decision | Phase 4 partial — decide-on-ticker Skill scaffold + output dirs
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture, mcp-server]
+- Created `docs/digests/`, `docs/theses/`, `docs/journals/` directories with READMEs spelling out conventions, frontmatter, lifecycle states.
+- Wrote `skills/decide-on-ticker/SKILL.md` — the dual-agent decision skill. 6 steps: read prior context, naive pass (data only, hard isolation rule), aware pass (data + news, deferred until Phase 2), reconcile, write thesis to `docs/theses/`, append to journal.
+- Naive pass is fully operational today using existing MCP tools (`sc_supply_chain_map`, `q_indicators`, `sc_ticker_momentum`, `raw_flow_history`, `sc_sector_momentum`, `q_backtest_compound`). Aware pass is marked pending Phase 2 news; until then the reconcile step treats the naive view as the final view with a note.
+- Hard rules baked in: never share context between naive and aware sub-tasks (the whole point is the isolation), never write a thesis without a backtest justifying the pattern, never hide a naive↔aware disagreement, never edit a closed thesis.
+- Output convention: `docs/theses/YYYY-MM-DD-<ticker>-<slug>.md` with required frontmatter (status, catalyst, invalidation, naive_conviction, aware_conviction, disagreement). Journal append-only at `docs/journals/<ticker>-<slug>.md`.
+- The skill is invoked manually in the Claude app with the project loaded — that's the shared memory across runs. Scheduled tasks produce digests; skills produce theses.
