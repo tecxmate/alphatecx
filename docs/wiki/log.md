@@ -191,3 +191,13 @@ attributed_to: [antigravity-agent]   belongs_to: [system-architecture, mcp-serve
 - New MCP tools: `n_recent`, `n_for_ticker`, `n_source_status`. Deployed to Vercel.
 - **Cross-validation moment**: quant digest this morning flagged Foxconn (2317) with foreign_net_z20 = 2.93. Independent text search of the news harvester (`n_for_ticker(2317, days=2)`) surfaces the headline "外資買超...鴻海" ("foreigners net buying Foxconn") from a Taiwan-domestic financial outlet. The structured signal and the public narrative agree on the same name on the same day. This is exactly the kind of convergence the dual-agent Skill is designed to surface — and it's working with text-fallback before the entity-extraction layer is even built.
 - Phase 2a explicitly defers the LLM sentiment/entity-extraction step. User wants to see article quality for a few days before paying ~$2/day for Haiku classification. Next: cron the harvester (Vercel Cron or one of the 15 Claude Scheduled Tasks), watch coverage for a week, then decide on Phase 2b.
+
+## [2026-05-08] decision | First worked disagreement scan — 06-disagreement.md
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Generated `docs/digests/2026-05-08/06-disagreement.md` by cross-referencing this morning's quant flags (01-quant.md) with the news harvester output (n_for_ticker queries on 8 names).
+- Three patterns surfaced:
+  1. **Convergence** (3 names: Foxconn 2317, Lite-On 2301, Delta 2308) — quant + narrative both point bullish. Lower asymmetric edge, the move is in the public discourse.
+  2. **Silent strength** (4 names: Wistron 3231, Quanta 2382, Zhen Ding 4958, GlobalWafers 6488) — quant flags positive flow / momentum, news output has 0 mentions in 3 days. The flow scan is catching names beneath the headline cycle.
+  3. **Sharp divergence** (1 name: GUC 3443) — RSI 87.8 + MACD hist 143 (extreme momentum) BUT foreign_net_z20 = −1.82 (institutional distribution) AND 0 news mentions. Classic distribution-into-strength: technicals euphoric, flow opposite, narrative absent.
+- Confirms the system's central design thesis: data + narrative compared yields candidates the naive scan of either alone would miss. The "silent strength" category is the lean-and-bold setup the user asked for.
+- This is the cron version of the dual-agent design (cheap, automated, no LLM call); the manual decide-on-ticker Skill will run on candidates surfaced here.
