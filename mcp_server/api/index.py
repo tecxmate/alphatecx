@@ -270,6 +270,114 @@ def sc_accumulation_screen(
     )
 
 
+# ── Tool: Quant Indicators (per ticker) ────────────────────────────────────
+
+@mcp.tool()
+def q_indicators(ticker_id: str) -> dict:
+    """Latest technical indicator stack for one ticker.
+
+    Returns RSI-14, MACD (line/signal/histogram), Bollinger %B, ATR-14,
+    SMA-50, SMA-200, and 60-day relative strength vs the broad market
+    (Yuanta Taiwan 50 / 0050).
+
+    Indicators are recomputed daily from OHLCV data after market close.
+    Read this before forming an opinion on a ticker — it tells you where
+    momentum, volatility, and trend stand right now.
+
+    Args:
+        ticker_id: TWSE/TPEX code, e.g. '2330' for TSMC.
+    """
+    payload = db_v2.query_indicators(ticker_id)
+    return _stamp(
+        payload,
+        source="view_latest_signals",
+        as_of=str(payload.get("as_of") or _today_iso()),
+        freshness="T+1",
+    )
+
+
+# ── Tool: Quant Screener ───────────────────────────────────────────────────
+
+@mcp.tool()
+def q_screener(
+    rsi_below: Optional[float] = None,
+    rsi_above: Optional[float] = None,
+    macd_hist_above: Optional[float] = None,
+    above_sma_200: Optional[bool] = None,
+    rs_above: Optional[float] = None,
+) -> dict:
+    """Filter the classified universe by indicator conditions (AND-combined).
+
+    Use to find candidates: oversold + uptrend (rsi_below=30 + above_sma_200=true),
+    momentum stack (macd_hist_above=0 + rs_above=1.0), etc.
+
+    Args:
+        rsi_below: include only tickers with RSI-14 below this value.
+        rsi_above: include only tickers with RSI-14 above this value.
+        macd_hist_above: include only tickers with MACD histogram > this.
+        above_sma_200: True = price above 200-day MA; False = below.
+        rs_above: relative strength vs market threshold (1.0 = matching market).
+    """
+    rows = db_v2.query_screener(
+        rsi_below=rsi_below, rsi_above=rsi_above,
+        macd_hist_above=macd_hist_above,
+        above_sma_200=above_sma_200, rs_above=rs_above,
+    )
+    return _stamp(
+        {"matches": rows, "count": len(rows)},
+        source="view_latest_signals",
+        as_of=_today_iso(),
+        freshness="T+1",
+    )
+
+
+# ── Tool: Quant Backtest ──────────────────────────────────────────────────
+
+@mcp.tool()
+def q_backtest(
+    signal_name: str,
+    threshold: float,
+    direction: str = "below",
+    forward_days: int = 5,
+    lookback_days: int = 365,
+) -> dict:
+    """Backtest a single-threshold signal rule on the classified universe.
+
+    Returns hit-rate (% of triggers that produced positive returns N days
+    later), average / median / best / worst return, and per-ticker sample
+    counts. If n_observations < 30, a sample_warning is included — treat
+    such results as illustrative, not predictive.
+
+    Use this BEFORE acting on any signal idea to know whether the rule
+    has historically had positive expectancy on this universe.
+
+    Args:
+        signal_name: One of rsi_14, macd_line, macd_signal_line,
+                     macd_histogram, bb_pct_b, atr_14, sma_50, sma_200,
+                     rs_vs_market_60.
+        threshold: The numeric threshold to compare against.
+        direction: 'below' (signal < threshold) or 'above' (signal > threshold).
+        forward_days: Trading days to measure forward return (default 5).
+        lookback_days: Calendar days of history to scan (default 365).
+
+    Examples:
+        q_backtest('rsi_14', 30, 'below', 5)   — oversold mean reversion
+        q_backtest('rsi_14', 70, 'above', 5)   — overbought continuation
+        q_backtest('macd_histogram', 0, 'above', 5)  — bullish momentum
+    """
+    payload = db_v2.query_backtest(
+        signal_name, threshold, direction, forward_days, lookback_days,
+    )
+    if "error" in payload:
+        return payload
+    return _stamp(
+        payload,
+        source="signal_value + raw_twse_ohlcv",
+        as_of=_today_iso(),
+        freshness="T+1",
+    )
+
+
 # ── Tool: Data Status ─────────────────────────────────────────────────────
 
 @mcp.tool()
@@ -325,6 +433,9 @@ def sc_capabilities() -> dict:
             {"name": "sc_compare_nodes", "purpose": "Side-by-side node flow comparison"},
             {"name": "sc_accumulation_screen", "purpose": "Find tickers with sustained FINI buying"},
             {"name": "sc_data_status", "purpose": "Pipeline health and data freshness"},
+            {"name": "q_indicators", "purpose": "Latest technical indicators for one ticker (RSI/MACD/BB/ATR/SMA/RS)"},
+            {"name": "q_screener", "purpose": "Filter classified universe by indicator conditions (AND-combined)"},
+            {"name": "q_backtest", "purpose": "Backtest a signal threshold; returns hit-rate, avg/median return, sample stats"},
         ],
     }
 

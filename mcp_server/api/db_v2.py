@@ -219,6 +219,161 @@ def query_compare_nodes(
     return _serialize(_fetch(sql, tuple(nodes)))
 
 
+# ── Quant signals ─────────────────────────────────────────────────────────
+#
+# Phase 1 of the analysis-system plan. Reads from view_latest_signals
+# (wide-form snapshot, refreshed by compute_signals.py) and signal_value
+# (long-form history, used by backtest queries).
+
+# Allowlist of signal names that callers can interrogate. Same enforcement
+# pattern as _ALLOWED_FLOW_COLS — keeps callers from injecting arbitrary
+# strings into SQL identifiers or filters.
+_ALLOWED_SIGNALS = frozenset({
+    "rsi_14", "macd_line", "macd_signal_line", "macd_histogram",
+    "bb_pct_b", "atr_14", "sma_50", "sma_200", "rs_vs_market_60",
+})
+
+
+def query_indicators(ticker_id: str) -> dict:
+    """Latest indicator stack for one ticker. Reads view_latest_signals."""
+    sql = """
+        SELECT ticker_id, as_of, rsi_14, macd_line, macd_signal_line,
+               macd_histogram, bb_pct_b, atr_14, sma_50, sma_200,
+               rs_vs_market_60
+        FROM view_latest_signals WHERE ticker_id = %s
+    """
+    rows = _fetch(sql, (ticker_id,))
+    if not rows:
+        return {"ticker_id": ticker_id, "found": False}
+    return {**_serialize(rows)[0], "found": True}
+
+
+def query_screener(
+    rsi_below: Optional[float] = None,
+    rsi_above: Optional[float] = None,
+    macd_hist_above: Optional[float] = None,
+    above_sma_200: Optional[bool] = None,
+    rs_above: Optional[float] = None,
+) -> list[dict]:
+    """Screen latest signals across all classified tickers.
+
+    Combines conditions with AND. Joins view_latest_signals with
+    raw_twse_ohlcv to expose latest close + dim_supply_chain for pillar/node.
+    """
+    conditions: list[str] = []
+    params: list = []
+
+    if rsi_below is not None:
+        conditions.append("ls.rsi_14 < %s")
+        params.append(rsi_below)
+    if rsi_above is not None:
+        conditions.append("ls.rsi_14 > %s")
+        params.append(rsi_above)
+    if macd_hist_above is not None:
+        conditions.append("ls.macd_histogram > %s")
+        params.append(macd_hist_above)
+    if above_sma_200 is True:
+        conditions.append("o.close > ls.sma_200")
+    elif above_sma_200 is False:
+        conditions.append("o.close < ls.sma_200")
+    if rs_above is not None:
+        conditions.append("ls.rs_vs_market_60 > %s")
+        params.append(rs_above)
+
+    where = " AND ".join(conditions) if conditions else "1=1"
+    sql = f"""
+        SELECT ls.ticker_id, sc.company_name, sc.ai_pillar, sc.node,
+               o.close AS latest_close, ls.as_of,
+               ls.rsi_14, ls.macd_histogram, ls.bb_pct_b,
+               ls.sma_50, ls.sma_200, ls.rs_vs_market_60
+        FROM view_latest_signals ls
+        JOIN dim_supply_chain sc ON sc.ticker_id = ls.ticker_id
+        LEFT JOIN raw_twse_ohlcv o
+          ON o.ticker_id = ls.ticker_id AND o.date = ls.as_of
+        WHERE {where}
+        ORDER BY ls.ticker_id
+    """
+    return _serialize(_fetch(sql, tuple(params)))
+
+
+def query_backtest(
+    signal_name: str,
+    threshold: float,
+    direction: str = "below",
+    forward_days: int = 5,
+    lookback_days: int = 365,
+) -> dict:
+    """Backtest a single-threshold signal rule. Mirrors src/quant/backtest.py."""
+    if signal_name not in _ALLOWED_SIGNALS:
+        return {"error": f"Unknown signal '{signal_name}'. "
+                         f"Allowed: {sorted(_ALLOWED_SIGNALS)}"}
+    if direction not in ("below", "above"):
+        return {"error": "direction must be 'below' or 'above'"}
+    op = "<" if direction == "below" else ">"
+
+    sql = f"""
+        WITH triggers AS (
+            SELECT s.ticker_id, s.date AS trigger_date, s.value AS signal_value
+            FROM signal_value s
+            WHERE s.signal_name = %s
+              AND s.value {op} %s
+              AND s.date >= current_date - (%s || ' days')::interval
+        ),
+        bars AS (
+            SELECT ticker_id, date, close,
+                   LEAD(close, %s) OVER (PARTITION BY ticker_id ORDER BY date) AS forward_close
+            FROM raw_twse_ohlcv
+        )
+        SELECT t.ticker_id, t.trigger_date,
+               (b.forward_close / b.close - 1.0) * 100.0 AS pct_return
+        FROM triggers t
+        JOIN bars b ON b.ticker_id = t.ticker_id AND b.date = t.trigger_date
+        WHERE b.forward_close IS NOT NULL
+    """
+    rows = _fetch(sql, (signal_name, threshold, str(lookback_days), forward_days))
+
+    if not rows:
+        return {
+            "signal": signal_name,
+            "rule": f"{signal_name} {op} {threshold}",
+            "n_observations": 0,
+            "sample_warning": "No triggers in lookback window",
+        }
+
+    returns = [float(r["pct_return"]) for r in rows]
+    n = len(returns)
+    n_winners = sum(1 for r in returns if r > 0)
+    by_ticker: dict[str, int] = {}
+    for r in rows:
+        by_ticker[r["ticker_id"]] = by_ticker.get(r["ticker_id"], 0) + 1
+
+    sample_warning = None
+    if n < 30:
+        sample_warning = (
+            f"Only {n} observations — illustrative, not predictive. "
+            f"More history needed for robust validation."
+        )
+
+    avg = sum(returns) / n
+    sorted_r = sorted(returns)
+    median = sorted_r[n // 2] if n % 2 == 1 else (sorted_r[n//2 - 1] + sorted_r[n//2]) / 2
+
+    return {
+        "signal": signal_name,
+        "rule": f"{signal_name} {op} {threshold}",
+        "forward_days": forward_days,
+        "lookback_days": lookback_days,
+        "n_observations": n,
+        "hit_rate_pct": round(100.0 * n_winners / n, 2),
+        "avg_return_pct": round(avg, 3),
+        "median_return_pct": round(median, 3),
+        "best_return_pct": round(max(returns), 3),
+        "worst_return_pct": round(min(returns), 3),
+        "sample_warning": sample_warning,
+        "samples_by_ticker": dict(sorted(by_ticker.items())),
+    }
+
+
 # ── Data Status ────────────────────────────────────────────────────────────
 
 def query_data_status() -> dict:

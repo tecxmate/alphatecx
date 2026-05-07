@@ -33,7 +33,7 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-sql_files = ["sql/001_schema.sql", "sql/002_views.sql"]
+sql_files = ["sql/001_schema.sql", "sql/002_views.sql", "sql/004_quant.sql"]
 if args.rls:
     pw = os.getenv("MCP_VIEWER_PASSWORD")
     if not pw:

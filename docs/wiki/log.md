@@ -145,3 +145,12 @@ attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
 - 12-month backfill loaded **5,897 bars across 26 tickers**. 25/26 classified tickers fully covered (227 trading days each).
 - Diagnosed and corrected 4 issues found during backfill: `2325` SPIL removed (delisted to ASE 2018); `6155` market label TPEX→TWSE; `6488` TWSE→TPEX; `3664` TWSE→TPEX. Fixes applied to seed_supply_chain.py and live DB. `3553` Jentech remains a TODO — returns empty on TWSE/TPEX OHLCV endpoints, absent from T86; likely on Emerging Stock Market (興櫃) or wrong ticker code.
 - TSMC's 2025-06 and 2025-07 came up empty on first run (transient TWSE response); a re-run with skip-detection naturally re-attempted them and they filled in.
+
+## [2026-05-08] decision | Phase 1 quant module shipped (indicators + backtest + MCP tools)
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- New SQL: `sql/004_quant.sql` — `signal_value` table (long-form, indexed by signal+date and ticker+date) and `view_latest_signals` materialized view (wide-form per-ticker snapshot). RLS policies in `003_rls.sql` guard signal_value for the mcp_viewer role.
+- New Python: `src/quant/indicators.py` (Polars-based pure functions: RSI/MACD/BB/ATR/SMA/RS), `src/quant/compute_signals.py` (orchestrator that reads OHLCV, computes all indicators, upserts to signal_value, refreshes the matview), `src/quant/backtest.py` (single-threshold backtest harness — hit-rate, avg/median/best/worst return, sample-by-ticker breakdown, sample_warning if n<30).
+- 42,595 signal-rows computed for 25 of 26 classified tickers (3553 Jentech skipped — no OHLCV data available).
+- Three new MCP tools: `q_indicators(ticker_id)`, `q_screener(...)`, `q_backtest(signal, threshold, direction, forward_days, lookback_days)`. Deployed to Vercel; smoke-tested end-to-end on production URL.
+- **First honest backtest result:** RSI < 30 oversold rule on this universe (84 obs) shows hit_rate=50%, avg_return=-1.1% — counter to textbook "mean reversion" intuition. RSI > 70 (901 obs) shows hit_rate=56.6%, avg=+1.9% — the AI-rally regime favors trend continuation over mean reversion. MACD histogram > 0 (3013 obs, hit_rate=56.7%, avg=+2.0%) is the strongest single-signal expectancy. The discipline tool is doing its job: it's already telling us not to trust an "obvious" signal.
+- Phase 1 entry criteria for Phase 3 digests: any signal added to a daily digest must first produce a hit-rate report from `q_backtest` showing the rule's historical expectancy on this universe.

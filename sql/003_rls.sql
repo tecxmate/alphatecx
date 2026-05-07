@@ -42,6 +42,33 @@ GRANT SELECT ON raw_monthly_revenue TO mcp_viewer;
 -- Contents are benign (source, date, row counts, status, error_msg) — no PII or secrets.
 GRANT SELECT ON ingestion_log TO mcp_viewer;
 
+-- Quant signal layer (created by sql/004_quant.sql).
+-- Wrapped in DO blocks so this RLS file can run before 004 if order is wrong.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='signal_value') THEN
+    EXECUTE 'GRANT SELECT ON signal_value TO mcp_viewer';
+    EXECUTE 'ALTER TABLE signal_value ENABLE ROW LEVEL SECURITY';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_matviews
+             WHERE schemaname='public' AND matviewname='view_latest_signals') THEN
+    EXECUTE 'GRANT SELECT ON view_latest_signals TO mcp_viewer';
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='signal_value') THEN
+    EXECUTE 'DROP POLICY IF EXISTS "mcp_viewer_read_signal_value" ON signal_value';
+    EXECUTE $POLICY$
+      CREATE POLICY "mcp_viewer_read_signal_value"
+        ON signal_value FOR SELECT TO mcp_viewer USING (true)
+    $POLICY$;
+  END IF;
+END$$;
+
 -- Explicitly deny writes
 REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public FROM mcp_viewer;
 
