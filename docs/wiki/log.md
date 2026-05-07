@@ -174,3 +174,9 @@ attributed_to: [antigravity-agent]   belongs_to: [system-architecture, mcp-serve
 - Hard rules baked in: never share context between naive and aware sub-tasks (the whole point is the isolation), never write a thesis without a backtest justifying the pattern, never hide a naive↔aware disagreement, never edit a closed thesis.
 - Output convention: `docs/theses/YYYY-MM-DD-<ticker>-<slug>.md` with required frontmatter (status, catalyst, invalidation, naive_conviction, aware_conviction, disagreement). Journal append-only at `docs/journals/<ticker>-<slug>.md`.
 - The skill is invoked manually in the Claude app with the project loaded — that's the shared memory across runs. Scheduled tasks produce digests; skills produce theses.
+
+## [2026-05-08] decision | First worked digest — 01-quant.md
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Generated `docs/digests/2026-05-08/01-quant.md` by querying live MCP tools (sc_sector_momentum, q_screener, q_indicators) on prod URL. End-to-end exercise of every q_* tool we shipped today.
+- Reference example for what scheduled-task output should look like once the cron lands. Format follows `docs/digests/README.md`.
+- **Substantive read from the data:** clear sector rotation — foreign capital out of foundry (TSMC -50M shares 20d), into server-build stack (Foxconn +542M 20d, +216M 5d). Six names show foreign_z>1.0; four of those are server-ODM infrastructure. One sharp divergence flagged: 3443 GUC has RSI 88 / MACD hist 143 (both extreme) but foreign_z = -1.82 — institutions distributing into retail-momentum euphoria. Universe-wide pct_below_52w_high mostly 0.0 (uniformly elevated regime).
