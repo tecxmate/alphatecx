@@ -138,3 +138,10 @@ attributed_to: [niko]   belongs_to: [system-architecture]
 - Build order: sequential, validate each phase. Phase 0 = OHLCV backfill, Phase 1 = quant tools + backtest harness, Phase 2 = news pipeline, Phase 3 = first 5 scheduled tasks, Phase 4 = first 2 skills.
 - Decided: backtest harness lands in Phase 1 (not deferred), even though ~90 days of T86 is thin. Discipline matters more than data depth right now.
 - Dual-agent narrative-naive vs narrative-aware reasoning lives as a Claude Skill (manual, on-demand), not a scheduled task. Cron version is a cheap "disagreement scan" that flags candidates for the deep skill to analyze.
+
+## [2026-05-08] ingest | Phase 0 done — OHLCV backfilled
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Wired OHLCV backfill into `src/backfill/run.py` with `--only ohlcv --ohlcv-months N`. Scope: classified supply-chain tickers + 0050 benchmark, skip-detection via direct query on `raw_twse_ohlcv`.
+- 12-month backfill loaded **5,897 bars across 26 tickers**. 25/26 classified tickers fully covered (227 trading days each).
+- Diagnosed and corrected 4 issues found during backfill: `2325` SPIL removed (delisted to ASE 2018); `6155` market label TPEX→TWSE; `6488` TWSE→TPEX; `3664` TWSE→TPEX. Fixes applied to seed_supply_chain.py and live DB. `3553` Jentech remains a TODO — returns empty on TWSE/TPEX OHLCV endpoints, absent from T86; likely on Emerging Stock Market (興櫃) or wrong ticker code.
+- TSMC's 2025-06 and 2025-07 came up empty on first run (transient TWSE response); a re-run with skip-detection naturally re-attempted them and they filled in.

@@ -25,15 +25,15 @@ SUPPLY_CHAIN = [
     ("3443", "Global Unichip (GUC)", "TWSE", "semiconductor", "asic-custom-ip", ["AWS", "Microsoft"]),
     ("3035", "Faraday Technology", "TWSE", "semiconductor", "asic-custom-ip", ["Intel"]),
     ("3711", "ASE Technology", "TWSE", "semiconductor", "advanced-packaging", ["NVIDIA", "AMD"]),
-    ("2325", "SPIL", "TWSE", "semiconductor", "advanced-packaging", ["NVIDIA", "AMD"]),
+    # 2325 SPIL removed — acquired by ASE Technology (3711) in 2018, no longer publicly traded.
 
     # === 2. Semiconductor Equipment & Testing ===
     ("2449", "King Yuan Electronics (KYEC)", "TWSE", "equipment", "testing-probing", ["NVIDIA", "AMD", "Intel"]),
-    ("6155", "Winway Technology", "TPEX", "equipment", "testing-probing", ["NVIDIA", "AMD"]),
-    ("3664", "Marketech International", "TWSE", "equipment", "facility-cleanroom", ["Micron", "Applied Materials"]),
+    ("6155", "Winway Technology", "TWSE", "equipment", "testing-probing", ["NVIDIA", "AMD"]),
+    ("3664", "Marketech International", "TPEX", "equipment", "facility-cleanroom", ["Micron", "Applied Materials"]),
     ("2404", "United Integrated Services", "TWSE", "equipment", "facility-cleanroom", ["Micron"]),
     ("3583", "Scientech", "TWSE", "equipment", "equipment-materials", ["KLA", "Lam Research"]),
-    ("6488", "GlobalWafers", "TWSE", "equipment", "equipment-materials", ["Texas Instruments"]),
+    ("6488", "GlobalWafers", "TPEX", "equipment", "equipment-materials", ["Texas Instruments"]),
 
     # === 3. AI Infrastructure: Servers, Cooling & Materials ===
     ("2382", "Quanta Computer", "TWSE", "infrastructure", "server-odm", ["Meta", "Google", "AWS", "Microsoft"]),
@@ -41,6 +41,10 @@ SUPPLY_CHAIN = [
     ("2317", "Hon Hai (Foxconn)", "TWSE", "infrastructure", "server-odm", ["Apple", "NVIDIA", "AWS"]),
     ("3017", "Asia Vital Components (AVC)", "TWSE", "infrastructure", "thermal-cooling", ["NVIDIA", "Dell"]),
     ("3324", "Auras Technology", "TPEX", "infrastructure", "thermal-cooling", ["NVIDIA", "Supermicro"]),
+    # 3553 Jentech Precision: TODO — code returns no data on TWSE/TPEX
+    # OHLCV endpoints, and is absent from T86. Likely on Emerging Stock
+    # Market (興櫃) which our fetcher doesn't cover, or the code is wrong.
+    # Kept here as a known-incomplete entry; quant tools will skip it.
     ("3553", "Jentech Precision", "TPEX", "infrastructure", "thermal-cooling", ["HPE"]),
     ("8046", "Elite Material (EMC)", "TWSE", "infrastructure", "high-speed-pcb", ["Broadcom", "NVIDIA"]),
     ("3037", "Unimicron", "TWSE", "infrastructure", "high-speed-pcb", ["Broadcom", "Arista Networks"]),
