@@ -94,3 +94,13 @@ attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
 - Retroactively scanned `backfill.log` and inserted 42 `empty` rows into `ingestion_log` for holidays already discovered (Apr 4 Tomb Sweeping, May 1 Labor Day, May 30 Dragon Boat, etc.) — split across `twse_holdings`/`twse_margin`.
 - Saved budget per re-run: ~42 days × 3s rate-limit = ~126s wasted HTTP roundtrips eliminated.
 - `executemany → COPY` (M2) deferred: 6-function refactor, current backfill running, not safe to land mid-run. Logged as open follow-up.
+
+## [2026-05-08] decision | V2 MCP deployed to Vercel
+attributed_to: [antigravity-agent]   belongs_to: [mcp-server, system-architecture]
+- Created Vercel project `alphatecx-v2-mcp` under `nikolasdoans-projects`. Linked `mcp_server/` and pushed env vars to Production + Development:
+  - `MCP_DATABASE_URL` → mcp_viewer DSN (read-only role)
+  - `MCP_BEARER_TOKEN` → reused from local .env
+  - `DATABASE_URL` deliberately NOT set on Vercel — would defeat the read-only boundary.
+- Production: <https://alphatecx-v2-mcp.vercel.app>. Smoke-tested `/health`, 404 fallback, `sc_sector_momentum`, `sc_data_status` end-to-end.
+- Bug surfaced + fixed: `sc_data_status` queries `ingestion_log`, but `003_rls.sql` originally blocked viewer access to it. Granted SELECT + RLS policy on `ingestion_log` to `mcp_viewer` in prod and updated `sql/003_rls.sql` to match. The original "internal only" intent was inconsistent with exposing a status tool publicly.
+- Cold-start verified < 5s; subsequent calls hit warm pool. Free-tier Neon connection pool sized at max=3 in `db_v2.py` so multiple concurrent serverless invocations don't exhaust it.

@@ -37,6 +37,10 @@ GRANT SELECT ON raw_twse_margin TO mcp_viewer;
 GRANT SELECT ON raw_twse_ohlcv TO mcp_viewer;
 GRANT SELECT ON raw_monthly_revenue TO mcp_viewer;
 
+-- ingestion_log: read access for the publicly-exposed sc_data_status tool.
+-- Contents are benign (source, date, row counts, status, error_msg) — no PII or secrets.
+GRANT SELECT ON ingestion_log TO mcp_viewer;
+
 -- Explicitly deny writes
 REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public FROM mcp_viewer;
 
@@ -80,5 +84,9 @@ DROP POLICY IF EXISTS "mcp_viewer_read_supply_chain" ON dim_supply_chain;
 CREATE POLICY "mcp_viewer_read_supply_chain"
   ON dim_supply_chain FOR SELECT TO mcp_viewer USING (true);
 
--- Block mcp_viewer from seeing ingestion_log (internal only)
--- No policy = no access when RLS is enabled
+-- ingestion_log read policy — required by sc_data_status. error_msg fields
+-- could in theory leak DSN fragments from a connection-error trace; keep
+-- error_msg sanitized at write time (loader.log_ingestion takes str(e)).
+DROP POLICY IF EXISTS "mcp_viewer_read_ingestion_log" ON ingestion_log;
+CREATE POLICY "mcp_viewer_read_ingestion_log"
+  ON ingestion_log FOR SELECT TO mcp_viewer USING (true);
