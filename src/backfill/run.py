@@ -154,6 +154,105 @@ def backfill_margin(days: int) -> dict:
     return {"source": "margin", "rows": total_rows, "skipped": skipped, "errors": errors}
 
 
+def _ohlcv_targets() -> list[tuple[str, str]]:
+    """Return [(ticker_id, market), ...] for OHLCV backfill.
+
+    Reads classified tickers from dim_supply_chain (the curated 27) and
+    appends a market benchmark. Backfilling all 7k tickers is not worth it —
+    we only run quant indicators on stocks we actually care about.
+    """
+    benchmarks = [("0050", "TWSE")]  # Yuanta Taiwan 50 — broad TWSE proxy
+    with loader.cur() as c:
+        c.execute("SELECT ticker_id, market FROM dim_supply_chain")
+        classified = [(r[0], r[1]) for r in c.fetchall()]
+    return sorted(set(classified + benchmarks))
+
+
+def _ohlcv_already_have(ticker_id: str, year: int, month: int) -> bool:
+    """True if raw_twse_ohlcv already has any row for this ticker in this month.
+
+    Lighter than logging every (ticker, month) pair to ingestion_log —
+    pollutes that table with thousands of rows for a long backfill.
+    """
+    with loader.cur() as c:
+        c.execute(
+            """
+            SELECT 1 FROM raw_twse_ohlcv
+            WHERE ticker_id = %s
+              AND date >= make_date(%s, %s, 1)
+              AND date <  (make_date(%s, %s, 1) + INTERVAL '1 month')
+            LIMIT 1
+            """,
+            (ticker_id, year, month, year, month),
+        )
+        return c.fetchone() is not None
+
+
+def backfill_ohlcv(months: int) -> dict:
+    """Backfill daily OHLCV bars for the classified tickers + benchmarks.
+
+    Iterates (ticker, year-month). The TWSE STOCK_DAY endpoint returns
+    one stock's full month per call. ~28 tickers × 12 months = 336 calls
+    at the rate-limit delay, so a full year takes ~17 minutes.
+    """
+    log.info("=== Backfilling OHLCV (%d months) ===", months)
+    targets = _ohlcv_targets()
+    log.info("OHLCV targets: %d tickers (%d classified + benchmarks)",
+             len(targets), len(targets) - 1)
+
+    today = date.today()
+    month_pairs = []
+    y, m = today.year, today.month
+    for _ in range(months):
+        month_pairs.append((y, m))
+        m -= 1
+        if m == 0:
+            m, y = 12, y - 1
+
+    total_rows = errors = skipped = 0
+    iter_idx = 0
+    total_iters = len(targets) * len(month_pairs)
+
+    for ticker_id, market in targets:
+        for year, month in month_pairs:
+            iter_idx += 1
+            if _ohlcv_already_have(ticker_id, year, month):
+                skipped += 1
+                continue
+
+            log.info("[%d/%d] OHLCV %s %s %d-%02d",
+                     iter_idx, total_iters, market, ticker_id, year, month)
+            try:
+                if market == "TWSE":
+                    rows = twse.fetch_twse_ohlcv_month(ticker_id, year, month)
+                else:
+                    rows = twse.fetch_tpex_ohlcv_month(ticker_id, year, month)
+                if rows:
+                    df = transform.ohlcv_to_frame(rows)
+                    count = loader.upsert_ohlcv(df)
+                    total_rows += count
+                # No log_ingestion per-month — would explode the log table.
+                # Skip detection uses raw_twse_ohlcv directly.
+            except Exception as e:
+                log.error("  Error %s/%s %d-%02d: %s", market, ticker_id, year, month, e)
+                errors += 1
+
+            time.sleep(TWSE_REQUEST_DELAY)
+
+    # Summary log entry — one row per backfill run, not per (ticker, month).
+    loader.log_ingestion(
+        "twse_ohlcv",
+        date.today().isoformat(),
+        total_rows,
+        "ok" if errors == 0 else "partial",
+        f"months={months} targets={len(targets)} skipped={skipped} errors={errors}",
+    )
+
+    log.info("OHLCV backfill done: %d rows, %d skipped, %d errors",
+             total_rows, skipped, errors)
+    return {"source": "ohlcv", "rows": total_rows, "skipped": skipped, "errors": errors}
+
+
 def backfill_revenue() -> dict:
     """Backfill monthly revenue (latest month only — MOPS has no historical API)."""
     log.info("=== Backfilling Monthly Revenue ===")
@@ -185,10 +284,12 @@ def main():
     parser = argparse.ArgumentParser(description="Backfill TWSE/TPEX data into Supabase")
     parser.add_argument("--days", type=int, default=TWSE_BACKFILL_DAYS,
                         help="Number of trading days to backfill (default: %(default)s)")
-    parser.add_argument("--only", choices=["t86", "holdings", "margin", "revenue"],
+    parser.add_argument("--only", choices=["t86", "holdings", "margin", "revenue", "ohlcv"],
                         help="Only run one specific backfill")
     parser.add_argument("--skip-t86", action="store_true",
                         help="Skip T86 backfill (do holdings/margin/revenue)")
+    parser.add_argument("--ohlcv-months", type=int, default=12,
+                        help="Months of OHLCV history (default: 12, only used with --only ohlcv)")
     args = parser.parse_args()
 
     results = []
@@ -203,6 +304,8 @@ def main():
             results.append(backfill_margin(args.days))
         elif args.only == "revenue":
             results.append(backfill_revenue())
+        elif args.only == "ohlcv":
+            results.append(backfill_ohlcv(args.ohlcv_months))
     else:
         if not args.skip_t86:
             results.append(backfill_t86(args.days))
