@@ -475,6 +475,105 @@ def query_backtest_compound(
     }
 
 
+# ── News (Phase 2a — ingestion only, no sentiment yet) ───────────────────
+
+def query_news_recent(
+    days: int = 1,
+    source: Optional[str] = None,
+    lang: Optional[str] = None,
+    limit: int = 50,
+) -> list[dict]:
+    """Recent articles. Sorted by published_at, falling back to fetched_at
+    when the source feed didn't include a date (Nikkei Asia, some Atom
+    feeds). Cap at 200 to keep response sizes sane."""
+    limit = min(max(limit, 1), 200)
+    conditions = ["COALESCE(published_at, fetched_at) >= now() - (%s || ' days')::interval"]
+    params: list = [str(days)]
+    if source:
+        conditions.append("source = %s")
+        params.append(source)
+    if lang:
+        conditions.append("lang = %s")
+        params.append(lang)
+
+    where = " AND ".join(conditions)
+    sql = f"""
+        SELECT url, source, feed_name, lang, title, raw_summary,
+               published_at, fetched_at
+        FROM raw_news
+        WHERE {where}
+        ORDER BY COALESCE(published_at, fetched_at) DESC
+        LIMIT {limit}
+    """
+    return _serialize(_fetch(sql, tuple(params)))
+
+
+def query_news_for_ticker(
+    ticker_id: str,
+    days: int = 14,
+    limit: int = 30,
+) -> list[dict]:
+    """Articles mentioning a ticker.
+
+    Until Phase 2b's entity-extraction populates ticker_mentions, falls
+    back to text matching: ticker code in title (e.g. '2330') OR company
+    name. Looks up names from dim_ticker so we get the curated company
+    name and any aliases stored there.
+    """
+    limit = min(max(limit, 1), 100)
+
+    # Look up the ticker's company name + ai_pillar context
+    name_rows = _fetch(
+        "SELECT company_name, ai_pillar, node FROM dim_ticker WHERE ticker_id = %s",
+        (ticker_id,),
+    )
+    if not name_rows:
+        return []
+    company_name = name_rows[0]["company_name"]
+
+    # Build a flexible match: code-as-substring OR name-as-substring.
+    # Code match needs to be word-boundary-aware (avoid '2330' matching
+    # '23300') — Postgres doesn't have \b, so use a regex.
+    sql = """
+        SELECT url, source, feed_name, lang, title, raw_summary,
+               published_at, fetched_at
+        FROM raw_news
+        WHERE COALESCE(published_at, fetched_at) >= now() - (%s || ' days')::interval
+          AND (
+              -- ticker mentions array (Phase 2b will populate)
+              %s = ANY(COALESCE(ticker_mentions, ARRAY[]::TEXT[]))
+              -- text fallback: code as a standalone token
+              OR title ~ ('(^|[^0-9])' || %s || '([^0-9]|$)')
+              -- text fallback: company name substring (case-insensitive)
+              OR title ILIKE %s
+              OR (raw_summary IS NOT NULL AND raw_summary ILIKE %s)
+          )
+        ORDER BY COALESCE(published_at, fetched_at) DESC
+        LIMIT %s
+    """
+    name_pattern = f"%{company_name}%"
+    return _serialize(_fetch(sql, (
+        str(days),
+        ticker_id, ticker_id,
+        name_pattern, name_pattern,
+        limit,
+    )))
+
+
+def query_news_source_status() -> list[dict]:
+    """Per-source freshness — how recent is each feed's content?
+    Useful for catching dead/stale sources."""
+    sql = """
+        SELECT source, feed_name, count(*) AS articles,
+               max(published_at) AS latest_published,
+               max(fetched_at) AS latest_fetched
+        FROM raw_news
+        GROUP BY source, feed_name
+        ORDER BY source
+    """
+    return _serialize(_fetch(sql))
+
+
 # ── Data Status ────────────────────────────────────────────────────────────
 
 def query_data_status() -> dict:

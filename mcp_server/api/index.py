@@ -427,6 +427,84 @@ def q_backtest_compound(
     )
 
 
+# ── Tool: News Recent ─────────────────────────────────────────────────────
+
+@mcp.tool()
+def n_recent(
+    days: int = 1,
+    source: Optional[str] = None,
+    lang: Optional[str] = None,
+    limit: int = 50,
+) -> dict:
+    """Recent news articles harvested into raw_news.
+
+    Articles come from RSS feeds (DigiTimes Asia, Nikkei Asia, Bloomberg
+    Tech/Markets, Federal Reserve, ECB) and Google News query feeds
+    (per-pillar, per-theme, both English and Traditional Chinese for
+    Taiwan-domestic coverage).
+
+    Phase 2a: titles + summaries only, no sentiment scores yet.
+
+    Args:
+        days: Lookback window in days (default 1 = last 24h).
+        source: Filter to one feed key, e.g. 'digitimes', 'gnews-tw-ai-zh'.
+                Use n_source_status() to list available source keys.
+        lang: Filter to 'en' or 'zh-Hant'.
+        limit: Max articles to return (default 50, capped at 200).
+    """
+    rows = db_v2.query_news_recent(days=days, source=source, lang=lang, limit=limit)
+    return _stamp(
+        {"articles": rows, "count": len(rows), "days_window": days},
+        source="raw_news",
+        as_of=_today_iso(),
+        freshness="hourly",
+    )
+
+
+# ── Tool: News for Ticker ─────────────────────────────────────────────────
+
+@mcp.tool()
+def n_for_ticker(
+    ticker_id: str,
+    days: int = 14,
+    limit: int = 30,
+) -> dict:
+    """Articles mentioning a specific ticker.
+
+    Until the entity-extraction layer (Phase 2b) populates a structured
+    ticker-mentions array, this falls back to text matching: ticker code
+    appearing as a standalone token in the title, OR the company name
+    appearing in title or summary. Company name comes from dim_ticker.
+
+    Args:
+        ticker_id: TWSE/TPEX code, e.g. '2330' for TSMC.
+        days: Lookback window (default 14).
+        limit: Max articles (default 30, capped at 100).
+    """
+    rows = db_v2.query_news_for_ticker(ticker_id, days=days, limit=limit)
+    return _stamp(
+        {"ticker_id": ticker_id, "articles": rows, "count": len(rows),
+         "days_window": days},
+        source="raw_news",
+        as_of=_today_iso(),
+        freshness="hourly",
+    )
+
+
+# ── Tool: News Source Status ──────────────────────────────────────────────
+
+@mcp.tool()
+def n_source_status() -> dict:
+    """Per-source freshness report. Use to verify feeds are still updating."""
+    rows = db_v2.query_news_source_status()
+    return _stamp(
+        {"sources": rows, "count": len(rows)},
+        source="raw_news",
+        as_of=_today_iso(),
+        freshness="real_time",
+    )
+
+
 # ── Tool: Data Status ─────────────────────────────────────────────────────
 
 @mcp.tool()
@@ -486,6 +564,9 @@ def sc_capabilities() -> dict:
             {"name": "q_screener", "purpose": "Filter classified universe by AND-combined indicator conditions"},
             {"name": "q_backtest", "purpose": "Backtest a single-threshold signal rule"},
             {"name": "q_backtest_compound", "purpose": "Backtest multi-condition (AND) compound rules; up to 4 conditions"},
+            {"name": "n_recent", "purpose": "Recent news articles (RSS + Google News); titles + summaries"},
+            {"name": "n_for_ticker", "purpose": "Articles mentioning a ticker (text-match fallback until Phase 2b entity extraction)"},
+            {"name": "n_source_status", "purpose": "Per-source freshness — verify feeds still updating"},
         ],
     }
 

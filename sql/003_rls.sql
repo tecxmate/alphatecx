@@ -69,6 +69,21 @@ BEGIN
   END IF;
 END$$;
 
+-- News (Phase 2a). Wrapped in DO so 003 can run even if 005 hasn't.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='raw_news') THEN
+    EXECUTE 'GRANT SELECT ON raw_news TO mcp_viewer';
+    EXECUTE 'ALTER TABLE raw_news ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'DROP POLICY IF EXISTS "mcp_viewer_read_news" ON raw_news';
+    EXECUTE $POLICY$
+      CREATE POLICY "mcp_viewer_read_news"
+        ON raw_news FOR SELECT TO mcp_viewer USING (true)
+    $POLICY$;
+  END IF;
+END$$;
+
 -- Explicitly deny writes
 REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public FROM mcp_viewer;
 
