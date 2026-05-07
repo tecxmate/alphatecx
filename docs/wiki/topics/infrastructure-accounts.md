@@ -16,17 +16,25 @@ Where the production resources live and which login/org owns each. Recorded so f
 
 ## Neon Postgres
 
+**Active project (since 2026-05-08):**
+- **Endpoint:** `ep-cold-lab-aqklxtzs` (region `c-8.us-east-1.aws`)
+- **Region:** AWS `us-east-1`
+- **Postgres version:** 17.8
+- **Plan:** Free tier
+- **Project name:** `alphatecx-v2` (or whatever name was assigned at creation)
+- **Created:** 2026-05-08, in a Neon account Niko owns directly (not Tecxmate)
+- **Console:** <https://console.neon.tech> — log in with the account you own.
+- **Auth setup:** project was created with **Neon Auth** enabled (`neon_auth.*` schema present). Important quirk: this set the database `search_path` to `''` instead of `"$user", public, neon_auth`. Application code compensates via `psycopg_pool` `configure` hook in `loader.py` and `db_v2.py` which runs `SET search_path TO public, neon_auth` per-connection. The Neon pooler rejects `options=-csearch_path` at startup, so the configure hook is the only viable path.
+- **Roles:**
+  - `neondb_owner` — writer; used by harvester, backfill, schema migrations. DSN in root `.env` as `DATABASE_URL`.
+  - `mcp_viewer` — read-only role; SELECT on raw + view + dim_supply_chain + ingestion_log; no INSERT/UPDATE/DELETE; password in root `.env` as `MCP_VIEWER_PASSWORD`. DSN in `mcp_server/.env` as `MCP_DATABASE_URL`.
+
+**Old project (decommission window):**
 - **Organization:** `Tecxmate` (`org-muddy-hill-84308768`)
 - **Project:** `alphatecx` (`restless-butterfly-45054019`)
 - **Console:** <https://console.neon.tech/app/projects/restless-butterfly-45054019>
-- **Region:** AWS `us-east-1` (proxy host `c-5.us-east-1.aws.neon.tech`)
-- **Postgres version:** 17
-- **Plan:** Free tier — 0.25 CU fixed, 512 MiB branch logical-size limit, 6h history retention
-- **Created:** 2026-04-29 (originally provisioned for v1; v2 reuses it)
-- **Roles:**
-  - `neondb_owner` — writer; used by harvester, backfill, schema migrations. DSN in root `.env` as `DATABASE_URL`.
-  - `mcp_viewer` — read-only role created 2026-05-07; SELECT on raw + view + dim_supply_chain + ingestion_log; no INSERT/UPDATE/DELETE; password generated locally and stored in root `.env` as `MCP_VIEWER_PASSWORD`. DSN in `mcp_server/.env` as `MCP_DATABASE_URL`. Used by both local MCP and Vercel-deployed MCP.
-- **Login:** the Google or GitHub identity tied to "Tecxmate" — separate from the Vercel `nikolasdoan` account.
+- **Status:** running but no longer written to. DSNs preserved in `.env.old-tecxmate-20260508` (root + `mcp_server/`) as a 24h safety net. Login was tied to a Tecxmate-affiliated account that Niko could not access from his usual identity, which is why the migration happened.
+- **Decommission:** delete from Neon console after 2026-05-09 once the new project is verified stable.
 
 ## Vercel
 

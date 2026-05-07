@@ -27,10 +27,21 @@ def _safe_col(col: str, default: str) -> str:
     return col if col in _ALLOWED_FLOW_COLS else default
 
 
+def _configure(conn):
+    """Neon's pooler clears session settings on reset and rejects
+    `options=-csearch_path` at startup. Set search_path per-connection."""
+    with conn.cursor() as c:
+        c.execute("SET search_path TO public, neon_auth")
+    conn.commit()
+
+
 def pool() -> ConnectionPool:
     global _pool
     if _pool is None:
-        _pool = ConnectionPool(DATABASE_URL, min_size=0, max_size=3, open=True)
+        _pool = ConnectionPool(
+            DATABASE_URL, min_size=0, max_size=3, open=True,
+            configure=_configure,
+        )
     return _pool
 
 

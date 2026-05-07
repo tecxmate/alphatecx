@@ -25,13 +25,24 @@ log = logging.getLogger("loader")
 _pool: Optional[ConnectionPool] = None
 
 
+def _configure(conn):
+    """Run on each new connection. Neon's pooler clears session settings on
+    reset and rejects `options=-csearch_path` at startup, so we set it here."""
+    with conn.cursor() as c:
+        c.execute("SET search_path TO public, neon_auth")
+    conn.commit()
+
+
 def pool() -> ConnectionPool:
     """Lazy singleton connection pool."""
     global _pool
     if _pool is None:
         if not DATABASE_URL:
             raise RuntimeError("DATABASE_URL not set in .env")
-        _pool = ConnectionPool(DATABASE_URL, min_size=0, max_size=4, open=True)
+        _pool = ConnectionPool(
+            DATABASE_URL, min_size=0, max_size=4, open=True,
+            configure=_configure,
+        )
     return _pool
 
 

@@ -110,3 +110,15 @@ attributed_to: [niko]   belongs_to: [infrastructure-accounts]
 - Used Neon MCP `list_projects` to identify the project: org `Tecxmate` (`org-muddy-hill-84308768`), project `alphatecx` (`restless-butterfly-45054019`), AWS `us-east-1`, Postgres 17, free tier.
 - Console: <https://console.neon.tech/app/projects/restless-butterfly-45054019>. Login is the Google/GitHub identity tied to the "Tecxmate" org — separate from the Vercel `nikolasdoan` account.
 - Captured all account ownership in [topics/infrastructure-accounts.md](topics/infrastructure-accounts.md) so this doesn't need re-discovery.
+
+## [2026-05-08] decision | Migrated Neon DB to user-owned account
+attributed_to: [niko]   belongs_to: [infrastructure-accounts, system-architecture]
+- Old project (`alphatecx`, Tecxmate org) was inaccessible to Niko via web console — login was tied to a Tecxmate-affiliated identity he could no longer access. App code worked via stored DSN, but DB management (rotating creds, scaling, backups) was blocked.
+- Niko created a new Neon project (`ep-cold-lab-aqklxtzs`, c-8.us-east-1.aws, PG 17.8) under an account he owns directly, with Neon Auth enabled.
+- Migrated 1,495,632 data rows + 1,050 ingestion_log entries via `pg_dump --data-only | psql --single-transaction`. Row counts verified identical to source.
+- New project quirk: Neon Auth set `search_path = ''`. Pooler rejects `options=-csearch_path` at connection startup. Application compensates via `psycopg_pool` `configure` hook (`loader.py`, `mcp_server/api/db_v2.py`) which runs `SET search_path TO public, neon_auth` per connection.
+- Generated fresh `mcp_viewer` password; applied `sql/003_rls.sql` on new DB; verified read-only boundary (SELECT works, INSERT denied).
+- Replaced env vars: root `.env` (`DATABASE_URL`, `MCP_VIEWER_PASSWORD`), `mcp_server/.env` (`MCP_DATABASE_URL`, `DATABASE_URL` fallback), Vercel Production + Development (`MCP_DATABASE_URL`).
+- Redeployed `alphatecx-v2-mcp` on Vercel; smoke-tested `sc_data_status`, `sc_sector_momentum` end-to-end on production URL.
+- Old DSNs preserved in `.env.old-tecxmate-20260508` (gitignored) for 24h safety net. Old project to be deleted after 2026-05-09.
+- `.gitignore` updated to cover `.env.old-*` so the backup files can never be accidentally committed.

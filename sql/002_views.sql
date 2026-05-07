@@ -128,45 +128,40 @@ WITH
     FROM raw_twse_t86 t
     JOIN dated d ON d.date = t.date
     LEFT JOIN dim_supply_chain sc ON sc.ticker_id = t.ticker_id
+  ),
+  streaks AS (
+    SELECT ticker_id, MIN(day_rank) AS first_non_buy_day
+    FROM flows
+    WHERE foreign_net <= 0
+    GROUP BY ticker_id
   )
 SELECT
-  ticker_id,
-  company_name,
-  market,
-  ai_pillar,
-  node,
+  f.ticker_id,
+  f.company_name,
+  f.market,
+  f.ai_pillar,
+  f.node,
   -- Latest day
-  SUM(CASE WHEN day_rank = 1 THEN foreign_net ELSE 0 END) AS foreign_1d,
-  SUM(CASE WHEN day_rank = 1 THEN total_net   ELSE 0 END) AS total_1d,
+  SUM(CASE WHEN f.day_rank = 1 THEN f.foreign_net ELSE 0 END) AS foreign_1d,
+  SUM(CASE WHEN f.day_rank = 1 THEN f.total_net   ELSE 0 END) AS total_1d,
   -- 3-day
-  SUM(CASE WHEN day_rank <= 3 THEN foreign_net ELSE 0 END) AS foreign_3d,
-  SUM(CASE WHEN day_rank <= 3 THEN total_net   ELSE 0 END) AS total_3d,
+  SUM(CASE WHEN f.day_rank <= 3 THEN f.foreign_net ELSE 0 END) AS foreign_3d,
+  SUM(CASE WHEN f.day_rank <= 3 THEN f.total_net   ELSE 0 END) AS total_3d,
   -- 5-day
-  SUM(CASE WHEN day_rank <= 5 THEN foreign_net ELSE 0 END) AS foreign_5d,
-  SUM(CASE WHEN day_rank <= 5 THEN total_net   ELSE 0 END) AS total_5d,
+  SUM(CASE WHEN f.day_rank <= 5 THEN f.foreign_net ELSE 0 END) AS foreign_5d,
+  SUM(CASE WHEN f.day_rank <= 5 THEN f.total_net   ELSE 0 END) AS total_5d,
   -- 10-day
-  SUM(CASE WHEN day_rank <= 10 THEN foreign_net ELSE 0 END) AS foreign_10d,
-  SUM(CASE WHEN day_rank <= 10 THEN total_net   ELSE 0 END) AS total_10d,
+  SUM(CASE WHEN f.day_rank <= 10 THEN f.foreign_net ELSE 0 END) AS foreign_10d,
+  SUM(CASE WHEN f.day_rank <= 10 THEN f.total_net   ELSE 0 END) AS total_10d,
   -- 20-day
-  SUM(foreign_net) AS foreign_20d,
-  SUM(total_net)   AS total_20d,
+  SUM(f.foreign_net) AS foreign_20d,
+  SUM(f.total_net)   AS total_20d,
   -- Consecutive buy days (foreign net > 0 streak from latest)
-  (
-    SELECT COUNT(*)
-    FROM flows f2
-    WHERE f2.ticker_id = flows.ticker_id
-      AND f2.day_rank <= 20
-      AND f2.foreign_net > 0
-      AND NOT EXISTS (
-        SELECT 1 FROM flows f3
-        WHERE f3.ticker_id = f2.ticker_id
-          AND f3.day_rank < f2.day_rank
-          AND f3.foreign_net <= 0
-      )
-  ) AS consecutive_foreign_buy_days,
+  COALESCE(MAX(s.first_non_buy_day) - 1, 20) AS consecutive_foreign_buy_days,
   now() AS refreshed_at
-FROM flows
-GROUP BY ticker_id, company_name, market, ai_pillar, node
+FROM flows f
+LEFT JOIN streaks s ON s.ticker_id = f.ticker_id
+GROUP BY f.ticker_id, f.company_name, f.market, f.ai_pillar, f.node
 ORDER BY foreign_5d DESC;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vtm_ticker
