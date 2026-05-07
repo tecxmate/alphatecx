@@ -104,3 +104,9 @@ attributed_to: [antigravity-agent]   belongs_to: [mcp-server, system-architectur
 - Production: <https://alphatecx-v2-mcp.vercel.app>. Smoke-tested `/health`, 404 fallback, `sc_sector_momentum`, `sc_data_status` end-to-end.
 - Bug surfaced + fixed: `sc_data_status` queries `ingestion_log`, but `003_rls.sql` originally blocked viewer access to it. Granted SELECT + RLS policy on `ingestion_log` to `mcp_viewer` in prod and updated `sql/003_rls.sql` to match. The original "internal only" intent was inconsistent with exposing a status tool publicly.
 - Cold-start verified < 5s; subsequent calls hit warm pool. Free-tier Neon connection pool sized at max=3 in `db_v2.py` so multiple concurrent serverless invocations don't exhaust it.
+
+## [2026-05-08] external | Located Neon project — Tecxmate org, project alphatecx
+attributed_to: [niko]   belongs_to: [infrastructure-accounts]
+- Used Neon MCP `list_projects` to identify the project: org `Tecxmate` (`org-muddy-hill-84308768`), project `alphatecx` (`restless-butterfly-45054019`), AWS `us-east-1`, Postgres 17, free tier.
+- Console: <https://console.neon.tech/app/projects/restless-butterfly-45054019>. Login is the Google/GitHub identity tied to the "Tecxmate" org — separate from the Vercel `nikolasdoan` account.
+- Captured all account ownership in [topics/infrastructure-accounts.md](topics/infrastructure-accounts.md) so this doesn't need re-discovery.

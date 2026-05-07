@@ -26,6 +26,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [Taiwan AI Supply Chain Map](topics/taiwan-ai-supply-chain.md) — 4-pillar strategic map (Semiconductor, Equipment, Infrastructure, Energy)
 - [System Architecture (v2)](topics/system-architecture.md) — Neon-centered stateful pipeline, schema, MCP security, daily workflow
 - [Historical Data Backfill](topics/historical-backfill.md) — 90-day backfill strategy, rate limits, storage estimates
+- [Infrastructure accounts](topics/infrastructure-accounts.md) — Neon, Vercel, Telegram: which org/account owns what, console URLs
 
 ## Log
 - [log.md](log.md) — append-only chronological record
