@@ -17,6 +17,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [2026-05-07 — v2 Implementation Decisions](decisions/2026-05-07-v2-implementation-decisions.md) — Supabase confirmed, Telegram alerts, historical backfill, v1 coexistence, Claude Code as tech team
 - [2026-05-07 — Neon over Supabase](decisions/2026-05-07-neon-over-supabase.md) — switched to Neon Postgres (v1's DB); Supabase not necessary for standard Postgres workloads
 - [2026-05-07 — V2 review fixes](decisions/2026-05-07-v2-review-fixes.md) — review of Gemini's V2; SQL injection, timezone, idempotency, view bug, RLS portability
+- [2026-05-08 — Analysis system plan](decisions/2026-05-08-analysis-system-plan.md) — phased plan for quant + news + dual-agent analysis layered on v2; Scheduled Tasks for digests, Skills for depth
 
 ## Topics
 *Areas, products, events, and synthesised concepts. Topics don't make decisions; stakeholders do.*

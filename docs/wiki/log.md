@@ -130,3 +130,11 @@ attributed_to: [niko]   belongs_to: [system-architecture]
 - Writers point at `dim_ticker`: `loader.upsert_supply_chain` (function name kept for back-compat), `seed_supply_chain.py`. Readers untouched: materialized views in `002_views.sql` JOIN `dim_ticker` (so they see all 7k tickers and COALESCE NULLs to 'unclassified'); MCP `query_supply_chain` reads `dim_supply_chain` (the 27-row view).
 - `sc_data_status` table_names list: `dim_supply_chain` → `dim_ticker` so `pg_stat_user_tables.n_live_tup` returns the meaningful count.
 - Live DB migrated atomically; materialized views recreated and refreshed; Vercel redeployed; verified `sc_supply_chain_map` returns 27 rows with TSMC/Foxconn/etc, no NULL leak.
+
+## [2026-05-08] decision | Analysis system plan locked
+attributed_to: [niko]   belongs_to: [system-architecture]
+- Filed [decisions/2026-05-08-analysis-system-plan.md](decisions/2026-05-08-analysis-system-plan.md). Phased plan for extending v2 from a data pipeline into a decision system.
+- Three layers: MCP/Neon (structured), daily digests in `docs/digests/YYYY-MM-DD/*.md` (15 Claude Scheduled Tasks/day budget), and Skills for on-demand dual-agent depth.
+- Build order: sequential, validate each phase. Phase 0 = OHLCV backfill, Phase 1 = quant tools + backtest harness, Phase 2 = news pipeline, Phase 3 = first 5 scheduled tasks, Phase 4 = first 2 skills.
+- Decided: backtest harness lands in Phase 1 (not deferred), even though ~90 days of T86 is thin. Discipline matters more than data depth right now.
+- Dual-agent narrative-naive vs narrative-aware reasoning lives as a Claude Skill (manual, on-demand), not a scheduled task. Cron version is a cheap "disagreement scan" that flags candidates for the deep skill to analyze.
