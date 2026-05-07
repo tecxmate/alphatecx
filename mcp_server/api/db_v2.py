@@ -224,7 +224,7 @@ def query_compare_nodes(
 def query_data_status() -> dict:
     table_names = [
         "raw_twse_t86", "raw_twse_holdings", "raw_twse_margin",
-        "raw_twse_ohlcv", "raw_monthly_revenue", "dim_supply_chain",
+        "raw_twse_ohlcv", "raw_monthly_revenue", "dim_ticker",
     ]
     # Use pg_stat_user_tables for O(1) approximate counts instead of full scans.
     # Stats lag slightly behind ANALYZE; that's fine for a status endpoint.

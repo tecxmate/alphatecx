@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed dim_supply_chain with the known AI supply chain mappings.
+"""Seed the curated AI-supply-chain ticker classifications into dim_ticker.
 
 These are the companies from the strategic map (docs/wiki/topics/taiwan-ai-supply-chain.md).
 Ticker codes are best-effort; verify against TWSE/TPEX.
@@ -58,8 +58,8 @@ SUPPLY_CHAIN = [
 
 def main():
     sql = """
-        INSERT INTO dim_supply_chain (ticker_id, company_name, market,
-                                       ai_pillar, node, us_partners)
+        INSERT INTO dim_ticker (ticker_id, company_name, market,
+                                ai_pillar, node, us_partners)
         VALUES (%s, %s, %s, %s, %s, %s)
         ON CONFLICT (ticker_id) DO UPDATE SET
             company_name = EXCLUDED.company_name,

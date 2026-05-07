@@ -3,12 +3,15 @@
 -- see docs/wiki/topics/system-architecture.md
 
 -- ============================================================================
--- 1. dim_supply_chain — static reference: ticker → AI pillar / node
+-- 1. dim_ticker — universe of every ticker we've ever seen on TWSE/TPEX
 -- ============================================================================
--- Semi-dynamic: tickers auto-discovered from T86 API, pillar/node enriched
--- manually or via classification script.
+-- Auto-discovered: each T86 fetch upserts every ticker it returns. Most rows
+-- are unclassified (ETFs, small caps, anything that ever traded). The 27
+-- supply-chain-relevant tickers carry ai_pillar + node; everything else has
+-- those columns NULL. The `dim_supply_chain` view below filters to the
+-- classified subset, which is what callers usually mean by "supply chain".
 
-CREATE TABLE IF NOT EXISTS dim_supply_chain (
+CREATE TABLE IF NOT EXISTS dim_ticker (
     ticker_id    TEXT PRIMARY KEY,            -- e.g. '2330'
     company_name TEXT NOT NULL DEFAULT '',
     market       TEXT NOT NULL DEFAULT 'TWSE', -- 'TWSE' or 'TPEX'
@@ -20,8 +23,16 @@ CREATE TABLE IF NOT EXISTS dim_supply_chain (
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_dsc_pillar ON dim_supply_chain (ai_pillar);
-CREATE INDEX IF NOT EXISTS idx_dsc_node   ON dim_supply_chain (node);
+CREATE INDEX IF NOT EXISTS idx_dt_pillar ON dim_ticker (ai_pillar);
+CREATE INDEX IF NOT EXISTS idx_dt_node   ON dim_ticker (node);
+
+-- Filtered view — the 27-ish classified rows, named for what callers expect.
+-- security_invoker=true keeps RLS on dim_ticker enforced under the caller.
+CREATE OR REPLACE VIEW dim_supply_chain WITH (security_invoker = true) AS
+SELECT ticker_id, company_name, market, ai_pillar, node, us_partners,
+       created_at, updated_at
+FROM dim_ticker
+WHERE ai_pillar IS NOT NULL;
 
 -- ============================================================================
 -- 2. raw_twse_t86 — daily institutional net buy/sell (Priority 1)

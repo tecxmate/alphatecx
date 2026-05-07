@@ -122,3 +122,11 @@ attributed_to: [niko]   belongs_to: [infrastructure-accounts, system-architectur
 - Redeployed `alphatecx-v2-mcp` on Vercel; smoke-tested `sc_data_status`, `sc_sector_momentum` end-to-end on production URL.
 - Old DSNs preserved in `.env.old-tecxmate-20260508` (gitignored) for 24h safety net. Old project to be deleted after 2026-05-09.
 - `.gitignore` updated to cover `.env.old-*` so the backup files can never be accidentally committed.
+
+## [2026-05-08] decision | Renamed dim_supply_chain → dim_ticker; added filtered view
+attributed_to: [niko]   belongs_to: [system-architecture]
+- Old setup conflated two responsibilities: a 7,096-row ticker universe (auto-discovered from T86) and a 27-row curated supply-chain classification. Calling it `dim_supply_chain` made the second invisible — Niko opened the Tables view and saw mostly NULLs.
+- Renamed the physical table to `dim_ticker`. Created `dim_supply_chain` as a view with `WITH (security_invoker = true)`, filtering `WHERE ai_pillar IS NOT NULL`. Indexes renamed `idx_dsc_*` → `idx_dt_*`. RLS policy renamed `mcp_viewer_read_supply_chain` → `mcp_viewer_read_ticker`; view inherits via security_invoker.
+- Writers point at `dim_ticker`: `loader.upsert_supply_chain` (function name kept for back-compat), `seed_supply_chain.py`. Readers untouched: materialized views in `002_views.sql` JOIN `dim_ticker` (so they see all 7k tickers and COALESCE NULLs to 'unclassified'); MCP `query_supply_chain` reads `dim_supply_chain` (the 27-row view).
+- `sc_data_status` table_names list: `dim_supply_chain` → `dim_ticker` so `pg_stat_user_tables.n_live_tup` returns the meaningful count.
+- Live DB migrated atomically; materialized views recreated and refreshed; Vercel redeployed; verified `sc_supply_chain_map` returns 27 rows with TSMC/Foxconn/etc, no NULL leak.

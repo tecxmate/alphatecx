@@ -5,7 +5,7 @@
 -- ============================================================================
 -- view_sector_momentum — the magic layer
 -- ============================================================================
--- Joins raw_twse_t86 with dim_supply_chain to aggregate institutional flows
+-- Joins raw_twse_t86 with dim_ticker to aggregate institutional flows
 -- by AI pillar and supply chain node. This is what Claude queries.
 
 -- Drop first so we can recreate cleanly
@@ -40,7 +40,7 @@ WITH
       COALESCE(sc.node, 'unclassified')      AS node
     FROM raw_twse_t86 t
     JOIN dated d ON d.date = t.date
-    LEFT JOIN dim_supply_chain sc ON sc.ticker_id = t.ticker_id
+    LEFT JOIN dim_ticker sc ON sc.ticker_id = t.ticker_id
   ),
   -- Aggregated by pillar + node
   sector_agg AS (
@@ -127,7 +127,7 @@ WITH
       COALESCE(sc.node, 'unclassified') AS node
     FROM raw_twse_t86 t
     JOIN dated d ON d.date = t.date
-    LEFT JOIN dim_supply_chain sc ON sc.ticker_id = t.ticker_id
+    LEFT JOIN dim_ticker sc ON sc.ticker_id = t.ticker_id
   ),
   streaks AS (
     SELECT ticker_id, MIN(day_rank) AS first_non_buy_day

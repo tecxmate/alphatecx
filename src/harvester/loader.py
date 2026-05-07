@@ -250,26 +250,28 @@ def upsert_revenue(df: pl.DataFrame, c=None) -> int:
 
 
 def upsert_supply_chain(df: pl.DataFrame, c=None) -> int:
-    """Upsert ticker mappings into dim_supply_chain.
+    """Upsert ticker rows into the universe table (dim_ticker).
 
-    Only updates company_name and market — does NOT overwrite existing
-    ai_pillar/node classifications (those are manually curated).
+    Only fills company_name and market — does NOT overwrite existing
+    ai_pillar/node classifications, which are manually curated and surface
+    via the dim_supply_chain view. Function name kept for backwards
+    compatibility with backfill/run.py and harvester/daily.py callers.
     """
     if df.is_empty():
         return 0
-    _save_local(df, "dim_supply_chain")
+    _save_local(df, "dim_ticker")
     records = _df_to_records(df)
     sql = """
-        INSERT INTO dim_supply_chain (ticker_id, company_name, market)
+        INSERT INTO dim_ticker (ticker_id, company_name, market)
         VALUES (%(ticker_id)s, %(company_name)s, %(market)s)
         ON CONFLICT (ticker_id) DO UPDATE SET
             company_name = COALESCE(NULLIF(EXCLUDED.company_name, ''),
-                                    dim_supply_chain.company_name),
+                                    dim_ticker.company_name),
             updated_at = now()
     """
     with _cursor_or_default(c) as cc:
         cc.executemany(sql, records)
-    log.info("Upserted %d tickers into dim_supply_chain", len(records))
+    log.info("Upserted %d tickers into dim_ticker", len(records))
     return len(records)
 
 

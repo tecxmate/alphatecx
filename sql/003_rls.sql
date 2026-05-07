@@ -27,7 +27,8 @@ GRANT USAGE ON SCHEMA public TO mcp_viewer;
 GRANT SELECT ON view_sector_momentum TO mcp_viewer;
 GRANT SELECT ON view_ticker_momentum TO mcp_viewer;
 
--- Read-only on reference table
+-- Read-only on reference table + the filtered view layered on top
+GRANT SELECT ON dim_ticker TO mcp_viewer;
 GRANT SELECT ON dim_supply_chain TO mcp_viewer;
 
 -- Read-only on raw tables (for drill-down, if needed)
@@ -54,7 +55,7 @@ ALTER TABLE raw_twse_holdings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE raw_twse_margin ENABLE ROW LEVEL SECURITY;
 ALTER TABLE raw_twse_ohlcv ENABLE ROW LEVEL SECURITY;
 ALTER TABLE raw_monthly_revenue ENABLE ROW LEVEL SECURITY;
-ALTER TABLE dim_supply_chain ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dim_ticker ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingestion_log ENABLE ROW LEVEL SECURITY;
 
 -- Allow mcp_viewer to read all rows from data tables.
@@ -80,9 +81,10 @@ DROP POLICY IF EXISTS "mcp_viewer_read_revenue" ON raw_monthly_revenue;
 CREATE POLICY "mcp_viewer_read_revenue"
   ON raw_monthly_revenue FOR SELECT TO mcp_viewer USING (true);
 
-DROP POLICY IF EXISTS "mcp_viewer_read_supply_chain" ON dim_supply_chain;
-CREATE POLICY "mcp_viewer_read_supply_chain"
-  ON dim_supply_chain FOR SELECT TO mcp_viewer USING (true);
+DROP POLICY IF EXISTS "mcp_viewer_read_ticker" ON dim_ticker;
+CREATE POLICY "mcp_viewer_read_ticker"
+  ON dim_ticker FOR SELECT TO mcp_viewer USING (true);
+-- The dim_supply_chain view inherits this via security_invoker=true.
 
 -- ingestion_log read policy — required by sc_data_status. error_msg fields
 -- could in theory leak DSN fragments from a connection-error trace; keep
