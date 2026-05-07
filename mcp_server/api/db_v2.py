@@ -10,8 +10,21 @@ from typing import Optional
 
 from psycopg_pool import ConnectionPool
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+DATABASE_URL = os.getenv("MCP_DATABASE_URL") or os.getenv("DATABASE_URL", "")
 _pool: ConnectionPool | None = None
+
+# Whitelisted column identifiers that may be interpolated into SQL.
+# Anything outside this set gets rejected — no f-string identifier ever reaches
+# the database without passing through here.
+_ALLOWED_FLOW_COLS = frozenset({
+    "foreign_1d", "foreign_3d", "foreign_5d", "foreign_10d", "foreign_20d",
+    "total_1d", "total_3d", "total_5d", "total_10d", "total_20d",
+    "consecutive_foreign_buy_days",
+})
+
+
+def _safe_col(col: str, default: str) -> str:
+    return col if col in _ALLOWED_FLOW_COLS else default
 
 
 def pool() -> ConnectionPool:
@@ -56,6 +69,7 @@ def query_sector_momentum(
         conditions.append("ai_pillar = %s")
         params.append(pillar)
 
+    order_col = _safe_col(order_col, "foreign_5d")
     where = " AND ".join(conditions)
     sql = f"""
         SELECT ai_pillar, node,
@@ -103,15 +117,7 @@ def query_ticker_momentum(
         params.append(min_streak)
 
     where = " AND ".join(conditions) if conditions else "1=1"
-
-    # Validate order column to prevent SQL injection
-    valid_order = [
-        "foreign_1d", "foreign_3d", "foreign_5d", "foreign_10d", "foreign_20d",
-        "total_1d", "total_3d", "total_5d", "total_10d", "total_20d",
-        "consecutive_foreign_buy_days",
-    ]
-    if order_col not in valid_order:
-        order_col = "foreign_5d"
+    order_col = _safe_col(order_col, "foreign_5d")
 
     sql = f"""
         SELECT ticker_id, company_name, market, ai_pillar, node,
@@ -186,6 +192,8 @@ def query_compare_nodes(
 ) -> list[dict]:
     if not nodes:
         return []
+    foreign_col = _safe_col(foreign_col, "foreign_5d")
+    total_col = _safe_col(total_col, "total_5d")
     placeholders = ", ".join(["%s"] * len(nodes))
     sql = f"""
         SELECT ai_pillar, node,
@@ -203,14 +211,19 @@ def query_compare_nodes(
 # ── Data Status ────────────────────────────────────────────────────────────
 
 def query_data_status() -> dict:
-    tables = {}
     table_names = [
         "raw_twse_t86", "raw_twse_holdings", "raw_twse_margin",
         "raw_twse_ohlcv", "raw_monthly_revenue", "dim_supply_chain",
     ]
-    for t in table_names:
-        rows = _fetch(f"SELECT COUNT(*) AS cnt FROM {t}")
-        tables[t] = rows[0]["cnt"] if rows else 0
+    # Use pg_stat_user_tables for O(1) approximate counts instead of full scans.
+    # Stats lag slightly behind ANALYZE; that's fine for a status endpoint.
+    stat_rows = _fetch(
+        "SELECT relname, n_live_tup FROM pg_stat_user_tables "
+        "WHERE relname = ANY(%s)",
+        (table_names,),
+    )
+    counts_by_name = {r["relname"]: int(r["n_live_tup"] or 0) for r in stat_rows}
+    tables = {t: counts_by_name.get(t, 0) for t in table_names}
 
     # Latest ingestion
     latest = _fetch("""

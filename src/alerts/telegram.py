@@ -112,4 +112,5 @@ def _fetch_top_sectors() -> list[dict]:
             cols = [d.name for d in c.description]
             return [dict(zip(cols, row)) for row in c.fetchall()]
     except Exception:
+        log.exception("Failed to fetch top sectors for daily Telegram digest")
         return []

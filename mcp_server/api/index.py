@@ -19,6 +19,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+# TWSE publishes data in Asia/Taipei. Using UTC mislabels _as_of for ~8 hours
+# every day; provenance has to match the source's wall clock.
+_TPE = ZoneInfo("Asia/Taipei")
 
 from dotenv import load_dotenv
 
@@ -47,7 +52,7 @@ def _stamp(payload: dict, source: str, as_of: Optional[str], freshness: str) -> 
 
 
 def _today_iso() -> str:
-    return datetime.utcnow().date().isoformat()
+    return datetime.now(_TPE).date().isoformat()
 
 
 # ── MCP server ──────────────────────────────────────────────────────────────
@@ -358,6 +363,12 @@ async def auth_gate(request: Request, call_next):
     return JSONResponse(status_code=404, content={"error": "not_found"})
 
 
-if MCP_BEARER_TOKEN:
-    app.mount(f"/mcp/{MCP_BEARER_TOKEN}", mcp_app)
+if not MCP_BEARER_TOKEN:
+    raise RuntimeError(
+        "MCP_BEARER_TOKEN is not set. Refusing to start with no auth — "
+        "the URL-as-secret mount path would be empty and the auth gate "
+        "would silently 404 every request."
+    )
+
+app.mount(f"/mcp/{MCP_BEARER_TOKEN}", mcp_app)
 

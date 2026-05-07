@@ -53,16 +53,17 @@ def backfill_t86(days: int) -> dict:
             rows = twse.fetch_all_t86(d)
             if rows:
                 df = transform.t86_to_frame(rows)
-                count = loader.upsert_t86(df)
-
-                # Auto-seed dim_supply_chain from discovered tickers
                 tickers_df = transform.extract_supply_chain_tickers(df)
-                loader.upsert_supply_chain(tickers_df)
-
-                loader.log_ingestion("twse_t86", iso, count)
+                # All three writes commit together — partial-batch failures
+                # roll back, so retries see the day as un-ingested.
+                with loader.atomic() as c:
+                    count = loader.upsert_t86(df, c=c)
+                    loader.upsert_supply_chain(tickers_df, c=c)
+                    loader.log_ingestion("twse_t86", iso, count, c=c)
                 total_rows += count
             else:
                 log.info("  No data for %s (holiday?), skipping", d)
+                loader.log_ingestion("twse_t86", iso, 0, "empty")
         except Exception as e:
             log.error("  Error on %s: %s", d, e)
             loader.log_ingestion("twse_t86", iso, 0, "error", str(e))
@@ -75,7 +76,7 @@ def backfill_t86(days: int) -> dict:
     return {"source": "t86", "rows": total_rows, "skipped": skipped, "errors": errors}
 
 
-def backfill_holdings(days: int = 30) -> dict:
+def backfill_holdings(days: int) -> dict:
     """Backfill MI_QFIIS foreign holdings."""
     log.info("=== Backfilling Holdings (%d trading days) ===", days)
     dates = twse.trading_days_range(days)
@@ -95,11 +96,13 @@ def backfill_holdings(days: int = 30) -> dict:
             rows = twse.fetch_all_holdings(d)
             if rows:
                 df = transform.holdings_to_frame(rows)
-                count = loader.upsert_holdings(df)
-                loader.log_ingestion("twse_holdings", iso, count)
+                with loader.atomic() as c:
+                    count = loader.upsert_holdings(df, c=c)
+                    loader.log_ingestion("twse_holdings", iso, count, c=c)
                 total_rows += count
             else:
                 log.info("  No data for %s, skipping", d)
+                loader.log_ingestion("twse_holdings", iso, 0, "empty")
         except Exception as e:
             log.error("  Error on %s: %s", d, e)
             loader.log_ingestion("twse_holdings", iso, 0, "error", str(e))
@@ -112,7 +115,7 @@ def backfill_holdings(days: int = 30) -> dict:
     return {"source": "holdings", "rows": total_rows, "skipped": skipped, "errors": errors}
 
 
-def backfill_margin(days: int = 30) -> dict:
+def backfill_margin(days: int) -> dict:
     """Backfill margin balance data."""
     log.info("=== Backfilling Margin (%d trading days) ===", days)
     dates = twse.trading_days_range(days)
@@ -132,11 +135,13 @@ def backfill_margin(days: int = 30) -> dict:
             rows = twse.fetch_all_margin(d)
             if rows:
                 df = transform.margin_to_frame(rows)
-                count = loader.upsert_margin(df)
-                loader.log_ingestion("twse_margin", iso, count)
+                with loader.atomic() as c:
+                    count = loader.upsert_margin(df, c=c)
+                    loader.log_ingestion("twse_margin", iso, count, c=c)
                 total_rows += count
             else:
                 log.info("  No data for %s, skipping", d)
+                loader.log_ingestion("twse_margin", iso, 0, "empty")
         except Exception as e:
             log.error("  Error on %s: %s", d, e)
             loader.log_ingestion("twse_margin", iso, 0, "error", str(e))
@@ -160,10 +165,11 @@ def backfill_revenue() -> dict:
             rows = twse.fetch_mops_revenue(market)
             if rows:
                 df = transform.revenue_to_frame(rows)
-                count = loader.upsert_revenue(df)
                 ym = rows[0].get("ym", "unknown") if rows else "unknown"
                 log_date = f"{ym}-01" if ym != "unknown" else None
-                loader.log_ingestion(f"mops_revenue_{market}", log_date, count)
+                with loader.atomic() as c:
+                    count = loader.upsert_revenue(df, c=c)
+                    loader.log_ingestion(f"mops_revenue_{market}", log_date, count, c=c)
                 total_rows += count
         except Exception as e:
             log.error("  Revenue error (%s): %s", market, e)
@@ -192,16 +198,16 @@ def main():
         if args.only == "t86":
             results.append(backfill_t86(args.days))
         elif args.only == "holdings":
-            results.append(backfill_holdings(min(args.days, 30)))
+            results.append(backfill_holdings(args.days))
         elif args.only == "margin":
-            results.append(backfill_margin(min(args.days, 30)))
+            results.append(backfill_margin(args.days))
         elif args.only == "revenue":
             results.append(backfill_revenue())
     else:
         if not args.skip_t86:
             results.append(backfill_t86(args.days))
-        results.append(backfill_holdings(min(args.days, 30)))
-        results.append(backfill_margin(min(args.days, 30)))
+        results.append(backfill_holdings(args.days))
+        results.append(backfill_margin(args.days))
         results.append(backfill_revenue())
 
     # Refresh materialized views after all data is loaded

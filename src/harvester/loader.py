@@ -6,11 +6,14 @@ All writes use ON CONFLICT DO UPDATE so backfill and daily runs are idempotent.
 
 from __future__ import annotations
 
-import json
 import logging
 from contextlib import contextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+_TPE = ZoneInfo("Asia/Taipei")
 
 import polars as pl
 from psycopg_pool import ConnectionPool
@@ -41,6 +44,25 @@ def cur():
             yield c
 
 
+@contextmanager
+def atomic():
+    """Yield a cursor inside a single transaction.
+
+    Use when an upsert and its `log_ingestion` row must commit together —
+    otherwise a mid-batch crash leaves a partially-written day marked
+    'ok' in ingestion_log, and `get_ingested_dates` skips it on retry.
+    """
+    with pool().connection() as conn:
+        conn.autocommit = False
+        try:
+            with conn.cursor() as c:
+                yield c
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+
 def _df_to_records(df: pl.DataFrame) -> list[dict]:
     """Convert Polars DataFrame to list of dicts, serializing dates."""
     records = df.to_dicts()
@@ -51,12 +73,37 @@ def _df_to_records(df: pl.DataFrame) -> list[dict]:
     return records
 
 
+@contextmanager
+def _cursor_or_default(c):
+    """Use the passed-in cursor if given; otherwise open an autocommit one."""
+    if c is not None:
+        yield c
+    else:
+        with cur() as c2:
+            yield c2
+
+
+def _save_local(df: pl.DataFrame, table: str, partition_col: Optional[str] = None):
+    """Save a local parquet copy of the dataframe."""
+    base_dir = Path("data") / table
+    base_dir.mkdir(parents=True, exist_ok=True)
+    
+    if partition_col and partition_col in df.columns:
+        date_val = df[partition_col][0]
+        date_str = date_val.isoformat() if hasattr(date_val, "isoformat") else str(date_val)
+        out_path = base_dir / f"{date_str}.parquet"
+    else:
+        out_path = base_dir / "latest.parquet"
+        
+    df.write_parquet(out_path)
+
 # ── Upsert functions ────────────────────────────────────────────────────────
 
-def upsert_t86(df: pl.DataFrame) -> int:
+def upsert_t86(df: pl.DataFrame, c=None) -> int:
     """Upsert T86 institutional flow data."""
     if df.is_empty():
         return 0
+    _save_local(df, "raw_twse_t86", "date")
     records = _df_to_records(df)
     sql = """
         INSERT INTO raw_twse_t86 (date, ticker_id, company_name, market,
@@ -72,16 +119,17 @@ def upsert_t86(df: pl.DataFrame) -> int:
             total_net = EXCLUDED.total_net,
             ingested_at = now()
     """
-    with cur() as c:
-        c.executemany(sql, records)
+    with _cursor_or_default(c) as cc:
+        cc.executemany(sql, records)
     log.info("Upserted %d rows into raw_twse_t86", len(records))
     return len(records)
 
 
-def upsert_holdings(df: pl.DataFrame) -> int:
+def upsert_holdings(df: pl.DataFrame, c=None) -> int:
     """Upsert foreign holdings data."""
     if df.is_empty():
         return 0
+    _save_local(df, "raw_twse_holdings", "date")
     records = _df_to_records(df)
     sql = """
         INSERT INTO raw_twse_holdings (date, ticker_id, company_name, market,
@@ -98,16 +146,17 @@ def upsert_holdings(df: pl.DataFrame) -> int:
             foreign_room_pct = EXCLUDED.foreign_room_pct,
             ingested_at = now()
     """
-    with cur() as c:
-        c.executemany(sql, records)
+    with _cursor_or_default(c) as cc:
+        cc.executemany(sql, records)
     log.info("Upserted %d rows into raw_twse_holdings", len(records))
     return len(records)
 
 
-def upsert_margin(df: pl.DataFrame) -> int:
+def upsert_margin(df: pl.DataFrame, c=None) -> int:
     """Upsert margin balance data."""
     if df.is_empty():
         return 0
+    _save_local(df, "raw_twse_margin", "date")
     records = _df_to_records(df)
     sql = """
         INSERT INTO raw_twse_margin (date, ticker_id, company_name, market,
@@ -126,16 +175,17 @@ def upsert_margin(df: pl.DataFrame) -> int:
             short_limit = EXCLUDED.short_limit,
             ingested_at = now()
     """
-    with cur() as c:
-        c.executemany(sql, records)
+    with _cursor_or_default(c) as cc:
+        cc.executemany(sql, records)
     log.info("Upserted %d rows into raw_twse_margin", len(records))
     return len(records)
 
 
-def upsert_ohlcv(df: pl.DataFrame) -> int:
+def upsert_ohlcv(df: pl.DataFrame, c=None) -> int:
     """Upsert OHLCV daily bars."""
     if df.is_empty():
         return 0
+    _save_local(df, "raw_twse_ohlcv", "date")
     records = _df_to_records(df)
     sql = """
         INSERT INTO raw_twse_ohlcv (date, ticker_id, market,
@@ -151,16 +201,17 @@ def upsert_ohlcv(df: pl.DataFrame) -> int:
             turnover_twd = EXCLUDED.turnover_twd,
             ingested_at = now()
     """
-    with cur() as c:
-        c.executemany(sql, records)
+    with _cursor_or_default(c) as cc:
+        cc.executemany(sql, records)
     log.info("Upserted %d rows into raw_twse_ohlcv", len(records))
     return len(records)
 
 
-def upsert_revenue(df: pl.DataFrame) -> int:
+def upsert_revenue(df: pl.DataFrame, c=None) -> int:
     """Upsert monthly revenue data."""
     if df.is_empty():
         return 0
+    _save_local(df, "raw_monthly_revenue", "ym")
     records = _df_to_records(df)
     sql = """
         INSERT INTO raw_monthly_revenue (ym, ticker_id, company_name, market,
@@ -181,13 +232,13 @@ def upsert_revenue(df: pl.DataFrame) -> int:
             ytd_yoy_pct = EXCLUDED.ytd_yoy_pct,
             ingested_at = now()
     """
-    with cur() as c:
-        c.executemany(sql, records)
+    with _cursor_or_default(c) as cc:
+        cc.executemany(sql, records)
     log.info("Upserted %d rows into raw_monthly_revenue", len(records))
     return len(records)
 
 
-def upsert_supply_chain(df: pl.DataFrame) -> int:
+def upsert_supply_chain(df: pl.DataFrame, c=None) -> int:
     """Upsert ticker mappings into dim_supply_chain.
 
     Only updates company_name and market — does NOT overwrite existing
@@ -195,6 +246,7 @@ def upsert_supply_chain(df: pl.DataFrame) -> int:
     """
     if df.is_empty():
         return 0
+    _save_local(df, "dim_supply_chain")
     records = _df_to_records(df)
     sql = """
         INSERT INTO dim_supply_chain (ticker_id, company_name, market)
@@ -204,8 +256,8 @@ def upsert_supply_chain(df: pl.DataFrame) -> int:
                                     dim_supply_chain.company_name),
             updated_at = now()
     """
-    with cur() as c:
-        c.executemany(sql, records)
+    with _cursor_or_default(c) as cc:
+        cc.executemany(sql, records)
     log.info("Upserted %d tickers into dim_supply_chain", len(records))
     return len(records)
 
@@ -213,16 +265,17 @@ def upsert_supply_chain(df: pl.DataFrame) -> int:
 # ── Ingestion log ───────────────────────────────────────────────────────────
 
 def log_ingestion(source: str, target_date: Optional[str], rows: int,
-                  status: str = "ok", error_msg: Optional[str] = None) -> None:
-    """Log an ingestion event."""
+                  status: str = "ok", error_msg: Optional[str] = None,
+                  c=None) -> None:
+    """Log an ingestion event. Pass `c` to commit atomically with an upsert."""
     sql = """
         INSERT INTO ingestion_log (source, target_date, rows_upserted,
                                     status, error_msg, finished_at)
         VALUES (%s, %s, %s, %s, %s, %s)
     """
-    with cur() as c:
-        c.execute(sql, (source, target_date, rows, status, error_msg,
-                        datetime.utcnow().isoformat()))
+    with _cursor_or_default(c) as cc:
+        cc.execute(sql, (source, target_date, rows, status, error_msg,
+                         datetime.now(_TPE).isoformat()))
 
 
 def refresh_views() -> None:
@@ -233,10 +286,12 @@ def refresh_views() -> None:
 
 
 def get_ingested_dates(source: str) -> set[str]:
-    """Get all dates already ingested for a given source (for gap detection)."""
+    """Dates we should skip on retry — both successfully ingested days
+    and confirmed-empty (holiday/closure) days. Errors are NOT skipped:
+    they should be retried."""
     sql = """
         SELECT target_date FROM ingestion_log
-        WHERE source = %s AND status = 'ok'
+        WHERE source = %s AND status IN ('ok', 'empty')
     """
     with cur() as c:
         c.execute(sql, (source,))

@@ -67,31 +67,35 @@ WITH
     FROM flows
     GROUP BY ai_pillar, node
   )
+,
+  -- Pick top ticker per (pillar, node) once, with its name, in a single pass.
+  -- Doing this as two separate correlated subqueries grouped on different
+  -- keys could return a ticker_id and company_name from different rows when
+  -- the same ticker has multiple display names in the data.
+  ranked_tickers AS (
+    SELECT
+      ai_pillar, node, ticker_id, company_name,
+      SUM(foreign_net) AS foreign_5d_ticker,
+      ROW_NUMBER() OVER (
+        PARTITION BY ai_pillar, node
+        ORDER BY SUM(foreign_net) DESC
+      ) AS rn
+    FROM flows
+    WHERE day_rank <= 5
+    GROUP BY ai_pillar, node, ticker_id, company_name
+  ),
+  top_per_node AS (
+    SELECT ai_pillar, node, ticker_id AS top_ticker_5d, company_name AS top_ticker_5d_name
+    FROM ranked_tickers
+    WHERE rn = 1
+  )
 SELECT
   sa.*,
-  -- Top accumulated ticker in each node (by 5-day foreign net)
-  (
-    SELECT f.ticker_id
-    FROM flows f
-    WHERE f.ai_pillar = sa.ai_pillar
-      AND f.node = sa.node
-      AND f.day_rank <= 5
-    GROUP BY f.ticker_id
-    ORDER BY SUM(f.foreign_net) DESC
-    LIMIT 1
-  ) AS top_ticker_5d,
-  (
-    SELECT f.company_name
-    FROM flows f
-    WHERE f.ai_pillar = sa.ai_pillar
-      AND f.node = sa.node
-      AND f.day_rank <= 5
-    GROUP BY f.ticker_id, f.company_name
-    ORDER BY SUM(f.foreign_net) DESC
-    LIMIT 1
-  ) AS top_ticker_5d_name,
+  tpn.top_ticker_5d,
+  tpn.top_ticker_5d_name,
   now() AS refreshed_at
 FROM sector_agg sa
+LEFT JOIN top_per_node tpn USING (ai_pillar, node)
 ORDER BY foreign_5d DESC;
 
 -- Unique index for concurrent refresh
