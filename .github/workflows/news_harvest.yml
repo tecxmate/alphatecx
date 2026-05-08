@@ -47,16 +47,16 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          python -c "
+          ENTRY=$(python <<'PY'
           import os, socket, urllib.parse as u
           host = u.urlparse(os.environ['DATABASE_URL']).hostname
-          # Pick first IPv4 — Neon's pooler is multi-IP load-balanced;
-          # pinning to one is fine for ~minutes-long workflow runs.
           ipv4 = sorted({sa[0] for fam,_,_,_,sa in socket.getaddrinfo(host, None) if fam == socket.AF_INET})[0]
-          print(f'{ipv4}\t{host}')
-          " | sudo tee -a /etc/hosts
-          echo "--- /etc/hosts entry installed ---"
-          getent ahosts "$(python -c 'import os, urllib.parse as u; print(u.urlparse(os.environ[\"DATABASE_URL\"]).hostname)')" | head -3
+          print(f"{ipv4}  {host}")
+          PY
+          )
+          echo "$ENTRY" | sudo tee -a /etc/hosts
+          echo "--- /etc/hosts updated ---"
+          tail -2 /etc/hosts
 
       - name: Install dependencies
         run: pip install -r requirements.txt

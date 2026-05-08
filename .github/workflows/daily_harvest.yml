@@ -48,12 +48,14 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          python -c "
+          ENTRY=$(python <<'PY'
           import os, socket, urllib.parse as u
           host = u.urlparse(os.environ['DATABASE_URL']).hostname
           ipv4 = sorted({sa[0] for fam,_,_,_,sa in socket.getaddrinfo(host, None) if fam == socket.AF_INET})[0]
-          print(f'{ipv4}\t{host}')
-          " | sudo tee -a /etc/hosts
+          print(f"{ipv4}  {host}")
+          PY
+          )
+          echo "$ENTRY" | sudo tee -a /etc/hosts
 
       - name: Install dependencies
         run: pip install -r requirements.txt
