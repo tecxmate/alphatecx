@@ -227,3 +227,13 @@ attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
 - Digests stored in new `daily_digest` table; user chose DB-only (vs commit-MD-back) to keep cron simple. Two new MCP tools `d_recent` / `d_for_date` serve them. Telegram tone "quiet" — morning + evening briefs, alerts only on threshold trip.
 - Local end-to-end test produced 3 real Telegram messages (pre/intra/post) using actual data — confirming the news+signals→digest→Telegram pipeline. Intraday alert correctly named the morning's flagged tickers (Foxconn 2317, Lite-On 2301) plus 4 indicator extremes.
 - Phase A of user's brief: cron-driven Telegram + DB digests. Phase B (manual deep analysis via Claude app + decide-on-ticker Skill) is the unchanged half.
+
+## [2026-05-08] decision | First decide-on-ticker run — 3443 GUC, naive pass
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- First execution of `decide-on-ticker` Skill produced [theses/2026-05-08-3443-overbought-with-foreign-distribution.md](../theses/2026-05-08-3443-overbought-with-foreign-distribution.md) + journal opened at [journals/3443-guc.md](../journals/3443-guc.md).
+- **Naive verdict: mildly long-biased, conviction 2/5.** The discipline tool pushed back on the morning quant digest's intuitive read.
+- **Notable surprise**: the morning digest read GUC's RSI 87 + foreign_z = −1.82 + 0 news mentions as classic "distribution into strength" (bearish). The backtest harness contradicts: same combination (RSI > 75 AND foreign_z < −1) on this universe has historically been *continuation*, not reversal — n=8, hit rate 87.5%, avg fwd 5d return +12.4%. The 10d sample (n=3) shows +32.7% avg. Sample warnings honored: too thin to bet on, but enough to refuse the opposite assumption.
+- **Real-time flow update**: by today's close, foreign_net_z20 had improved from −1.82 to −0.26, RSI cooled from 87 to 79, and total_net flipped *positive* (trust funds absorbing the foreign selling, +367K shares vs foreign −177K). Absorption thesis is being tested in real time.
+- **Catalyst / invalidation defined**: foreign_z > 0 within 5d = continuation confirmed; close < SMA-50 (3034) = thesis off. Next review 2026-05-15.
+- **Aware pass deferred** until Phase 2b news pipeline lands — important honest gap: cannot answer "why are foreigners selling?" from data alone.
+- This first run validated the skill's discipline mechanism: the "obvious" read got challenged by the backtest, the thesis output reflects the tension explicitly, and the catalyst/invalidation are tied to specific data triggers (not narrative).
