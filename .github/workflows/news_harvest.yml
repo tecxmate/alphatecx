@@ -48,28 +48,5 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Test DB connection (diagnostic)
-        run: |
-          python <<'PY'
-          import os, traceback, urllib.parse as u
-          import psycopg
-          dsn = os.environ['DATABASE_URL']
-          # Print sanitised DSN to confirm what we received from secrets
-          parsed = u.urlparse(dsn)
-          host = parsed.hostname
-          query = parsed.query
-          print(f"DSN host: {host}")
-          print(f"DSN query: {query}")
-          try:
-              with psycopg.connect(dsn, connect_timeout=15) as c:
-                  with c.cursor() as cur:
-                      cur.execute("SELECT version(), current_user, current_database()")
-                      print("Connected:", cur.fetchone())
-          except Exception as e:
-              print(f"FAILED: {type(e).__name__}: {e}")
-              traceback.print_exc()
-              raise
-          PY
-
       - name: Harvest news feeds
         run: python -m src.news.harvest

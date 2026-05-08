@@ -33,6 +33,35 @@ def _configure(conn):
     conn.commit()
 
 
+def _force_ipv4(dsn: str) -> str:
+    """Resolve the DSN's hostname to IPv4 and pin via hostaddr=.
+
+    Neon's hostnames return both A and AAAA records. On environments
+    where IPv6 is advertised but unreachable (notably GitHub-hosted
+    Actions runners), libpq picks the AAAA record from getaddrinfo
+    and waits 30+s before failing. Resolving to IPv4 here avoids the
+    issue without touching system config. Mac and Vercel ignore the
+    pin gracefully — same A-record is reachable from there too.
+    """
+    import socket
+    import urllib.parse as u
+
+    parsed = u.urlparse(dsn)
+    if not parsed.hostname:
+        return dsn
+    # If caller already pinned a hostaddr, respect it.
+    existing = dict(u.parse_qsl(parsed.query))
+    if "hostaddr" in existing:
+        return dsn
+    try:
+        addrs = socket.getaddrinfo(parsed.hostname, None, socket.AF_INET)
+        ipv4 = addrs[0][4][0]
+    except (socket.gaierror, IndexError):
+        return dsn
+    new_query = parsed.query + ("&" if parsed.query else "") + f"hostaddr={ipv4}"
+    return u.urlunparse(parsed._replace(query=new_query))
+
+
 def pool() -> ConnectionPool:
     """Lazy singleton connection pool."""
     global _pool
@@ -40,7 +69,7 @@ def pool() -> ConnectionPool:
         if not DATABASE_URL:
             raise RuntimeError("DATABASE_URL not set in .env")
         _pool = ConnectionPool(
-            DATABASE_URL, min_size=0, max_size=4, open=True,
+            _force_ipv4(DATABASE_URL), min_size=0, max_size=4, open=True,
             configure=_configure,
         )
     return _pool
