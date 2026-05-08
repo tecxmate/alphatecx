@@ -84,6 +84,21 @@ BEGIN
   END IF;
 END$$;
 
+-- Digests (Phase 3). Same DO-block guard as raw_news above.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='daily_digest') THEN
+    EXECUTE 'GRANT SELECT ON daily_digest TO mcp_viewer';
+    EXECUTE 'ALTER TABLE daily_digest ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'DROP POLICY IF EXISTS "mcp_viewer_read_digest" ON daily_digest';
+    EXECUTE $POLICY$
+      CREATE POLICY "mcp_viewer_read_digest"
+        ON daily_digest FOR SELECT TO mcp_viewer USING (true)
+    $POLICY$;
+  END IF;
+END$$;
+
 -- Explicitly deny writes
 REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public FROM mcp_viewer;
 

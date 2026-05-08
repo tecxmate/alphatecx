@@ -66,6 +66,15 @@ jobs:
       - name: Run daily harvest
         run: python -m src.harvester.daily
 
+      - name: Generate post-close brief
+        # Runs after the daily pipeline so signal_value + view_latest_signals
+        # are fresh. Writes to daily_digest table + sends Telegram summary.
+        # Failure here is non-fatal — the data is already in the DB; the
+        # brief is just the human-facing message layer.
+        if: success()
+        continue-on-error: true
+        run: python -m src.cron.brief --mode post_close
+
       - name: Notify on failure
         if: failure()
         env:

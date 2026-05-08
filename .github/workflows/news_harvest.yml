@@ -1,34 +1,48 @@
-name: News Harvest (4x daily)
+name: News Harvest + Briefs
 
-# Intra-day RSS news harvest — separate from the daily TWSE pipeline so
-# news flow keeps coming in even when markets are closed and so a TWSE
-# failure doesn't block news ingestion.
+# Taiwan-market-aware cron. Runs the news harvester at every slot, then
+# runs the appropriate brief mode based on which cron fired:
 #
-# Schedule: 4 times per day at meaningful global market boundaries.
-#   04:00 UTC = 12:00 Taipei (Asia mid-morning)
-#   10:00 UTC = 18:00 Taipei (post-Asia close, US pre-market)
-#   14:00 UTC = 22:00 Taipei (US morning)
-#   22:00 UTC = 06:00 Taipei next day (US close)
+#   23:30 UTC = 07:30 Taipei (Mon-Fri) — pre_market brief (Telegram)
+#   02:00 UTC = 10:00 Taipei (Mon-Fri) — intraday alerts (silent unless threshold)
+#   04:00 UTC = 12:00 Taipei (Mon-Fri) — intraday alerts
+#   06:30 UTC = 14:30 Taipei (Mon-Fri) — intraday alerts (T86 starting to publish)
+#   13:00 UTC = 21:00 Taipei (daily)   — news harvest only
+#   22:00 UTC = 06:00 Taipei (daily)   — news harvest only
+#
+# Post-close brief lives in daily_harvest.yml so it runs after the full
+# TWSE+OHLCV+signals pipeline with fresh data.
 #
 # News harvester is idempotent — re-runs are no-ops on unchanged feeds.
 
 on:
   schedule:
-    - cron: '0 4,10,14,22 * * *'
+    - cron: '30 23 * * 1-5'   # 07:30 Taipei pre-market
+    - cron: '0 2 * * 1-5'     # 10:00 Taipei intraday
+    - cron: '0 4 * * 1-5'     # 12:00 Taipei intraday
+    - cron: '30 6 * * 1-5'    # 14:30 Taipei intraday (T86 publishes ~15:00)
+    - cron: '0 13 * * *'      # 21:00 Taipei (US morning catch-up)
+    - cron: '0 22 * * *'      # 06:00 Taipei (pre-Asia)
   workflow_dispatch:
+    inputs:
+      brief_mode:
+        description: 'Manual brief mode'
+        required: false
+        default: 'none'
+        type: choice
+        options: ['none', 'pre_market', 'intraday', 'post_close']
 
 env:
-  # Append gssencmode=disable — some PG servers (and middleware in front
-  # of them) hang on the GSS encryption negotiation step from clients
-  # with no Kerberos keytab. Disabling forces straight TLS.
+  # Append gssencmode=disable — GH runner libpq hangs on Kerberos GSS
+  # negotiation against Neon's pooler. Forces straight TLS.
   DATABASE_URL: ${{ secrets.DATABASE_URL }}&gssencmode=disable
+  TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
 jobs:
-  news:
+  harvest_and_brief:
     runs-on: ubuntu-latest
-    # Each run is ~4 min (12 sources × ~20s avg). 15 min gives plenty
-    # of buffer if a feed is slow but not so much that a hung run
-    # silently eats hours of credits.
+    # 15 min buffer: harvest ~4-8s on cached feeds, brief ~3s. Plenty.
     timeout-minutes: 15
 
     steps:
@@ -41,12 +55,8 @@ jobs:
           cache: pip
 
       - name: Pin Neon hostname to IPv4 in /etc/hosts
-        # GH runners advertise IPv6 but the path is dead; psycopg with
-        # hostaddr= overrides also hangs at TLS/SNI on Neon's pooler
-        # (cause not yet identified). Editing /etc/hosts forces glibc
-        # getaddrinfo to return only the IPv4 address for our pooler
-        # hostname — DNS isn't consulted, libpq does normal hostname
-        # connection with correct SNI, no IPv6 path tried at all.
+        # GH runners advertise IPv6 but the path is dead. /etc/hosts
+        # entry forces getaddrinfo to return only the IPv4 address.
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
@@ -58,11 +68,30 @@ jobs:
           PY
           )
           echo "$ENTRY" | sudo tee -a /etc/hosts
-          echo "--- /etc/hosts updated ---"
-          tail -2 /etc/hosts
 
       - name: Install dependencies
         run: pip install -r requirements.txt
 
       - name: Harvest news feeds
         run: python -m src.news.harvest
+
+      - name: Run brief (mode depends on which cron fired)
+        run: |
+          # Map schedule cron expression → brief mode. Workflow_dispatch
+          # uses the explicit input; scheduled runs use github.event.schedule.
+          MODE=""
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            MODE="${{ inputs.brief_mode }}"
+          else
+            case "${{ github.event.schedule }}" in
+              '30 23 * * 1-5') MODE='pre_market' ;;
+              '0 2 * * 1-5'|'0 4 * * 1-5'|'30 6 * * 1-5') MODE='intraday' ;;
+              *) MODE='none' ;;
+            esac
+          fi
+          echo "Selected brief mode: $MODE"
+          if [[ "$MODE" == "none" ]]; then
+            echo "No brief for this schedule — harvest only"
+          else
+            python -m src.cron.brief --mode "$MODE"
+          fi

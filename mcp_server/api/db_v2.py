@@ -574,6 +574,46 @@ def query_news_source_status() -> list[dict]:
     return _serialize(_fetch(sql))
 
 
+# ── Digests (Phase 3 — cron-generated briefs) ─────────────────────────────
+
+def query_digest_recent(days: int = 3, kind: Optional[str] = None) -> list[dict]:
+    """Recent digests written by cron briefs. Each row is one (date, kind)."""
+    conditions = ["digest_date >= current_date - (%s || ' days')::interval"]
+    params: list = [str(days)]
+    if kind:
+        if kind not in ("pre_market", "intraday_alert", "post_close", "thesis_status"):
+            return [{"error": f"unknown kind '{kind}'"}]
+        conditions.append("kind = %s")
+        params.append(kind)
+    where = " AND ".join(conditions)
+    sql = f"""
+        SELECT digest_date, kind, title, body, source_inputs, alerts,
+               generated_at, telegram_sent_at
+        FROM daily_digest
+        WHERE {where}
+        ORDER BY digest_date DESC, generated_at DESC
+    """
+    return _serialize(_fetch(sql, tuple(params)))
+
+
+def query_digest_for_date(digest_date: str, kind: Optional[str] = None) -> list[dict]:
+    """All digests for a specific date (YYYY-MM-DD), optionally filtered by kind."""
+    conditions = ["digest_date = %s"]
+    params: list = [digest_date]
+    if kind:
+        conditions.append("kind = %s")
+        params.append(kind)
+    where = " AND ".join(conditions)
+    sql = f"""
+        SELECT digest_date, kind, title, body, source_inputs, alerts,
+               generated_at, telegram_sent_at
+        FROM daily_digest
+        WHERE {where}
+        ORDER BY generated_at DESC
+    """
+    return _serialize(_fetch(sql, tuple(params)))
+
+
 # ── Data Status ────────────────────────────────────────────────────────────
 
 def query_data_status() -> dict:

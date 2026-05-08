@@ -505,6 +505,47 @@ def n_source_status() -> dict:
     )
 
 
+# ── Tool: Digests (Phase 3) ──────────────────────────────────────────────
+
+@mcp.tool()
+def d_recent(days: int = 3, kind: Optional[str] = None) -> dict:
+    """Recent cron-generated briefs (pre_market / intraday_alert / post_close).
+
+    Briefs are written by the GitHub Actions cron at meaningful times in
+    the Taiwan trading day. Each one summarises news + signals and
+    explicitly flags candidates that warrant deeper analysis.
+
+    Args:
+        days: Lookback window in days (default 3).
+        kind: Optional filter — 'pre_market', 'intraday_alert',
+              'post_close', or 'thesis_status'.
+    """
+    rows = db_v2.query_digest_recent(days=days, kind=kind)
+    return _stamp(
+        {"digests": rows, "count": len(rows)},
+        source="daily_digest",
+        as_of=_today_iso(),
+        freshness="cron-driven",
+    )
+
+
+@mcp.tool()
+def d_for_date(digest_date: str, kind: Optional[str] = None) -> dict:
+    """All digests for one specific date.
+
+    Args:
+        digest_date: ISO date (YYYY-MM-DD) in Taiwan time.
+        kind: Optional filter as in d_recent.
+    """
+    rows = db_v2.query_digest_for_date(digest_date, kind=kind)
+    return _stamp(
+        {"digests": rows, "count": len(rows), "date": digest_date},
+        source="daily_digest",
+        as_of=digest_date,
+        freshness="cron-driven",
+    )
+
+
 # ── Tool: Data Status ─────────────────────────────────────────────────────
 
 @mcp.tool()
@@ -567,6 +608,8 @@ def sc_capabilities() -> dict:
             {"name": "n_recent", "purpose": "Recent news articles (RSS + Google News); titles + summaries"},
             {"name": "n_for_ticker", "purpose": "Articles mentioning a ticker (text-match fallback until Phase 2b entity extraction)"},
             {"name": "n_source_status", "purpose": "Per-source freshness — verify feeds still updating"},
+            {"name": "d_recent", "purpose": "Recent cron-generated briefs (pre-market / intraday / post-close)"},
+            {"name": "d_for_date", "purpose": "All digests for one specific date"},
         ],
     }
 
