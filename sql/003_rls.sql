@@ -99,18 +99,48 @@ BEGIN
   END IF;
 END$$;
 
--- Watchlist (Phase 3.5). Bot writes via writer DSN; MCP only reads.
+-- Watchlist (Phase 3.5).
+-- mcp_viewer was originally read-only everywhere. We extend it narrowly:
+-- INSERT + UPDATE on the watchlist table ONLY. This lets MCP `w_add` and
+-- `w_remove` tools mutate the watchlist via the Claude app, with the
+-- same blast radius as the Telegram bot's write surface (both gates
+-- are URL-/header-secret-based; the data they can touch is identical).
+-- All other tables remain SELECT-only for mcp_viewer.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables
              WHERE table_schema='public' AND table_name='watchlist') THEN
-    EXECUTE 'GRANT SELECT ON watchlist TO mcp_viewer';
+    EXECUTE 'GRANT SELECT, INSERT, UPDATE ON watchlist TO mcp_viewer';
     EXECUTE 'ALTER TABLE watchlist ENABLE ROW LEVEL SECURITY';
+    -- Read policy: any active row visible to mcp_viewer.
     EXECUTE 'DROP POLICY IF EXISTS "mcp_viewer_read_watchlist" ON watchlist';
     EXECUTE $POLICY$
       CREATE POLICY "mcp_viewer_read_watchlist"
         ON watchlist FOR SELECT TO mcp_viewer USING (true)
     $POLICY$;
+    -- Write policies: INSERT + UPDATE allowed without WHERE-clause
+    -- restriction. The narrow scope is enforced by the GRANT (only this
+    -- table) — there's nothing else mcp_viewer can mutate.
+    EXECUTE 'DROP POLICY IF EXISTS "mcp_viewer_insert_watchlist" ON watchlist';
+    EXECUTE $POLICY$
+      CREATE POLICY "mcp_viewer_insert_watchlist"
+        ON watchlist FOR INSERT TO mcp_viewer WITH CHECK (true)
+    $POLICY$;
+    EXECUTE 'DROP POLICY IF EXISTS "mcp_viewer_update_watchlist" ON watchlist';
+    EXECUTE $POLICY$
+      CREATE POLICY "mcp_viewer_update_watchlist"
+        ON watchlist FOR UPDATE TO mcp_viewer USING (true) WITH CHECK (true)
+    $POLICY$;
+  END IF;
+END$$;
+
+-- Universe view (Phase 3.6). Same DO-block guard; no policies needed
+-- since views inherit from underlying tables (which are already gated).
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_views
+             WHERE schemaname='public' AND viewname='view_universe') THEN
+    EXECUTE 'GRANT SELECT ON view_universe TO mcp_viewer';
   END IF;
 END$$;
 

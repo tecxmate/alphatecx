@@ -279,3 +279,11 @@ attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture, mcp
 - 4 new Vercel env vars: BOT_DATABASE_URL (writer + gssencmode=disable), TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET (32-byte URL-safe random, generated locally, not committed).
 - Telegram webhook registered to https://alphatecx-v2-mcp.vercel.app/bot/webhook with secret_token header.
 - Defense-in-depth: even if the URL leaks, requests without the secret-token header get 403; even if both leak, the chat-id check filters everyone except the owner; even if both bypassed, the bot is bounded to the watchlist + read tools (no thesis/MD edits, no DDL).
+
+## [2026-05-08] decision | view_universe + MCP write tools (w_add/w_remove)
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User flagged conceptual overlap between dim_supply_chain (curated knowledge) and watchlist (dynamic state). Solution: keep tables separate (different concerns) but add a unified read view `view_universe` that joins them with the latest signal stack. One row per classified ticker, watched names sort first.
+- New MCP tools: `u_universe(filter='all'|'watching'|'extreme')`, `w_add(ticker, reason, escalation_trigger)`, `w_remove(ticker)`. The two write tools mutate the watchlist table directly via the MCP role.
+- **Security model adjustment**: mcp_viewer was originally SELECT-only across all tables. Extended narrowly to also have INSERT + UPDATE on the `watchlist` table only (no DELETE — archived-not-deleted pattern preserved). All other tables remain SELECT-only. Net security: same blast radius as the Telegram bot — both gates (URL-secret token / Telegram secret-token header) lead to the same write surface, so MCP write tools don't expand what an attacker could do if a token leaks. DELETE attempts still blocked at role level (verified end-to-end).
+- Manual GRANT step required after apply_schema run — the DO-block GRANT didn't propagate (still SELECT-only after script). Re-running `GRANT INSERT, UPDATE ON watchlist TO mcp_viewer` directly fixed it. TODO: investigate why DO-block didn't apply (probably ordering or transaction quirk; not blocking).
+- Smoke test on prod surfaced two new unwatched extremes worth considering: 2301 Lite-On (RSI 73, foreign_z 0.39) and 6155 Winway (RSI 60, foreign_z 2.37).

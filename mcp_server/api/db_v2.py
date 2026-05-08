@@ -576,6 +576,100 @@ def query_news_source_status() -> list[dict]:
 
 # ── Watchlist (Phase 3.5 — bot-managed, DB source of truth) ──────────────
 
+def query_universe(filter: str = "all") -> list[dict]:
+    """Read view_universe — one row per classified ticker, watch-state
+    + signals + static knowledge in a single result.
+
+    Filters:
+      'all'        — every classified ticker (~26 rows; default)
+      'watching'   — only watch_status='active'
+      'extreme'    — names tripping signal-extreme thresholds
+                     (RSI>80/<20, BB outside [0,1], abs(foreign_z)>2)
+    """
+    if filter == "watching":
+        sql = "SELECT * FROM view_universe WHERE watch_status = 'active'"
+    elif filter == "extreme":
+        sql = """
+            SELECT * FROM view_universe
+            WHERE rsi_14 > 80 OR rsi_14 < 20
+               OR bb_pct_b > 1.0 OR bb_pct_b < 0.0
+               OR abs(foreign_net_z20) > 2.0
+        """
+    elif filter == "all":
+        sql = "SELECT * FROM view_universe"
+    else:
+        return [{"error": f"unknown filter '{filter}' "
+                          "(use 'all'|'watching'|'extreme')"}]
+    return _serialize(_fetch(sql))
+
+
+# ── Watchlist mutations (writer-via-mcp_viewer scoped INSERT/UPDATE) ─────
+#
+# These bypass _fetch (which is SELECT-only) and use the pool's
+# connection directly so we can run INSERT/UPDATE statements. mcp_viewer
+# was granted INSERT+UPDATE on watchlist (and ONLY watchlist) in 003.
+# Every other DDL/DML attempt would fail at the role level — defense
+# in depth even if a future code path tries to mutate something else.
+
+def mutate_watchlist_add(
+    ticker_id: str,
+    reason: Optional[str] = None,
+    escalation_trigger: Optional[str] = None,
+) -> dict:
+    """Add a ticker to the watchlist (or reactivate an archived one).
+    Validates the ticker exists in dim_supply_chain — same rule the bot
+    enforces — so the watchlist stays bounded to the curated 26."""
+    with pool().connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT company_name, ai_pillar, node "
+                "FROM dim_supply_chain WHERE ticker_id = %s",
+                (ticker_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return {"ok": False,
+                        "error": f"{ticker_id} not in classified "
+                                 "supply chain (dim_supply_chain)"}
+            company, pillar, node = row
+            cur.execute("""
+                INSERT INTO watchlist (ticker_id, company_name, ai_pillar, node,
+                                       reason, escalation_trigger,
+                                       added_at, updated_at, status)
+                VALUES (%s, %s, %s, %s, %s, %s, now(), now(), 'active')
+                ON CONFLICT (ticker_id) DO UPDATE SET
+                    reason = COALESCE(NULLIF(EXCLUDED.reason, ''), watchlist.reason),
+                    escalation_trigger = COALESCE(
+                        NULLIF(EXCLUDED.escalation_trigger, ''),
+                        watchlist.escalation_trigger),
+                    status = 'active',
+                    updated_at = now()
+                """, (ticker_id, company, pillar, node, reason, escalation_trigger))
+            conn.commit()
+    return {"ok": True, "ticker_id": ticker_id, "company": company,
+            "ai_pillar": pillar, "node": node, "status": "active"}
+
+
+def mutate_watchlist_remove(ticker_id: str) -> dict:
+    """Archive a watchlist entry (status='archived'). Idempotent: re-runs
+    on already-archived rows are a no-op."""
+    with pool().connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE watchlist SET status = 'archived', updated_at = now() "
+                "WHERE ticker_id = %s AND status = 'active' "
+                "RETURNING company_name",
+                (ticker_id,),
+            )
+            row = cur.fetchone()
+            conn.commit()
+    if not row:
+        return {"ok": False, "ticker_id": ticker_id,
+                "error": "not on active watchlist"}
+    return {"ok": True, "ticker_id": ticker_id, "company": row[0],
+            "status": "archived"}
+
+
 def query_watchlist(status: str = "active") -> list[dict]:
     """List watchlist rows. status='active' (default) | 'archived' | 'all'."""
     if status == "all":

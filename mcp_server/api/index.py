@@ -511,8 +511,9 @@ def n_source_status() -> dict:
 def w_watchlist(status: str = "active") -> dict:
     """Active watchlist — names being monitored but not yet at thesis stage.
 
-    Sourced from the `watchlist` table in Neon. Mutations happen via
-    the Telegram bot (`/watch`, `/unwatch`); this tool is read-only.
+    Sourced from the `watchlist` table in Neon. Same source the Telegram
+    bot reads/writes; the `w_add` / `w_remove` tools below mutate it
+    from the Claude app.
 
     Args:
         status: 'active' (default), 'archived', or 'all'.
@@ -524,6 +525,64 @@ def w_watchlist(status: str = "active") -> dict:
         as_of=_today_iso(),
         freshness="real_time",
     )
+
+
+# ── Tool: Universe (unified view) ────────────────────────────────────────
+
+@mcp.tool()
+def u_universe(filter: str = "all") -> dict:
+    """One row per classified ticker — knowledge + watch-state + signals.
+
+    Watched names sort first. Most queries can replace a chain of
+    `sc_supply_chain_map` + `q_indicators` + `w_watchlist` with a single
+    call to this tool.
+
+    Args:
+        filter:
+            'all' — every classified ticker (default, ~26 rows)
+            'watching' — only watch_status='active'
+            'extreme' — RSI>80 / RSI<20 / BB outside [0,1] / |foreign_z|>2
+    """
+    rows = db_v2.query_universe(filter=filter)
+    return _stamp(
+        {"universe": rows, "count": len(rows), "filter": filter},
+        source="view_universe",
+        as_of=_today_iso(),
+        freshness="T+1",
+    )
+
+
+# ── Tool: Watchlist mutations (write-capable, narrowly scoped) ───────────
+
+@mcp.tool()
+def w_add(ticker_id: str,
+          reason: Optional[str] = None,
+          escalation_trigger: Optional[str] = None) -> dict:
+    """Add a ticker to the watchlist (or reactivate an archived row).
+
+    Validates that the ticker exists in `dim_supply_chain` — the
+    classified 26-name universe. Outside that universe, the watchlist
+    rejects the add (the system's edge is supply-chain-mapped flow,
+    not arbitrary screening).
+
+    Args:
+        ticker_id: e.g. '2330'.
+        reason: optional one-line free-form note (why is this on the
+                list).
+        escalation_trigger: optional specific data condition that would
+                            promote this to a thesis (e.g. 'foreign_z
+                            stays >1.5 for 2 more sessions').
+    """
+    return db_v2.mutate_watchlist_add(
+        ticker_id=ticker_id, reason=reason, escalation_trigger=escalation_trigger,
+    )
+
+
+@mcp.tool()
+def w_remove(ticker_id: str) -> dict:
+    """Archive a watchlist entry. Idempotent — re-running on an already-
+    archived ticker is a no-op."""
+    return db_v2.mutate_watchlist_remove(ticker_id=ticker_id)
 
 
 # ── Tool: Digests (Phase 3) ──────────────────────────────────────────────
@@ -632,6 +691,9 @@ def sc_capabilities() -> dict:
             {"name": "d_recent", "purpose": "Recent cron-generated briefs (pre-market / intraday / post-close)"},
             {"name": "d_for_date", "purpose": "All digests for one specific date"},
             {"name": "w_watchlist", "purpose": "Active watchlist — bot-managed names being monitored"},
+            {"name": "u_universe", "purpose": "Unified read: classified-ticker × knowledge × watch-state × signals"},
+            {"name": "w_add", "purpose": "Add a ticker to the watchlist (writes to DB; same as bot /watch)"},
+            {"name": "w_remove", "purpose": "Archive a watchlist entry (writes to DB; same as bot /unwatch)"},
         ],
     }
 
