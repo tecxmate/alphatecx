@@ -1,0 +1,55 @@
+name: Daily TWSE Harvest
+
+# Runs after Taiwan market close (13:30 Taipei) plus a buffer for TWSE/MOPS
+# to publish closing data. 16:30 Taipei == 08:30 UTC. Weekdays only.
+#
+# Pipeline (see src/harvester/daily.py):
+#   T86, holdings, margin, revenue → atomic upsert
+#   OHLCV current month for classified tickers + 0050 benchmark
+#   News harvest (12 sources)
+#   Sector + ticker momentum matview refresh
+#   Quant signal compute (price + flow) → view_latest_signals refresh
+#   Telegram daily-summary alert
+
+on:
+  schedule:
+    - cron: '30 8 * * 1-5'    # 16:30 Taipei, Mon-Fri
+  workflow_dispatch:           # manual trigger from Actions tab
+
+env:
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  TWSE_REQUEST_DELAY: '3.0'
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    # Generous timeout — TWSE+OHLCV+news+signals can take ~30 min total at
+    # the rate-limit cadence. Don't make it tighter than reality or healthy
+    # runs will start getting killed mid-flight.
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run daily harvest
+        run: python -m src.harvester.daily
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\": \"${TELEGRAM_CHAT_ID}\", \"text\": \"🔴 alphatecx daily harvest FAILED — ${GITHUB_RUN_URL}\", \"parse_mode\": \"HTML\"}"

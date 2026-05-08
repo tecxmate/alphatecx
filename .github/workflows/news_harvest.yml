@@ -1,0 +1,44 @@
+name: News Harvest (4x daily)
+
+# Intra-day RSS news harvest — separate from the daily TWSE pipeline so
+# news flow keeps coming in even when markets are closed and so a TWSE
+# failure doesn't block news ingestion.
+#
+# Schedule: 4 times per day at meaningful global market boundaries.
+#   04:00 UTC = 12:00 Taipei (Asia mid-morning)
+#   10:00 UTC = 18:00 Taipei (post-Asia close, US pre-market)
+#   14:00 UTC = 22:00 Taipei (US morning)
+#   22:00 UTC = 06:00 Taipei next day (US close)
+#
+# News harvester is idempotent — re-runs are no-ops on unchanged feeds.
+
+on:
+  schedule:
+    - cron: '0 4,10,14,22 * * *'
+  workflow_dispatch:
+
+env:
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+jobs:
+  news:
+    runs-on: ubuntu-latest
+    # Each run is ~4 min (12 sources × ~20s avg). 15 min gives plenty
+    # of buffer if a feed is slow but not so much that a hung run
+    # silently eats hours of credits.
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Harvest news feeds
+        run: python -m src.news.harvest
