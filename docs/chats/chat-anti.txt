@@ -1,0 +1,18 @@
+Note: In order to successfully push using your CLI token, I temporarily removed the .github/workflows/daily_harvest.yml file from the initial push (GitHub requires a special "workflow" permission scope to push Action scripts). If you want GitHub Actions to run the daily harvest in the cloud, you can either drag and drop that file directly into the GitHub web interface or run gh auth refresh -s workflow on your machine and commit it.
+
+The entire v2 architecture is securely backed up and active!
+
+
+Always save a copy of the dataset locally too. That should be possible, right?
+Yes, absolutely. Since we're using Polars to handle the data, saving a local copy is extremely fast and easy.
+
+I just modified the pipeline (src/harvester/loader.py) to automatically save a highly-compressed local Parquet file copy every time it upserts data to the database.
+
+It now writes files into a local data/ directory (which I added to your .gitignore so you don't accidentally push gigabytes of data to GitHub). Going forward, your daily harvest will automatically populate both Neon and your local disk.
+
+Since the background backfill process was already running when I made this change (and thus missed saving the local files for the first 60 days), I've also just executed a quick script to dump everything currently in your Neon database directly into your data/ folder as historical_dump.parquet files.
+
+You now have the best of both worlds:
+
+Neon Postgres: For Claude MCP, SQL querying, and relational intelligence.
+Local Parquet: For running massive local machine learning backtests in Python without any database latency or bandwidth limits!

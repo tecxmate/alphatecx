@@ -1,0 +1,549 @@
+❯  Next, I know this is a lot of raw data. It can be queried by        
+                                                                       
+    Claude. Take a look at the old MCP, see what tool we can make for  
+                                                                       
+    the new version. it will take a lot of quantitative and            
+  qualitative methodology to analyze and find the alpha stock. So I do 
+   plan to create a couple of new modules. One is a quantitative       
+  module with all the financial analysis methods and formulas and      
+  right across the data. The second module is the cronjob module that  
+  fetched the new source, auto-feeded in the claude scheduled task LLM 
+   with a guided prompt to extract market sentiments, things that are  
+  covered by the news. Next we need to do an Claude 4.7 do independent 
+   qualitative social, geopolitics, and economics analysis without the 
+   influence of the news narrative. I also think of ML time series     
+  analysis. We have an open source model from Google can do that.      
+  Next, finally is investment banks and big financial tycoon           
+  viewpoints and strategy detection and prediction. This is quite a    
+  big system I know. I want you to think clearly and propose a plan    
+  for this system. My expectation in the end, our goal is we have a    
+  collect lean and bold decision making and investment planning system 
+   that is supported by all the data we have, all the news that is     
+  happening in real time, all the quantitative methods that is         
+  applicable to this and a knowledge of economics and social           
+  geopolitics. That is both running cron job updated daily, queryable  
+  via MCP in Claude.                                                   
+
+⏺ Let me look at v1's MCP first so my plan is grounded in what already
+  exists.                                                       
+                                                                       
+  Listed 1 directory (ctrl+o to expand)                     
+                                                                       
+⏺ Let me think through this honestly before sketching a plan. You're   
+  describing five components, but they're not equal in leverage and the
+   order matters a lot.                                                
+                                               
+  Honest take on each component                                        
+                                                                     
+  1. Quantitative module — high leverage, cheap.                       
+  Indicators are deterministic and validatable. Every signal you add 
+  either works on backtest or doesn't, and you can A/B compare.        
+  Existing data already supports a lot: foreign-flow z-scores,         
+  accumulation streaks, sector rotation, relative-strength. Adding     
+  OHLCV (which you have a table for but no data) unlocks the technical 
+  layer. This should go first because every later layer benchmarks     
+  against quant signals.                                               
+                                                                       
+  2. News + cron infrastructure — mid leverage, mid cost.              
+  Needed if anything downstream depends on news. RSS/Atom from Reuters,
+   FT, central banks, DigiTimes is free. Cheap LLM (Haiku 4.5,         
+  ~$0.005/article) does extraction + classification. Caveat: news →
+  sentiment → trade is a noisy path. Most "sentiment alpha" papers     
+  don't replicate.                                                   
+                                               
+  3. Independent qualitative analysis (narrative-naive Claude) — this  
+  is the most interesting idea in your proposal.
+  Most LLM analysis is already news-contaminated. If you architect two 
+  reasoning paths — one with full news context, one with only          
+  structured data + economic frameworks — and then look at where they
+  disagree, that disagreement is itself the signal. Where the naive    
+  view is bearish but the news-aware view is bullish, you're paying for
+   narrative; where they agree, you have conviction. This requires
+  strict prompt sandboxing — the naive agent must not see any
+  text-derived signal.
+
+  4. ML time-series — low leverage if used for price prediction. Useful
+   for regime detection.
+  I'd push back on TimesFM/Chronos for predicting tomorrow's close —   
+  those benchmarks are macroeconomic series, not equities, and equity  
+  day-ahead is dominated by noise. Re-scope it to: volatility regime
+  classification, flow anomaly detection, forecast intervals on sector 
+  aggregates. That's where these models earn their keep.             
+                                               
+  5. IB / tycoon view detection — low priority.
+  13F filings are 45 days lagged. Bridgewater letters are quarterly and
+   hedged. Central bank speeches are the highest-signal piece and      
+  already in the news flow. The data is mostly already absorbed by the
+  time you read it. Don't build this until phases 1-3 are paying off.  
+                                                                     
+  Cost reality                                 
+
+  Daily Claude analysis × 27 stocks × dual agents (naive + aware) ×    
+  reconciliation ≈ ~55 LLM calls/day. At Sonnet pricing with modest
+  context that's roughly $50–80/month. Add news classification at Haiku
+   scale (~1000 articles/day) ≈ $5/day. Total operating cost:        
+  ~$200/month if everything is on. Hobby Vercel + free Neon won't cover
+   the LLM bill — you'll need an Anthropic API key with budgeted spend,
+   and a hard daily ceiling.
+
+  Proposed phasing
+
+  Phase: 0 — Backfill OHLCV                                            
+  Scope: Fill the empty raw_twse_ohlcv table; add a fundamentals table
+    (PE, PB, EPS)                                                      
+  New MCP tools: (none new — extends existing data)                  
+  Effort: 2-3 days                             
+  When it pays off: Unblocks every quant signal                        
+  ────────────────────────────────────────
+  Phase: 1 — Quant module                                              
+  Scope: Technical indicators, flow z-scores, valuation ratios,      
+  relative                                                             
+    strength, drawdown. Materialized views + Python helpers.         
+  New MCP tools: q_indicators, q_screener, q_relative_strength,
+    q_factor_loadings
+  Effort: 1 week
+  When it pays off: Immediate — deterministic signals
+  ────────────────────────────────────────
+  Phase: 2 — News + cron infra                                         
+  Scope: RSS harvester, dedup, Haiku-driven entity/sentiment
+  extraction.                                                          
+    Cron runner (Vercel Cron or separate worker).                    
+  New MCP tools: news_recent, news_for_ticker, news_sentiment_summary
+  Effort: 1 week
+  When it pays off: Feeds phases 3 and 5
+  ────────────────────────────────────────
+  Phase: 3 — Dual-agent analysis                                       
+  Scope: Two scheduled Claude jobs per ticker per day: naive + aware.
+    Reconciler diff stored as signal_divergence. The interesting  one. 
+  New MCP tools: qual_view, signal_divergence, consensus_disagreement
+  Effort: 1.5 weeks                            
+  When it pays off: Distinctive — the system's real edge
+  ────────────────────────────────────────
+  Phase: 4 — ML regime + anomaly                                       
+  Scope: TimesFM (or simpler: a HMM regime classifier) for volatility
+    regime, flow anomaly. Outputs to signal_regime.                    
+  New MCP tools: q_regime, q_flow_anomaly                            
+  Effort: 1 week                               
+  When it pays off: Filter for when to trust other signals
+  ────────────────────────────────────────
+  Phase: 5 — Decision integration                                      
+  Scope: The decide tool: composes all signals into ranked watchlist
+    with conviction score and a "lean and bold" filter (suppress unless
+                                                                     
+    N independent signals agree).              
+  New MCP tools: decide, decide_explain
+  Effort: 0.5 week
+  When it pays off: The endpoint you actually use
+  ────────────────────────────────────────
+  Phase: 6 — IB/whale tracking                                         
+  Scope: 13F + central bank speech monitor. Optional, low ROI.
+  New MCP tools: ib_positions, cb_speech_recent                        
+  Effort: 1 week                                                     
+  When it pays off: Marginal — only after 1-5 are tuned
+
+  Total: ~7 weeks of focused work for phases 0-5. Phase 6 is optional. 
+  
+  Architectural commitments worth making upfront                       
+                                                                     
+  - Provenance everywhere. Every row in signal_* tables carries        
+  (_source, _as_of, _inputs). The MCP _freshness envelope you already
+  have generalizes to all derived signals.                             
+  - Strict prompt isolation between naive and aware agents. They run as
+   separate API calls with literally no shared system prompt or shared 
+  input. The naive agent's prompt enforces: "you have no access to
+  news; reason only from the structured data provided."                
+  - Hard cost ceiling per cron run. A llm_budget table tracks daily  
+  spend; jobs check before invoking. Fail loud at 80%, refuse at 100%. 
+  - Backtest before promote. Every new quant signal must run through a
+  2-year historical backtest and produce a hit-rate / drawdown report  
+  before it gets wired into decide. No untested "AI thinks this looks
+  good" paths into the decision tool.                                  
+  - Two-tier LLM use. Haiku 4.5 for extraction/classification at scale
+  (sentiment scoring, entity extraction). Sonnet/Opus for synthesis at 
+  small N (the dual-agent analysis, the reconciliation).
+  - Lean output. decide should return ≤5 conviction calls per week, not
+   a daily noise stream. Surface the disagreement signals from phase 3 
+  — that's where the asymmetric edge lives.    
+                                                                       
+  What I'd push back on                                              
+                                               
+  Question before I write this up as a decision
+
+───────────────────────────────────────────────────────────────────────
+←  ☐ Cron host  ☐ Build order  ☐ Backtests  ✔ Submit  →
+
+Where should daily LLM cron jobs run?
+
+❯ 1. Claude Scheduled Tasks (your existing routines) (Rec
+     Use the `schedule` skill / Claude Code routines to r
+  Proposed phasing
+
+  Phase: 0 — Backfill OHLCV
+  Scope: Fill the empty raw_twse_ohlcv table; add a
+    fundamentals table (PE, PB, EPS)
+  New MCP tools: (none new — extends existing data)
+  Effort: 2-3 days
+  When it pays off: Unblocks every quant signal
+  ────────────────────────────────────────
+  Phase: 1 — Quant module
+  Scope: Technical indicators, flow z-scores, valuation
+    ratios, relative strength, drawdown. Materialized
+    views + Python helpers.
+  New MCP tools: q_indicators, q_screener,
+    q_relative_strength, q_factor_loadings
+  Effort: 1 week
+  When it pays off: Immediate — deterministic signals
+  ────────────────────────────────────────
+  Phase: 2 — News + cron infra
+  Scope: RSS harvester, dedup, Haiku-driven
+    entity/sentiment extraction. Cron runner (Vercel Cron
+
+    or separate worker).
+  New MCP tools: news_recent, news_for_ticker,
+    news_sentiment_summary
+  Effort: 1 week
+  When it pays off: Feeds phases 3 and 5
+  ────────────────────────────────────────
+  Phase: 3 — Dual-agent analysis
+  Scope: Two scheduled Claude jobs per ticker per day:
+    naive + aware. Reconciler diff stored as
+    signal_divergence. The interesting one.
+  New MCP tools: qual_view, signal_divergence,
+    consensus_disagreement
+  Effort: 1.5 weeks
+  When it pays off: Distinctive — the system's real edge
+  ────────────────────────────────────────
+  Phase: 4 — ML regime + anomaly
+  Scope: TimesFM (or simpler: a HMM regime classifier)
+  for
+    volatility regime, flow anomaly. Outputs to
+    signal_regime.
+  New MCP tools: q_regime, q_flow_anomaly
+  Effort: 1 week
+  When it pays off: Filter for when to trust other
+  signals
+  ────────────────────────────────────────
+  Phase: 5 — Decision integration
+  Scope: The decide tool: composes all signals into
+  ranked
+    watchlist with conviction score and a "lean and bold"
+
+    filter (suppress unless N independent signals agree).
+  New MCP tools: decide, decide_explain
+  Effort: 0.5 week
+  When it pays off: The endpoint you actually use
+  ────────────────────────────────────────
+  Phase: 6 — IB/whale tracking
+  Scope: 13F + central bank speech monitor. Optional, low
+
+    ROI.
+  New MCP tools: ib_positions, cb_speech_recent
+  Effort: 1 week
+  When it pays off: Marginal — only after 1-5 are tuned
+
+  Total: ~7 weeks of focused work for phases 0-5. Phase 6
+   is optional.
+
+  Architectural commitments worth making upfront
+
+  - Provenance everywhere. Every row in signal_* tables
+  carries (_source, _as_of, _inputs). The MCP _freshness
+  envelope you already have generalizes to all derived
+  signals.
+  - Strict prompt isolation between naive and aware
+  agents. They run as separate API calls with literally
+  no shared system prompt or shared input. The naive
+  agent's prompt enforces: "you have no access to news;
+  reason only from the structured data provided."
+  - Hard cost ceiling per cron run. A llm_budget table
+  tracks daily spend; jobs check before invoking. Fail
+  loud at 80%, refuse at 100%.
+  - Backtest before promote. Every new quant signal must
+  run through a 2-year historical backtest and produce a
+  hit-rate / drawdown report before it gets wired into
+  decide. No untested "AI thinks this looks good" paths
+  into the decision tool.
+  - Two-tier LLM use. Haiku 4.5 for
+  extraction/classification at scale (sentiment scoring,
+  entity extraction). Sonnet/Opus for synthesis at small
+  N (the dual-agent analysis, the reconciliation).
+  - Lean output. decide should return ≤5 conviction calls
+   per week, not a daily noise stream. Surface the
+  disagreement signals from phase 3 — that's where the
+  asymmetric edge lives.
+
+  What I'd push back on
+
+  - Don't build all of it before validating. Phase 1 + 3
+  are where 80% of your edge lives. Build those, run them
+   for a month, see if signals predict anything before
+  adding 4 and 5.
+  - ML time-series price prediction is a tar pit. If we
+  do phase 4, frame it as regime/anomaly only and budget
+  one week max — if it doesn't show clear value, drop it.
+  - "Investment bank viewpoint detection" sounds
+  high-edge but is mostly already priced in. Phase 6
+  last, and only if you genuinely need it.
+
+  Question before I write this up as a decision
+
+─────────────────────────────────────────────────────────
+←  ☐ Cron host  ☐ Build order  ☐ Backtests  ✔ Submit  →
+
+  - Two-tier LLM use. Haiku 4.5 for extraction/classification at scale (sentiment scoring, entity extraction). Sonnet/Opus
+  for synthesis at small N (the dual-agent analysis, the reconciliation).
+  - Lean output. decide should return ≤5 conviction calls per week, not a daily noise stream. Surface the disagreement
+  signals from phase 3 — that's where the asymmetric edge lives.
+
+  What I'd push back on
+
+  - Don't build all of it before validating. Phase 1 + 3 are where 80% of your edge lives. Build those, run them for a
+
+  Phase: 0 — Backfill OHLCV
+  Scope: Fill the empty raw_twse_ohlcv table; add a fundamentals table
+    (PE, PB, EPS)
+  New MCP tools: (none new — extends existing data)
+  Effort: 2-3 days
+  When it pays off: Unblocks every quant signal
+  ────────────────────────────────────────
+  Phase: 1 — Quant module
+  Scope: Technical indicators, flow z-scores, valuation ratios, relative
+
+    strength, drawdown. Materialized views + Python helpers.
+  New MCP tools: q_indicators, q_screener, q_relative_strength,
+    q_factor_loadings
+  Effort: 1 week
+  When it pays off: Immediate — deterministic signals
+  ────────────────────────────────────────
+  Phase: 2 — News + cron infra
+  Scope: RSS harvester, dedup, Haiku-driven entity/sentiment extraction.
+
+    Cron runner (Vercel Cron or separate worker).
+  New MCP tools: news_recent, news_for_ticker, news_sentiment_summary
+  Effort: 1 week
+  When it pays off: Feeds phases 3 and 5
+  ────────────────────────────────────────
+  Phase: 3 — Dual-agent analysis
+  Scope: Two scheduled Claude jobs per ticker per day: naive + aware.
+    Reconciler diff stored as signal_divergence. The interesting  one.
+  New MCP tools: qual_view, signal_divergence, consensus_disagreement
+  Effort: 1.5 weeks
+  When it pays off: Distinctive — the system's real edge
+  ────────────────────────────────────────
+  Phase: 4 — ML regime + anomaly
+  Scope: TimesFM (or simpler: a HMM regime classifier) for volatility
+    regime, flow anomaly. Outputs to signal_regime.
+  New MCP tools: q_regime, q_flow_anomaly
+  Effort: 1 week
+  When it pays off: Filter for when to trust other signals
+  ────────────────────────────────────────
+  Phase: 5 — Decision integration
+  Scope: The decide tool: composes all signals into ranked watchlist
+  with
+    conviction score and a "lean and bold" filter (suppress unless N
+    independent signals agree).
+  New MCP tools: decide, decide_explain
+  Effort: 0.5 week
+  When it pays off: The endpoint you actually use
+  ────────────────────────────────────────
+  Phase: 6 — IB/whale tracking
+  Scope: 13F + central bank speech monitor. Optional, low ROI.
+  New MCP tools: ib_positions, cb_speech_recent
+  Effort: 1 week
+  When it pays off: Marginal — only after 1-5 are tuned
+
+  Total: ~7 weeks of focused work for phases 0-5. Phase 6 is optional.
+
+  Architectural commitments worth making upfront
+
+  - Provenance everywhere. Every row in signal_* tables carries
+  (_source, _as_of, _inputs). The MCP _freshness envelope you already
+  have generalizes to all derived signals.
+  - Strict prompt isolation between naive and aware agents. They run as
+  separate API calls with literally no shared system prompt or shared
+  input. The naive agent's prompt enforces: "you have no access to news;
+   reason only from the structured data provided."
+  - Hard cost ceiling per cron run. A llm_budget table tracks daily
+  spend; jobs check before invoking. Fail loud at 80%, refuse at 100%.
+  - Backtest before promote. Every new quant signal must run through a
+  2-year historical backtest and produce a hit-rate / drawdown report
+  before it gets wired into decide. No untested "AI thinks this looks
+  good" paths into the decision tool.
+  - Two-tier LLM use. Haiku 4.5 for extraction/classification at scale
+  (sentiment scoring, entity extraction). Sonnet/Opus for synthesis at
+  small N (the dual-agent analysis, the reconciliation).
+  - Lean output. decide should return ≤5 conviction calls per week, not
+  When it pays off: Marginal — only after 1-5 are tuned
+
+  Total: ~7 weeks of focused work for phases 0-5. Phase 6 is optional.
+
+  Architectural commitments worth making upfront
+
+  - Provenance everywhere. Every row in signal_* tables carries (_source, _as_of, _inputs). The MCP _freshness envelope you
+   already have generalizes to all derived signals.
+  - Strict prompt isolation between naive and aware agents. They run as separate API calls with literally no shared system
+  prompt or shared input. The naive agent's prompt enforces: "you have no access to news; reason only from the structured
+  data provided."
+  - Hard cost ceiling per cron run. A llm_budget table tracks daily spend; jobs check before invoking. Fail loud at 80%,
+  refuse at 100%.
+  - Backtest before promote. Every new quant signal must run through a 2-year historical backtest and produce a hit-rate /
+  drawdown report before it gets wired into decide. No untested "AI thinks this looks good" paths into the decision tool.
+  - Two-tier LLM use. Haiku 4.5 for extraction/classification at scale (sentiment scoring, entity extraction). Sonnet/Opus
+  for synthesis at small N (the dual-agent analysis, the reconciliation).
+  - Lean output. decide should return ≤5 conviction calls per week, not a daily noise stream. Surface the disagreement
+  signals from phase 3 — that's where the asymmetric edge lives.
+
+  What I'd push back on
+
+  - Don't build all of it before validating. Phase 1 + 3 are where 80% of your edge lives. Build those, run them for a
+  month, see if signals predict anything before adding 4 and 5.
+  - ML time-series price prediction is a tar pit. If we do phase 4, frame it as regime/anomaly only and budget one week max
+   — if it doesn't show clear value, drop it.
+  - "Investment bank viewpoint detection" sounds high-edge but is mostly already priced in. Phase 6 last, and only if you
+  genuinely need it.
+
+  Question before I write this up as a decision
+
+  Two choices that change the architecture:
+  ⎿  Tool use rejected
+
+⏺ Got it — they want to discuss before deciding the last two. The first answer (Claude Scheduled Tasks) is locked in.
+
+  What part would you like to clarify? A few things you might be weighing:
+
+  - On build order — whether the dual-agent thing (phase 3) is too speculative to commit to before phase 1 has shown       
+  signals worth analyzing, or whether the architectural cost of bolting it on later is worse.
+  - On backtesting — what counts as a passing backtest (hit rate? Sharpe? drawdown? all three?), and whether the v2 data   
+  (only ~90 trading days deep) is even enough to backtest meaningfully yet.                                                
+  - On scope of phase 0 — what fundamentals/OHLCV data is actually needed and where to source it (TWSE for OHLCV is
+  straightforward; PE/PB/EPS quarterly fundamentals are harder).                                                           
+  - On the dual-agent design — what counts as "narrative-naive" inputs vs "narrative-aware" — is just news the           
+  contamination, or also analyst ratings, social sentiment, anything text-derived?                                         
+  - Something else I haven't surfaced.                                                                                   
+                                                                                                                           
+  Tell me what's bugging you and I'll think through it before we lock down the plan.                                       
+                                               
+✻ Sautéed for 2m 30s                                                                                                       
+                                                                                                                       
+❯ So the Claude scheduled task, I have 15 of them to run per day for free. I will use that. Then it would produce some     
+  document in my local files, Which live in a project and can be synced onto maybe a text Friendly cloud, like Drive or... 
+   database.. And the dual agents, I think I would do it in the form of Claude skill, which is highly structured, well     
+  instructed, well written, MD files. And I can run that manually on demand in the Claude app With a project, so the chat  
+  memories are shared.                                                                                                     
+                                                                                                                           
+⏺ That changes the architecture meaningfully — and in a leaner direction. Let me reframe.                                  
+                                                                                                                       
+  What the constraints mean                    
+
+  15 scheduled tasks/day = 15 distinct daily routines, not 15 LLM calls. Each task can do as much work as it wants inside  
+  (read MCP, fetch RSS, classify with Haiku, write a digest). So the question isn't "how do we fit 50 calls into 15 slots"
+  — it's "what are the 15 most valuable daily digests we could produce?" That's a much better problem.                     
+                                                                      
+  Skills for the dual-agent = manual depth-on-demand, not automated. The interesting "narrative-naive vs narrative-aware"  
+  reasoning happens when you're about to act on something, not every day on every ticker. That's actually the right shape —
+   automating it would have produced expensive noise. The skill design fits the use case: structured MD instructions, run  
+  in the Claude app with full project context, output is itself an MD file added to the project.
+                                               
+  Project files as the source of truth for qualitative output. Neon stores structured/numeric stuff; the project repo (or a
+   synced Drive folder) stores text artifacts — digests, theses, journals. Git already gives you versioning + sync; Drive
+  is optional.                                                                                                             
+                                                                      
+  Revised system shape                         
+
+  Three layers, each with a clear job:                                                                                     
+   
+  ┌─────────────────┬───────────────────────────────────────────────────────────┬──────────────────────────────────────┐   
+  │      Layer      │                      What lives here                      │           Update mechanism           │
+  ├─────────────────┼───────────────────────────────────────────────────────────┼──────────────────────────────────────┤
+  │ MCP / Neon      │ Raw data, materialized views, quant signals, news article │ Harvester crons (no LLM needed)      │
+  │                 │  index                                                    │                                      │
+  ├─────────────────┼───────────────────────────────────────────────────────────┼──────────────────────────────────────┤   
+  │ Daily digests   │ docs/digests/YYYY-MM-DD/*.md — text snapshots: quant      │                                      │   
+  │ (15 scheduled   │ summary, news+sentiment, rotation, anomalies, macro,      │ Claude Scheduled Tasks → write file  │   
+  │ tasks)          │ geopolitics, daily disagreement scan                      │                                      │   
+  ├─────────────────┼───────────────────────────────────────────────────────────┼──────────────────────────────────────┤
+  │                 │                                                           │ Manual skill invocation in Claude    │
+  │ Skills +        │ tickers/2330/thesis.md, theses/2026-05-08-bull-tsmc.md,   │ app, project memory is shared so     │   
+  │ project chats   │ decision logs                                             │ prior digests/theses inform new      │
+  │                 │                                                           │ analyses                             │   
+  └─────────────────┴───────────────────────────────────────────────────────────┴──────────────────────────────────────┘
+                                               
+  The daily disagreement scan is the cheap, automated version of your dual-agent idea: one of the 15 tasks reads that day's
+   quant digest + news digest and writes "where do they disagree?" to a file. The full dual-agent skill is the deep
+  version, run on demand when you want to act on a disagreement.                                                           
+                                                                      
+  Proposed file layout                         
+
+  docs/digests/
+    2026-05-08/
+      01-quant.md          # foreign flow, accumulation streaks, rotation
+      02-news.md           # last 24h: classified + sentiment                                                              
+      03-anomalies.md      # tickers flagged by quant
+      04-macro.md          # rates, FX, semi cycle indicators                                                              
+      05-geo.md            # US-China, supply chain disruptions                                                            
+      06-disagreement.md   # quant vs news divergence                                                                      
+      summary.md           # aggregator, read first                                                                        
+                                                                      
+  docs/theses/             # one MD per active thesis                                                                      
+    2330-tsmc-foundry-cycle.md                                        
+    2317-foxconn-server-odm.md                                                                                             
+                                                                                                                           
+  docs/journals/           # per-ticker rolling notes from skill runs                                                      
+    2330-tsmc.md                                                                                                           
+                                                                                                                           
+  skills/                  # the on-demand dual-agent + others                                                             
+    decide-on-ticker/                                                                                                      
+      SKILL.md             # instructions + dual-agent prompt                                                              
+      helpers.md                                                                                                           
+    weekly-review/                             
+      SKILL.md                                                                                                             
+    position-thesis/                                                  
+      SKILL.md                                 
+
+  Sync: just commit. Git → GitHub → Drive mirror is one line of rclone if you want a non-coder-readable backup.            
+   
+  Revised phasing                                                                                                          
+                                                                      
+  ┌───────┬──────────────────────────────────────────────────────────────────────────────────────────────┬──────────┐      
+  │ Phase │                                             What                                             │  Effort  │
+  ├───────┼──────────────────────────────────────────────────────────────────────────────────────────────┼──────────┤      
+  │ 0     │ OHLCV backfill — fill raw_twse_ohlcv                                                         │ 2–3 days │
+  ├───────┼──────────────────────────────────────────────────────────────────────────────────────────────┼──────────┤
+  │ 1     │ Quant MCP tools (q_indicators, q_screener, q_relative_strength, q_anomalies)                 │ 1 week   │      
+  ├───────┼──────────────────────────────────────────────────────────────────────────────────────────────┼──────────┤      
+  │ 2     │ News harvester cron + n_* MCP tools (article index in Neon, sentiment scoring at write time) │ 1 week   │      
+  ├───────┼──────────────────────────────────────────────────────────────────────────────────────────────┼──────────┤      
+  │ 3     │ First 5 scheduled tasks: quant digest, news digest, rotation, anomalies, disagreement scan   │ 1 week   │
+  ├───────┼──────────────────────────────────────────────────────────────────────────────────────────────┼──────────┤      
+  │ 4     │ First two skills: decide-on-ticker, weekly-review                                            │ 0.5 week │
+  ├───────┼──────────────────────────────────────────────────────────────────────────────────────────────┼──────────┤      
+  │ 5     │ Remaining 10 scheduled task slots, filled as gaps appear                                     │ ongoing  │
+  ├───────┼──────────────────────────────────────────────────────────────────────────────────────────────┼──────────┤      
+  │ 6     │ ML/IB if still wanted                                                                        │ optional │
+  └───────┴──────────────────────────────────────────────────────────────────────────────────────────────┴──────────┘      
+                                                                      
+  Total to a working system: ~4 weeks (down from 7 in my earlier plan, because the architecture is leaner).                
+                                                                      
+  Restating the two open questions in this framing   
+
+  ⏺ Pipeline is fully autonomous now                                                  
+                                                                                                                           
+  News harvester runs every 4h via GH Actions, TWSE+OHLCV+signals daily at 16:30 Taipei, both connecting cleanly to Neon.  
+  1,261 articles in raw_news and growing on schedule.     
+                                                                                                                           
+  The two debugging gotchas worth remembering (both now in the wiki for next time anyone hits this):                       
+                                                   
+  1. GH runners advertise IPv6 but the path is dead. Pin Neon hostname to IPv4 in /etc/hosts rather than fighting          
+  getaddrinfo precedence.                                                                                                  
+  2. libpq tries Kerberos GSS encryption before TLS. Neon's pooler doesn't reply in a way it expects, so connections sit   
+  for 15s+. Append &gssencmode=disable to the DSN in CI env.                                                               
+                                                                                                                           
+  Pushed in this session: b9b9ee3..459ec1d — 14 commits covering Phase 0 through Phase 2a + the cron wiring + the          
+  debugging.                                                                                                               
+                                                                                                                           
+  What's autonomous starting now:                                                                                          
+  - News harvester at 04:00, 10:00, 14:00, 22:00 UTC
+  - Daily TWSE pipeline (T86 + holdings + margin + revenue + OHLCV + news + quant signals + view refresh + Telegram alert) 
+  at 08:30 UTC weekdays                                                                                                   
+  - MCP server at alphatecx-v2-mcp.vercel.app always-on, reading from a Neon DB that fills itself                          
+                                    
