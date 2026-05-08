@@ -201,3 +201,13 @@ attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
   3. **Sharp divergence** (1 name: GUC 3443) — RSI 87.8 + MACD hist 143 (extreme momentum) BUT foreign_net_z20 = −1.82 (institutional distribution) AND 0 news mentions. Classic distribution-into-strength: technicals euphoric, flow opposite, narrative absent.
 - Confirms the system's central design thesis: data + narrative compared yields candidates the naive scan of either alone would miss. The "silent strength" category is the lean-and-bold setup the user asked for.
 - This is the cron version of the dual-agent design (cheap, automated, no LLM call); the manual decide-on-ticker Skill will run on candidates surfaced here.
+
+## [2026-05-08] decision | GitHub Actions cron live — debug saga + 2 lessons learned
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture, infrastructure-accounts]
+- Both workflows live: `daily_harvest.yml` (16:30 Taipei weekdays) and `news_harvest.yml` (4× daily). Verified end-to-end: 218 articles ingested in the run after the fix landed.
+- **Two GH-Actions-vs-Neon gotchas debugged the hard way:**
+  1. **IPv6 path is dead on hosted runners.** Neon hostnames return both A and AAAA. Default Linux `getaddrinfo` prefers IPv6, but the runner's IPv6 egress hangs on send. `/etc/gai.conf` precedence tweak didn't take effect (psycopg-binary likely uses bundled resolver). Fix: edit `/etc/hosts` to pin the pooler hostname to its IPv4. libpq does normal hostname-based connect with proper SNI, no IPv6 attempted.
+  2. **GSS encryption negotiation hangs.** Even after IPv4 was confirmed reachable (`nc -vz` <1ms), psycopg connect still timed out at 15s+. libpq tries Kerberos GSS encryption *before* TLS, and Neon's pooler doesn't reply in a way libpq expects, so it sits there. Fix: append `&gssencmode=disable` to the DSN env var in the workflow.
+- Both fixes together unblock GH-Actions ↔ Neon connectivity. Local Mac and Vercel ignore both gracefully (gssencmode=disable is the libpq default-when-no-keytab-present anyway, and `/etc/hosts` only affects the runner image).
+- Total commits in the debugging session: 9 (one revert of an unhelpful `_force_ipv4` helper). Final fix was a 1-line env-var append + a 7-line `/etc/hosts` step.
+- **Phase 2a is now operationally complete.** News harvester runs unattended on cron; raw_news fills continuously; n_recent / n_for_ticker / n_source_status MCP tools serve fresh data.
