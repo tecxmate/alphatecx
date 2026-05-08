@@ -262,3 +262,20 @@ attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
   2. Escalation candidate: 6488 環球晶 (watchlist + foreign_z +4.25)
   3. Escalation candidate: 3324 雙鴻 (watchlist + foreign_z +4.25)
 - Watchlist intentionally excludes thesised names (3443 sits in `docs/theses/` instead). Names should escalate to thesis or drop within ~5 trading days.
+
+## [2026-05-08] decision | Telegram bot — watchlist + ticker queries
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture, mcp-server]
+- New write surface: Vercel function `/bot/webhook` on the same project as the MCP, gated by Telegram's secret-token header AND owner chat-id check. Different DSN: `BOT_DATABASE_URL` (writer) vs MCP's `MCP_DATABASE_URL` (read-only). MCP boundary intact.
+- Source-of-truth for watchlist moved from `docs/watchlist/active.md` to a new `watchlist` table (`sql/007_watchlist.sql`). Two existing rows (6488, 3324) seeded inline. The MD file kept as a stub pointing at the bot. Briefs + MCP read from DB now.
+- Bot commands implemented:
+  - `/watch <ticker> [reason]` — add (validates ticker against dim_supply_chain)
+  - `/unwatch <ticker>` — archive (status=archived, kept for history)
+  - `/watchlist` — show active rows
+  - `/q <ticker>` — quant indicator snapshot (RSI/MACD/BB/foreign_z/RS)
+  - `/n <ticker>` — last 7d news mentions
+  - `/thesis <ticker>` — points at the file in `docs/theses/`
+  - `/help` — command list
+- New MCP tool `w_watchlist(status)` — Claude app can read same source via MCP.
+- 4 new Vercel env vars: BOT_DATABASE_URL (writer + gssencmode=disable), TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET (32-byte URL-safe random, generated locally, not committed).
+- Telegram webhook registered to https://alphatecx-v2-mcp.vercel.app/bot/webhook with secret_token header.
+- Defense-in-depth: even if the URL leaks, requests without the secret-token header get 403; even if both leak, the chat-id check filters everyone except the owner; even if both bypassed, the bot is bounded to the watchlist + read tools (no thesis/MD edits, no DDL).

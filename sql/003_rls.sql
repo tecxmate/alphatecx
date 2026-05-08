@@ -99,6 +99,21 @@ BEGIN
   END IF;
 END$$;
 
+-- Watchlist (Phase 3.5). Bot writes via writer DSN; MCP only reads.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema='public' AND table_name='watchlist') THEN
+    EXECUTE 'GRANT SELECT ON watchlist TO mcp_viewer';
+    EXECUTE 'ALTER TABLE watchlist ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'DROP POLICY IF EXISTS "mcp_viewer_read_watchlist" ON watchlist';
+    EXECUTE $POLICY$
+      CREATE POLICY "mcp_viewer_read_watchlist"
+        ON watchlist FOR SELECT TO mcp_viewer USING (true)
+    $POLICY$;
+  END IF;
+END$$;
+
 -- Explicitly deny writes
 REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public FROM mcp_viewer;
 

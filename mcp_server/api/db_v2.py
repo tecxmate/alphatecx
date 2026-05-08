@@ -574,6 +574,29 @@ def query_news_source_status() -> list[dict]:
     return _serialize(_fetch(sql))
 
 
+# ── Watchlist (Phase 3.5 — bot-managed, DB source of truth) ──────────────
+
+def query_watchlist(status: str = "active") -> list[dict]:
+    """List watchlist rows. status='active' (default) | 'archived' | 'all'."""
+    if status == "all":
+        sql = """
+            SELECT ticker_id, company_name, ai_pillar, node, reason,
+                   escalation_trigger, status, added_at, updated_at
+            FROM watchlist ORDER BY added_at DESC
+        """
+        rows = _fetch(sql, ())
+    elif status in ("active", "archived"):
+        sql = """
+            SELECT ticker_id, company_name, ai_pillar, node, reason,
+                   escalation_trigger, status, added_at, updated_at
+            FROM watchlist WHERE status = %s ORDER BY added_at DESC
+        """
+        rows = _fetch(sql, (status,))
+    else:
+        return [{"error": f"unknown status '{status}'"}]
+    return _serialize(rows)
+
+
 # ── Digests (Phase 3 — cron-generated briefs) ─────────────────────────────
 
 def query_digest_recent(days: int = 3, kind: Optional[str] = None) -> list[dict]:

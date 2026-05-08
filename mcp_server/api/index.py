@@ -505,6 +505,27 @@ def n_source_status() -> dict:
     )
 
 
+# ── Tool: Watchlist (Phase 3.5) ──────────────────────────────────────────
+
+@mcp.tool()
+def w_watchlist(status: str = "active") -> dict:
+    """Active watchlist — names being monitored but not yet at thesis stage.
+
+    Sourced from the `watchlist` table in Neon. Mutations happen via
+    the Telegram bot (`/watch`, `/unwatch`); this tool is read-only.
+
+    Args:
+        status: 'active' (default), 'archived', or 'all'.
+    """
+    rows = db_v2.query_watchlist(status=status)
+    return _stamp(
+        {"watchlist": rows, "count": len(rows), "status": status},
+        source="watchlist",
+        as_of=_today_iso(),
+        freshness="real_time",
+    )
+
+
 # ── Tool: Digests (Phase 3) ──────────────────────────────────────────────
 
 @mcp.tool()
@@ -610,6 +631,7 @@ def sc_capabilities() -> dict:
             {"name": "n_source_status", "purpose": "Per-source freshness — verify feeds still updating"},
             {"name": "d_recent", "purpose": "Recent cron-generated briefs (pre-market / intraday / post-close)"},
             {"name": "d_for_date", "purpose": "All digests for one specific date"},
+            {"name": "w_watchlist", "purpose": "Active watchlist — bot-managed names being monitored"},
         ],
     }
 

@@ -39,6 +39,7 @@ sql_files = [
     "sql/004_quant.sql",
     "sql/005_news.sql",
     "sql/006_digests.sql",
+    "sql/007_watchlist.sql",
 ]
 if args.rls:
     pw = os.getenv("MCP_VIEWER_PASSWORD")

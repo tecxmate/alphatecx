@@ -206,36 +206,20 @@ def _active_theses() -> list[dict]:
 
 
 def _watchlist() -> list[dict]:
-    """Parse docs/watchlist/active.md and return one dict per row.
-
-    Lightweight markdown-table parser — no pandas/yaml dependency. The
-    table format is documented in docs/watchlist/README.md and must
-    have the columns: ticker, company, pillar/node, added, reason,
-    escalation_trigger.
-    """
-    p = Path("docs/watchlist/active.md")
-    if not p.exists():
-        return []
-    out: list[dict] = []
-    in_table = False
-    headers: list[str] = []
-    for line in p.read_text().splitlines():
-        s = line.strip()
-        if not s.startswith("|"):
-            in_table = False
-            continue
-        cells = [c.strip() for c in s.strip("|").split("|")]
-        # Skip the header-separator row (|---|---|...).
-        if all(set(c).issubset({"-", ":"}) for c in cells if c):
-            in_table = True
-            continue
-        if not in_table:
-            headers = [c.lower().replace(" ", "_") for c in cells]
-            continue
-        if len(cells) != len(headers):
-            continue
-        out.append(dict(zip(headers, cells)))
-    return out
+    """Read active watchlist rows from the DB. Source of truth changed
+    from docs/watchlist/active.md to the watchlist table in 007_watchlist.sql
+    so the Telegram bot can mutate it directly."""
+    with cur() as c:
+        c.execute("SET search_path TO public, neon_auth")
+        c.execute("""
+            SELECT ticker_id, company_name, ai_pillar, node, reason,
+                   escalation_trigger, added_at::date
+            FROM watchlist WHERE status = 'active'
+            ORDER BY added_at DESC, ticker_id
+        """)
+        cols = ["ticker", "company", "ai_pillar", "node", "reason",
+                "escalation_trigger", "added"]
+        return [dict(zip(cols, row)) for row in c.fetchall()]
 
 
 def _action_checklist(extremes: list[dict], ticker_news: list[dict],
@@ -359,8 +343,8 @@ def pre_market_brief() -> None:
             lines.append("## Watchlist (escalation candidates)\n")
             for w in watchlist:
                 lines.append(f"- **{w.get('ticker','?')} {w.get('company','?')}** "
-                             f"({w.get('pillar/node','?')}, added {w.get('added','?')}) — "
-                             f"{w.get('reason','')[:160]}")
+                             f"({w.get('ai_pillar','?')}/{w.get('node','?')}, added {w.get('added','?')}) — "
+                             f"{(w.get('reason') or '')[:160]}")
             lines.append("")
 
         checklist = _action_checklist(extremes, ticker_news, theses, watchlist)
@@ -503,7 +487,7 @@ def post_close_brief() -> None:
         lines.append(f"\n## Watchlist ({len(watchlist)} names)")
         for w in watchlist:
             lines.append(f"- **{w.get('ticker','?')} {w.get('company','?')}** "
-                         f"— {w.get('reason','')[:140]}")
+                         f"— {(w.get('reason') or '')[:140]}")
 
     lines.append(f"\n## Active theses: {active_theses}")
     if active_theses == 0:
