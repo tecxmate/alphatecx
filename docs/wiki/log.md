@@ -211,3 +211,19 @@ attributed_to: [antigravity-agent]   belongs_to: [system-architecture, infrastru
 - Both fixes together unblock GH-Actions ↔ Neon connectivity. Local Mac and Vercel ignore both gracefully (gssencmode=disable is the libpq default-when-no-keytab-present anyway, and `/etc/hosts` only affects the runner image).
 - Total commits in the debugging session: 9 (one revert of an unhelpful `_force_ipv4` helper). Final fix was a 1-line env-var append + a 7-line `/etc/hosts` step.
 - **Phase 2a is now operationally complete.** News harvester runs unattended on cron; raw_news fills continuously; n_recent / n_for_ticker / n_source_status MCP tools serve fresh data.
+
+## [2026-05-08] decision | Taiwan-aware cron schedule + brief generator
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User specified: crons more intensive around Taiwan trading hours, focus on key signals + findings during day, after-hours thesis status update. Acknowledged that the technical part is doable on cron; deeper analysis stays in Claude app.
+- New schedule (UTC → Taipei):
+  - 23:30 / 07:30 weekdays: pre-market brief (Telegram)
+  - 02:00 / 10:00 weekdays: intraday alerts (silent unless threshold)
+  - 04:00 / 12:00 weekdays: intraday alerts
+  - 06:30 / 14:30 weekdays: intraday alerts (T86 publishing window)
+  - 08:30 / 16:30 weekdays: existing daily pipeline + post-close brief
+  - 13:00 / 21:00 daily: news harvest only
+  - 22:00 / 06:00 daily: news harvest only
+- Brief generator at `src/cron/brief.py` with three modes; intraday is the gated mode (foreign_z>2, RSI>80 or <20, BB%B outside [0,1], OR watchlist ticker named in last-1h news). Pre/post always send.
+- Digests stored in new `daily_digest` table; user chose DB-only (vs commit-MD-back) to keep cron simple. Two new MCP tools `d_recent` / `d_for_date` serve them. Telegram tone "quiet" — morning + evening briefs, alerts only on threshold trip.
+- Local end-to-end test produced 3 real Telegram messages (pre/intra/post) using actual data — confirming the news+signals→digest→Telegram pipeline. Intraday alert correctly named the morning's flagged tickers (Foxconn 2317, Lite-On 2301) plus 4 indicator extremes.
+- Phase A of user's brief: cron-driven Telegram + DB digests. Phase B (manual deep analysis via Claude app + decide-on-ticker Skill) is the unchanged half.
