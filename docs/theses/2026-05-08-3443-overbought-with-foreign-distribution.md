@@ -5,34 +5,42 @@ opened: 2026-05-08
 status: active
 last_review: 2026-05-08
 horizon: 1-3 weeks
-catalyst: foreign_net_z20 recovers to >0 within 5 trading days (flow absorption confirmed)
-invalidation: close < SMA-50 (3034) OR foreign_net_5d_sum stays < -3M shares for another 5 days (sustained distribution)
-inputs: [sc_supply_chain_map, q_indicators, sc_ticker_momentum, raw_flow_history, sc_sector_momentum, q_backtest_compound]
+catalyst: foreign_net_z20 recovers to >0 within 5 trading days (flow absorption confirmed) OR a second foreign-broker upgrade / earnings beat that re-rates the name
+invalidation: close < SMA-50 (3034) OR foreign_net_5d_sum stays < -3M shares for another 5 days (sustained distribution) OR a downgrade walking back the 2026-05-06 upgrade
+inputs: [sc_supply_chain_map, q_indicators, sc_ticker_momentum, raw_flow_history, sc_sector_momentum, q_backtest_compound, n_for_ticker, n_source_status]
 sources_naive: [q_*, sc_*, raw_flow_history]
-sources_aware: pending Phase 2b news pipeline
+sources_aware: [n_for_ticker, n_source_status, q_indicators, sc_ticker_momentum, sc_sector_momentum, raw_flow_history, q_backtest_compound]
 naive_conviction: 2
-aware_conviction: n/a
-disagreement: n/a (aware pass deferred)
+aware_conviction: 3
+disagreement: agree
 ---
 
 # Global Unichip (3443) — Overbought + foreign distribution: discipline tool flipped the intuition
 
 ## TL;DR
 
-The naive scan showed extreme RSI (87 yesterday, 79 today) and three days
-of accelerating foreign selling — what looked like a textbook
-distribution-into-strength setup. **The backtest harness contradicts that
-read.** In this universe and regime, the same combination
-(RSI > 75 AND foreign_net_z20 < −1) has historically produced **+12.4% avg
-return over 5d (87.5% hit rate, n=8)** and **+32.7% over 10d (n=3)**.
-The signal-pattern, as seen on prior trigger dates, has been continuation
-not reversal. **But:** sample is thin and 3443's flow pattern (three
-consecutive sustained-foreign-sell days) is qualitatively different
-from the single-day triggers in the backtest population.
+The naive scan showed extreme RSI (87 → 79) plus three days of accelerating
+foreign selling — what looked like textbook distribution-into-strength.
+The backtest harness already contradicted that read (RSI > 75 AND
+foreign_z < −1 has historically been continuation, +12.4%/5d, n=8). The
+**aware pass closes the naive pass's biggest honest gap directly**: a
+2026-05-06 Economic Daily News article reports that foreign brokers
+upgraded target prices on 3443 (alongside Kinsus and 8 other names) with
+the largest hike in the cohort up to 194%. So the apparent paradox is
+just sell-side-research vs. buy-side-flow within the same foreign
+houses — a structural, not thesis-breaking, split.
 
-Verdict: **mildly long-biased with conviction 2/5**, watching whether
-the absorption that started today (total_net flipped positive on 2026-05-08
-even with foreigners still selling) sustains.
+A regime-qualified rule (`RSI > 75 AND foreign_z < −1 AND
+rs_vs_market_60 > 1.3`) tightens the data signal further: 100% hit rate,
++16.6% / 5d (n=5, illustrative). Combined with the upgrade catalyst and
+the absorption signal (5/8 total flow flipped positive even with
+foreigners still selling), the aware pass nudges conviction to 3/5.
+
+Verdict: **bullish, conviction 3/5** (naive 2/5 → aware 3/5 = agree on
+direction, +1 notch on size). Capped below 4 because (1) one article in
+14 days is thin narrative, (2) we cannot tell whether foreign-flow
+selling was front-running the upgrade or unrelated unwind, (3) intra-node
+rotation has the marginal foreign buyer choosing 3035 智原, not 3443.
 
 ## What the data says (naive pass)
 
@@ -133,36 +141,129 @@ opposite.
 
 ## What the narrative sees (aware pass)
 
-**Pending Phase 2b news pipeline.** Until entity-extraction populates
-ticker_mentions on raw_news rows, the naive pass operates as the final
-view. When Phase 2b lands, re-open this thesis as a `last_review`
-entry that adds the news context — particularly any earnings
-announcement, peer disclosures, or rotation narrative around 3035.
+Run 2026-05-08, after `n_for_ticker` came online. The 14-day window
+returned **exactly one** article matching 3443:
+
+> **2026-05-06, Economic Daily News (via gnews-tw-stocks-zh)** —
+> 「景碩、創意等十檔個股獲外資法人上調目標價最多 調幅最高達194%」
+> *(Kinsus, Global Unichip and 8 other names received the largest
+> foreign-broker target-price upgrades; biggest hike up to 194%.)*
+
+That single article carries most of the aware-pass weight because it
+**directly answers the naive pass's #1 honest gap**: foreigners aren't
+all selling — foreign **broker** desks (sell-side research) put through
+an aggressive target-price upgrade, while foreign **flow** desks
+(buy-side trading) have been distributing into the resulting rip. Same
+firms, different teams, opposite views. Flow data sees this cleanly
+because it measures execution, not opinion.
+
+The news vacuum around 3443 is itself informative. 12 sources are live
+and fresh (latest fetched 2026-05-08T10:37:46Z, ~1,100+ articles ingested
+across the relevant windows), and the 3443 / 創意 token only matched once.
+The morning's quant↔news disagreement digest was correct: narrative
+cover is thin and what cover does exist is sell-side broker action — not
+earnings commentary, not retail-driven hype, not a sector-wide
+narrative.
+
+**Closes naive gap #3 (intra-node rotation):** asic-custom-ip is the
+only positive node in the semiconductor pillar over 5 days (foreign
++509K, total +1.57M), but **3443 itself contributes negative 5d flow**
+(foreign −2.09M). The node is being accumulated; the marginal foreign
+buyer is choosing **3035 智原** (top 5d ticker in the node), not 3443.
+Capital rotates *within* the node, out of 3443 and into 3035. That is
+a real datapoint for sizing the long.
+
+**Aware-pass refinement of the data signal.** Re-running the backtest
+with a relative-strength qualifier (3443 currently sits at
+rs_vs_market_60 = 1.47):
+
+| Rule | Forward | n | Hit | Avg | Worst | Best |
+|---|---|---|---|---|---|---|
+| RSI > 75 AND foreign_z < −1 AND **rs_vs_market_60 > 1.3** | 5d | 5 | **100%** | **+16.6%** | +9.2% | +25.1% |
+| Same rule | 10d | 2 | 100% | +25.0% | +19.1% | +30.8% |
+
+Sample warnings (verbatim from the harness):
+> - "Only 5 obs — illustrative"
+> - "Only 2 obs — illustrative"
+
+The RS-qualified rule is *cleaner* than the naive rule's same-pattern
+backtest (n=8 / 87.5% / +12.4%): hit rate to 100%, avg to +16.6%, worst
+case from −0.7% to +9.2%. The "this regime has historically been
+continuation" read survives the news layer and tightens once we
+condition on the regime 3443 is actually in. Per-ticker triggers in the
+RS-qualified population: 4958 (3), 8046 (2). 3443 itself is NOT in the
+RS-qualified population — its prior trigger date didn't satisfy
+RS > 1.3 — so the historical data is analogous, not direct.
+
+**Pre-publication selling — the new honest gap.** Foreign-flow selling
+started **2026-05-04**, two trading days before the upgrade article
+published on 5/6 evening Taipei. Either the trading desks (a) front-ran
+the upgrade publication knowing retail/domestic capital would chase it
+(bullish read — they're done selling), or (b) unwound for an unrelated
+reason like regional rotation, mandate change, redemptions (bearish
+read — selling continues past the upgrade). One article cannot
+distinguish (a) from (b). Tracking foreign_net_z20 over the next 5
+sessions resolves this.
 
 ## The reconciliation
 
-Single-pass thesis (no aware view to reconcile against). The
-*internal* tension is the interesting part:
-- Surface intuition (morning quant digest): bearish — distribution into strength
-- Backtest harness: bullish — pattern has been continuation
-- Flow shape today: ambiguous — foreign still selling but total flow positive
+| | Naive | Aware |
+|---|---|---|
+| Direction | mildly long | bullish |
+| Conviction | 2/5 | 3/5 |
+| Catalyst | foreign_net_z20 flips +ve in 5d | second upgrade / earnings beat / foreign flow flip |
+| Invalidation | close < SMA-50 OR foreign_net_5d < −3M for 5 more days | + downgrade walking back the 5/6 upgrade |
+| Biggest gap | "why are foreigners selling?" | front-run vs. unrelated-unwind ambiguity |
 
-The discipline tool's role here is concrete: it stopped me from
-acting on a plausible-sounding bearish intuition that the historical
-data does not support. That's exactly why this discipline rule exists.
+**Classification: agree.** Both passes point bullish; conviction nudges
++1 notch. The aware pass closes the naive pass's #1 and #3 honest gaps
+directly (the news catalyst explains the run; sector data confirms
+intra-node rotation to 3035). The remaining caveats are different in
+kind from the naive pass's caveats, which is healthy — the gap structure
+is moving forward, not in circles.
+
+The shared blind spot — the standard "agree" risk — is **regime**: both
+passes lean on the strong-uptrend Taiwan AI environment. Three things
+would have to break simultaneously to flip the read: (1) the foreign-broker
+upgrade cycle stalls or reverses, (2) the absorption pattern fails (trust
+funds turn sellers too), and (3) the relative-strength advantage decays.
+Until any of those crack, agree-bullish is the read.
+
+The discipline tool's continued role: the surface intuition was bearish
+(distribution-into-strength); the historical data said continuation; the
+news layer explained the price action AND tightened the data read in the
+same direction. The aware pass is doing the work it was designed for —
+not paraphrasing the news, but using it to close gaps the data couldn't
+close on its own.
 
 ## Position sizing
 
-**Not sized — analytical only.** This thesis is the system's first
-real output; treat it as a calibration run. A real entry would
-require the aware pass plus the deeper news context to confirm
-neither earnings risk nor a specific catalyst is being missed.
+**Still not sized — analytical only.** Aware pass complete; the system
+now has a two-pass read on this name. A real entry decision requires
+explicit user direction on book size and risk budget, plus a check
+against the broader portfolio's existing AI / Taiwan-semiconductor
+exposure (the thesis lives inside an already-tilted regime, so the
+shared-blind-spot risk above is binding for sizing).
+
+If sized, the aware-pass-conditional approach would be: scale into
+3443 only after foreign_net_z20 prints positive on at least one of the
+next 5 sessions (resolves the front-run vs. unrelated-unwind gap on the
+bullish side); cap allocation to keep the *combined* 3443 + 3035 +
+3661 (asic-custom-ip node) exposure within node-level risk budget,
+since the intra-node rotation says the marginal foreign buyer prefers
+3035.
 
 ## Catalyst & invalidation summary
 
-- **Catalyst**: foreign_net_z20 > 0 within 5 trading days, OR
-  foreign_net_5d_sum reversal to > 0. Confirms absorption.
-- **Invalidation**: close < SMA-50 (3034), OR sustained foreign sell
-  another 5 days (foreign_net_5d_sum < −3M). Distribution is real.
+- **Catalyst**:
+  - foreign_net_z20 > 0 within 5 trading days, OR foreign_net_5d_sum
+    reversal to > 0 (resolves the new gap on the bullish side)
+  - OR a *second* foreign-broker target-price upgrade article, OR an
+    earnings beat that re-rates the name (compounds the 5/6 catalyst)
+- **Invalidation**:
+  - close < SMA-50 (3034), OR foreign_net_5d_sum stays < −3M for
+    another 5 days (resolves the new gap on the bearish side)
+  - OR a downgrade walking back the 2026-05-06 upgrade (the narrative
+    catalyst flips)
 - **Next review**: 2026-05-15 (5 trading days from now), or earlier
-  if either trigger fires.
+  if any trigger fires.

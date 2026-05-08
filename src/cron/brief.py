@@ -172,6 +172,92 @@ def _mark_telegram_sent(c, kind: str) -> None:
     )
 
 
+def _active_theses() -> list[dict]:
+    """Read frontmatter of any non-README MD in docs/theses/, return
+    those with status: active. Idea borrowed from the dashboard schema
+    in ZhuLinsen/daily_stock_analysis — surface explicit action items
+    derived from open positions."""
+    theses_dir = Path("docs/theses")
+    if not theses_dir.is_dir():
+        return []
+    out: list[dict] = []
+    for f in sorted(theses_dir.glob("*.md")):
+        if f.name == "README.md":
+            continue
+        text = f.read_text()
+        # Lightweight frontmatter parse — avoids pyyaml dep.
+        if not text.startswith("---"):
+            continue
+        try:
+            _, fm, _ = text.split("---", 2)
+        except ValueError:
+            continue
+        meta: dict[str, str] = {}
+        for line in fm.splitlines():
+            if ":" not in line:
+                continue
+            k, _, v = line.partition(":")
+            meta[k.strip()] = v.strip()
+        if meta.get("status") != "active":
+            continue
+        meta["_path"] = str(f.relative_to(Path(".")))
+        out.append(meta)
+    return out
+
+
+def _action_checklist(extremes: list[dict], ticker_news: list[dict],
+                      theses: list[dict]) -> list[str]:
+    """Generate a 1-3 item do-list from the day's structured data.
+
+    Priority: open theses with trigger-relevant conditions > extreme
+    flow on watchlist tickers > top news event. Capped at 3 items so
+    Telegram messages stay scannable.
+    """
+    items: list[str] = []
+
+    # Active theses → read-the-thesis action
+    for t in theses[:1]:  # limit one thesis-action per brief to avoid noise
+        ticker = t.get("ticker", "?")
+        company = t.get("company", "?")
+        next_review = t.get("last_review", "?")
+        items.append(
+            f"Review thesis on {ticker} {company.split('/')[0].strip()}: "
+            f"check trigger conditions vs today's close (last_review {next_review})"
+        )
+
+    # Extreme foreign flow → follow-through watch
+    for s in extremes[:3]:
+        fz = s.get("foreign_net_z20")
+        if fz is None or abs(fz) < 2.0:
+            continue
+        direction = "buying" if fz > 0 else "selling"
+        items.append(
+            f"Watch {s['ticker_id']} {s['company_name']} for follow-through "
+            f"(foreign_z {fz:+.2f} = extreme {direction})"
+        )
+        if len(items) >= 3:
+            break
+
+    # Top-named news → cross-reference
+    if len(items) < 3 and ticker_news:
+        n = ticker_news[0]
+        items.append(
+            f"Cross-reference {n['ticker_id']} headline against own data: "
+            f"{n['title'][:90]}"
+        )
+
+    if not items:
+        items.append(
+            "No actions — system quiet, no extremes or watchlist news in window"
+        )
+
+    return items[:3]
+
+
+def _format_checklist(items: list[str]) -> str:
+    return "\n".join(f"{i+1}. {item}" for i, item in enumerate(items))
+
+
 # ── Mode: pre_market ──────────────────────────────────────────────────────
 
 def pre_market_brief() -> None:
@@ -205,6 +291,12 @@ def pre_market_brief() -> None:
         else:
             lines.append("## Indicator extremes from yesterday's close\n_None tripping thresholds._\n")
 
+        # Action checklist before macro section — most pressing comes first.
+        theses = _active_theses()
+        checklist = _action_checklist(extremes, ticker_news, theses)
+        lines.append("## Action checklist\n")
+        lines.append(_format_checklist(checklist) + "\n")
+
         lines.append("## Macro/geo headlines (overnight)\n")
         for n in general_news[:5]:
             ts = n["ts"].astimezone(_TPE).strftime("%m-%d %H:%M") if n["ts"] else "—"
@@ -219,16 +311,18 @@ def pre_market_brief() -> None:
                       inputs=["raw_news", "view_latest_signals", "dim_supply_chain"],
                       alerts=alerts)
 
-    # Telegram: short version
+    # Telegram: short version + action checklist (the do-this-first lines)
     short = (f"<b>Pre-market {_today_taipei_iso()}</b>\n"
              f"Watchlist news: {len(ticker_news)} • "
-             f"Indicator extremes: {len(extremes)}\n")
+             f"Indicator extremes: {len(extremes)} • "
+             f"Active theses: {len(theses)}\n")
     if extremes:
         short += "\n<b>Top extremes</b>:\n"
         for s in extremes[:3]:
             short += f"• {_format_signal_alert(s)}\n"
     if ticker_news:
-        short += f"\n<b>Top headline</b>: {ticker_news[0]['title'][:120]}"
+        short += f"\n<b>Top headline</b>: {ticker_news[0]['title'][:120]}\n"
+    short += "\n<b>Actions</b>:\n" + _format_checklist(checklist)
     send(short)
     with cur() as c:
         c.execute("SET search_path TO public, neon_auth")
@@ -308,16 +402,9 @@ def post_close_brief() -> None:
         # Today's news mentions of classified tickers
         ticker_news = _query_news_for_classified(c, hours=24)
 
-        # Active theses count (file-based; cron has the repo checked out)
-        theses_dir = Path("docs/theses")
-        active_theses = 0
-        if theses_dir.is_dir():
-            for f in theses_dir.glob("*.md"):
-                if f.name == "README.md":
-                    continue
-                # Lightweight: assume any non-README MD is a thesis. The
-                # thesis_status job (separate) does the heavy lifting.
-                active_theses += 1
+        # Active theses — read frontmatter so we can show ticker names
+        theses = _active_theses()
+        active_theses = len(theses)
 
     lines = ["# Post-close brief — " + _today_taipei_iso() + "\n"]
     lines.append(f"_Generated {datetime.now(_TPE).strftime('%H:%M %Z')}._\n")
@@ -343,6 +430,16 @@ def post_close_brief() -> None:
     lines.append(f"\n## Active theses: {active_theses}")
     if active_theses == 0:
         lines.append("\n_No active theses yet. Run `decide-on-ticker` Skill in Claude app to open one._")
+    else:
+        for t in theses:
+            lines.append(f"- **{t.get('ticker','?')} {t.get('company','?')}** — "
+                         f"horizon {t.get('horizon','?')}, last_review {t.get('last_review','?')} "
+                         f"[{t['_path']}]")
+
+    # Action checklist last — derived from everything above.
+    checklist = _action_checklist(extremes, ticker_news, theses)
+    lines.append("\n## Action checklist for tomorrow\n")
+    lines.append(_format_checklist(checklist))
 
     body = "\n".join(lines)
     title = f"Post-close — {_today_taipei_iso()}"
@@ -353,17 +450,18 @@ def post_close_brief() -> None:
                       inputs=["view_sector_momentum", "view_latest_signals", "raw_news"],
                       alerts=[{"ticker": s["ticker_id"], "reason": _format_signal_alert(s)} for s in extremes[:8]])
 
-    # Telegram: short summary
+    # Telegram: short summary + action checklist
     short = (f"<b>Post-close {_today_taipei_iso()}</b>\n"
              f"Top sector: <b>{sectors[0]['pillar']}/{sectors[0]['node']}</b> "
-             f"(+{sectors[0]['foreign_5d']:,.0f} shares 5d)\n"
+             f"({'+' if sectors[0]['foreign_5d']>=0 else ''}{sectors[0]['foreign_5d']:,.0f} shares 5d)\n"
              f"Indicator extremes: {len(extremes)} • "
-             f"Watchlist news: {len(ticker_news)}\n")
+             f"Watchlist news: {len(ticker_news)} • "
+             f"Active theses: {active_theses}\n")
     if extremes:
         short += "\n<b>Notable</b>:\n"
         for s in extremes[:3]:
             short += f"• {_format_signal_alert(s)}\n"
-    short += f"\nActive theses: {active_theses}"
+    short += "\n<b>Actions for tomorrow</b>:\n" + _format_checklist(checklist)
     send(short)
 
     with cur() as c:

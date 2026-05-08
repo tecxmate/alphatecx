@@ -237,3 +237,12 @@ attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
 - **Catalyst / invalidation defined**: foreign_z > 0 within 5d = continuation confirmed; close < SMA-50 (3034) = thesis off. Next review 2026-05-15.
 - **Aware pass deferred** until Phase 2b news pipeline lands — important honest gap: cannot answer "why are foreigners selling?" from data alone.
 - This first run validated the skill's discipline mechanism: the "obvious" read got challenged by the backtest, the thesis output reflects the tension explicitly, and the catalyst/invalidation are tied to specific data triggers (not narrative).
+
+## [2026-05-08] decision | Output schema sharpening — borrowed from ZhuLinsen/daily_stock_analysis
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User shared https://github.com/ZhuLinsen/daily_stock_analysis. Most of it doesn't fit (mainland-Chinese universe, Chan/Elliott methodology, 11-strategies agent chat, paid news APIs), but their decision-dashboard schema is sharper than ours: `signal/score/sentiment_label/risks[]/catalysts[]/action_checklist[]`.
+- Borrowed two things only: (1) the structured frontmatter fields for `decide-on-ticker` thesis output, (2) "Action checklist" sections in pre-market and post-close briefs.
+- `skills/decide-on-ticker/SKILL.md` — added six new frontmatter fields. The first run on 3443 GUC predates this schema and stays as-is (calibration run).
+- `src/cron/brief.py` — pre-market and post-close briefs now generate a 1-3 item action checklist from the day's data: open theses → "review trigger conditions", extreme foreign_z → "watch follow-through", top news → "cross-reference". Telegram messages now end with the checklist so the do-list is the last thing the user reads.
+- Smoke test on today's data surfaced two new alerts: **6488 GlobalWafers** and **3324 Auras** both at `foreign_net_z20 = +4.25` (extreme accumulation), based on freshly-landed 2026-05-08 T86 data from the daily run that just completed.
+- Decided NOT to borrow: their methodology (no rigorous backtest culture), data sources (wrong markets), LLM abstraction (we're committed to Anthropic), or web-app paradigm (we're MCP+Skills).

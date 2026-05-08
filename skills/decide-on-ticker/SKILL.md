@@ -163,6 +163,19 @@ sources_aware: [n_*]   # omit if aware pass was skipped
 naive_conviction: <1-5>
 aware_conviction: <1-5 or "n/a">
 disagreement: agree | disagree-direction | disagree-size | n/a
+
+# Decision-dashboard fields — borrowed from ZhuLinsen/daily_stock_analysis.
+# Force a sharper, scannable read of the take. All five required.
+signal: buy | watch | sell           # 3-state action label
+score: <0-100>                       # composite conviction × edge magnitude
+sentiment_label: bullish | ranging | bearish
+risks:                               # 1-3 items, each one short line
+  - <risk 1>
+  - <risk 2>
+catalysts:                           # 1-3 items, each one short line
+  - <catalyst 1>
+action_checklist:                    # 1-3 items, the do-list for the user
+  - <action 1>
 ---
 
 # <Company> (<ticker>) — <thesis title>
