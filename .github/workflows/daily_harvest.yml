@@ -39,6 +39,14 @@ jobs:
           python-version: '3.12'
           cache: pip
 
+      - name: Prefer IPv4 (GH runners have no working IPv6)
+        # Neon hostnames resolve to A + AAAA; default Linux prefers IPv6
+        # but the runner's IPv6 path is dead. Without this fix every
+        # psycopg.connect() sits until timeout on an unreachable
+        # IPv6 address.
+        run: |
+          sudo bash -c 'echo "precedence ::ffff:0:0/96 100" >> /etc/gai.conf'
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 

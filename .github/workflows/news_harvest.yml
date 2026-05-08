@@ -37,6 +37,14 @@ jobs:
           python-version: '3.12'
           cache: pip
 
+      - name: Prefer IPv4 (GH runners have no working IPv6)
+        # Neon hostnames resolve to A + AAAA records; default Linux
+        # getaddrinfo prefers IPv6, but the runner's IPv6 path is dead
+        # so connections time out on the unreachable address. This
+        # gai.conf line raises IPv4 precedence above IPv6.
+        run: |
+          sudo bash -c 'echo "precedence ::ffff:0:0/96 100" >> /etc/gai.conf'
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
