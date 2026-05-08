@@ -547,3 +547,63 @@ Where should daily LLM cron jobs run?
   at 08:30 UTC weekdays                                                                                                   
   - MCP server at alphatecx-v2-mcp.vercel.app always-on, reading from a Neon DB that fills itself                          
                                     
+
+All four tools working end-to-end. Notable bonus: u_universe(filter='extreme') surfaced two unwatched names also
+   tripping thresholds that the morning briefs don't yet flag specifically:                                       
+                                                                                                                  
+  - 2301 Lite-On — RSI 73, foreign_z 0.39 (hot RSI, flow neutral)                                                 
+  - 6155 Winway Technology — RSI 60, foreign_z 2.37 (foreign accumulating)                                        
+                                                                                                                  
+  Worth considering for the watchlist next.                                                                       
+                                                                                                                  
+  Commit + push:                                                                                                  
+                                                                     
+⏺ Bash(cat >> /Users/niko/antigravity/alphatecx-2/docs/wiki/log.md <<'EOF'…)                                      
+  ⎿  M  apply_schema.py                                                                                           
+     M  docs/wiki/log.md                       
+     M  mcp_server/api/db_v2.py      
+     … +8 lines (ctrl+o to expand)                                                                                
+                     
+⏺ Done — unified universe + MCP-side watchlist mutations                                                          
+                                                                                                                  
+  21 MCP tools live on production. The 3 new ones:                                                                
+                                                                                                                  
+  ┌───────────────────────────┬───────────────────────────────────────────────────────────────────────────────┐   
+  │           Tool            │                                      Use                                      │ 
+  ├───────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤   
+  │                           │ One row per classified ticker (knowledge + watch state + latest signals).     │   
+  │ u_universe(filter)        │ Watched first. filter='all' | 'watching' | 'extreme'. Replaces three separate │   
+  │                           │  calls (sc_supply_chain_map + q_indicators + w_watchlist) with one.           │   
+  ├───────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤ 
+  │ w_add(ticker, reason,     │ Add a name to the watchlist from the Claude app (or any MCP client).          │   
+  │ escalation_trigger)       │ Validates ticker is in the curated 26.                                        │   
+  ├───────────────────────────┼───────────────────────────────────────────────────────────────────────────────┤
+  │ w_remove(ticker)          │ Archive a watchlist entry. Idempotent.                                        │   
+  └───────────────────────────┴───────────────────────────────────────────────────────────────────────────────┘   
+                                               
+  Try it from the Claude app                                                                                      
+                                                                      
+  Use u_universe with filter="extreme" — show me anything tripping thresholds.
+                                                                                                                  
+  Should return 4 names today: 6488, 3324 (both watching) + 2301, 6155 (unwatched extremes).                      
+                                                                                                                  
+  Use w_add to put 6155 Winway on the watchlist with reason "foreign_z=2.37 + RSI 60, accumulation start without  
+  overbought"                                                                                                     
+                                               
+  That puts 6155 in active status. Next pre-market brief will show 3 watchlist names.                             
+                                                                      
+  Security note                                                                                                   
+                                                                      
+  The MCP role (mcp_viewer) now has INSERT + UPDATE on the watchlist table specifically — and only that table.    
+  DELETE and any DDL still block at the Postgres role level (verified end-to-end with a deliberate DELETE attempt
+  → permission denied). All other tables remain SELECT-only.                                                      
+                                                                      
+  The blast radius if the MCP bearer token ever leaks is the same as if the Telegram webhook secret leaks: an     
+  attacker can mutate the watchlist. They cannot:
+  - Touch any other table                                                                                         
+  - Issue DELETE                                                      
+  - Run arbitrary SQL                          
+                     
+  Net security is unchanged from before, just the tools available expanded by 2.
+                                                                                                                  
+  Pushed: 48f672b..810a8c6 — schema, RLS, view, db_v2, index, wiki.   
