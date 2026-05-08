@@ -17,7 +17,10 @@ on:
   workflow_dispatch:           # manual trigger from Actions tab
 
 env:
-  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  # gssencmode=disable: GH Actions' libpq hangs on GSS encryption
+  # negotiation against Neon's pooler. Forcing straight TLS fixes it.
+  # /etc/hosts step also pins Neon hostname to IPv4 (GH IPv6 path is dead).
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}&gssencmode=disable
   TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
   TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   TWSE_REQUEST_DELAY: '3.0'
