@@ -50,28 +50,37 @@ jobs:
 
       - name: Diagnose connection
         run: |
+          set +e
+          python -c "
+          import os, socket, urllib.parse as u
+          host = u.urlparse(os.environ['DATABASE_URL']).hostname
+          print('Hostname:', host)
+          ips4 = sorted({sa[0] for fam,_,_,_,sa in socket.getaddrinfo(host, None) if fam == socket.AF_INET})
+          for ip in ips4: print('  IPv4:', ip)
+          " | tee /tmp/ips.txt
+          # Raw TCP probe to each IPv4 — does the runner have network reach at all?
+          for ip in $(grep "IPv4:" /tmp/ips.txt | awk '{print $2}'); do
+            echo "--- nc -vz $ip 5432 ---"
+            timeout 8 nc -vz "$ip" 5432 2>&1 || echo "  TCP-failed"
+          done
+          echo "--- psycopg with direct (non-pooler) endpoint + IPv4 pin ---"
           python <<'PY'
-          import os, socket, traceback, urllib.parse as u
+          import os, traceback, urllib.parse as u
           import psycopg
-          from src.harvester.loader import _force_ipv4
-
-          dsn = os.environ['DATABASE_URL']
-          host = u.urlparse(dsn).hostname
-          # Show all addresses returned by getaddrinfo
-          for fam, _, _, _, sa in socket.getaddrinfo(host, None):
-              print(f"  resolved: {fam.name if hasattr(fam,'name') else fam} -> {sa[0]}")
-
-          dsn_v4 = _force_ipv4(dsn)
-          print(f"  v4-pinned DSN query: {u.urlparse(dsn_v4).query}")
-          try:
-              with psycopg.connect(dsn_v4, connect_timeout=15) as c:
-                  with c.cursor() as cur:
-                      cur.execute("SELECT version()")
-                      print("  CONNECTED:", cur.fetchone()[0][:60])
-          except Exception as e:
-              print(f"  FAILED: {type(e).__name__}: {e}")
-              traceback.print_exc()
-              raise
+          dsn = os.environ['DATABASE_URL'].replace('-pooler', '')
+          for variant_name, extra in [
+              ("direct host", ""),
+              ("direct host + gssencmode=disable", "&gssencmode=disable"),
+          ]:
+              try:
+                  print(f"--- {variant_name} ---")
+                  with psycopg.connect(dsn + extra, connect_timeout=12) as c:
+                      with c.cursor() as cur:
+                          cur.execute("SELECT 1")
+                          print(f"  CONNECTED ({variant_name})")
+                          break
+              except Exception as e:
+                  print(f"  FAILED: {type(e).__name__}: {str(e)[:120]}")
           PY
 
       - name: Harvest news feeds
