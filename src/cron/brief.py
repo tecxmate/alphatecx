@@ -205,40 +205,99 @@ def _active_theses() -> list[dict]:
     return out
 
 
+def _watchlist() -> list[dict]:
+    """Parse docs/watchlist/active.md and return one dict per row.
+
+    Lightweight markdown-table parser — no pandas/yaml dependency. The
+    table format is documented in docs/watchlist/README.md and must
+    have the columns: ticker, company, pillar/node, added, reason,
+    escalation_trigger.
+    """
+    p = Path("docs/watchlist/active.md")
+    if not p.exists():
+        return []
+    out: list[dict] = []
+    in_table = False
+    headers: list[str] = []
+    for line in p.read_text().splitlines():
+        s = line.strip()
+        if not s.startswith("|"):
+            in_table = False
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        # Skip the header-separator row (|---|---|...).
+        if all(set(c).issubset({"-", ":"}) for c in cells if c):
+            in_table = True
+            continue
+        if not in_table:
+            headers = [c.lower().replace(" ", "_") for c in cells]
+            continue
+        if len(cells) != len(headers):
+            continue
+        out.append(dict(zip(headers, cells)))
+    return out
+
+
 def _action_checklist(extremes: list[dict], ticker_news: list[dict],
-                      theses: list[dict]) -> list[str]:
+                      theses: list[dict],
+                      watchlist: list[dict]) -> list[str]:
     """Generate a 1-3 item do-list from the day's structured data.
 
-    Priority: open theses with trigger-relevant conditions > extreme
-    flow on watchlist tickers > top news event. Capped at 3 items so
-    Telegram messages stay scannable.
+    Priority order:
+      1. Open theses (review trigger conditions today)
+      2. Watchlist names that ALSO show extreme flow today (escalation candidate)
+      3. Plain extreme foreign_z (not yet on watchlist)
+      4. Top news event involving a watchlist or thesis ticker
+    Capped at 3 items so Telegram messages stay scannable.
     """
     items: list[str] = []
 
-    # Active theses → read-the-thesis action
-    for t in theses[:1]:  # limit one thesis-action per brief to avoid noise
+    watchlist_tickers = {w.get("ticker") for w in watchlist}
+    thesis_tickers = {t.get("ticker") for t in theses}
+
+    # 1. Active thesis → read-the-thesis action.
+    for t in theses[:1]:
         ticker = t.get("ticker", "?")
         company = t.get("company", "?")
-        next_review = t.get("last_review", "?")
+        last_review = t.get("last_review", "?")
         items.append(
             f"Review thesis on {ticker} {company.split('/')[0].strip()}: "
-            f"check trigger conditions vs today's close (last_review {next_review})"
+            f"check trigger conditions vs today's close (last_review {last_review})"
         )
 
-    # Extreme foreign flow → follow-through watch
-    for s in extremes[:3]:
+    # 2. Watchlist names with extreme flow today → escalation candidate.
+    for s in extremes:
+        if s["ticker_id"] not in watchlist_tickers:
+            continue
+        if s["ticker_id"] in thesis_tickers:
+            continue
+        fz = s.get("foreign_net_z20")
+        if fz is None:
+            continue
+        direction = "buying" if fz > 0 else "selling"
+        items.append(
+            f"Escalation candidate: {s['ticker_id']} {s['company_name']} "
+            f"on watchlist + foreign_z {fz:+.2f} ({direction}) — consider `decide-on-ticker`"
+        )
+        if len(items) >= 3:
+            break
+
+    # 3. Plain extremes (not on watchlist, not thesis'd).
+    for s in extremes:
+        if len(items) >= 3:
+            break
+        if s["ticker_id"] in watchlist_tickers or s["ticker_id"] in thesis_tickers:
+            continue
         fz = s.get("foreign_net_z20")
         if fz is None or abs(fz) < 2.0:
             continue
         direction = "buying" if fz > 0 else "selling"
         items.append(
-            f"Watch {s['ticker_id']} {s['company_name']} for follow-through "
-            f"(foreign_z {fz:+.2f} = extreme {direction})"
+            f"Watch {s['ticker_id']} {s['company_name']}: foreign_z {fz:+.2f} "
+            f"({direction}) — add to watchlist if it sustains"
         )
-        if len(items) >= 3:
-            break
 
-    # Top-named news → cross-reference
+    # 4. Fall back to top news cross-reference.
     if len(items) < 3 and ticker_news:
         n = ticker_news[0]
         items.append(
@@ -291,9 +350,20 @@ def pre_market_brief() -> None:
         else:
             lines.append("## Indicator extremes from yesterday's close\n_None tripping thresholds._\n")
 
-        # Action checklist before macro section — most pressing comes first.
+        # Watchlist + active theses are read once and passed into the
+        # checklist generator. Both also surface as section snippets.
         theses = _active_theses()
-        checklist = _action_checklist(extremes, ticker_news, theses)
+        watchlist = _watchlist()
+
+        if watchlist:
+            lines.append("## Watchlist (escalation candidates)\n")
+            for w in watchlist:
+                lines.append(f"- **{w.get('ticker','?')} {w.get('company','?')}** "
+                             f"({w.get('pillar/node','?')}, added {w.get('added','?')}) — "
+                             f"{w.get('reason','')[:160]}")
+            lines.append("")
+
+        checklist = _action_checklist(extremes, ticker_news, theses, watchlist)
         lines.append("## Action checklist\n")
         lines.append(_format_checklist(checklist) + "\n")
 
@@ -313,9 +383,10 @@ def pre_market_brief() -> None:
 
     # Telegram: short version + action checklist (the do-this-first lines)
     short = (f"<b>Pre-market {_today_taipei_iso()}</b>\n"
-             f"Watchlist news: {len(ticker_news)} • "
-             f"Indicator extremes: {len(extremes)} • "
-             f"Active theses: {len(theses)}\n")
+             f"Watchlist names: {len(watchlist)} • "
+             f"News mentions: {len(ticker_news)} • "
+             f"Extremes: {len(extremes)} • "
+             f"Theses: {len(theses)}\n")
     if extremes:
         short += "\n<b>Top extremes</b>:\n"
         for s in extremes[:3]:
@@ -402,9 +473,10 @@ def post_close_brief() -> None:
         # Today's news mentions of classified tickers
         ticker_news = _query_news_for_classified(c, hours=24)
 
-        # Active theses — read frontmatter so we can show ticker names
+        # Active theses + watchlist — both feed the checklist
         theses = _active_theses()
         active_theses = len(theses)
+        watchlist = _watchlist()
 
     lines = ["# Post-close brief — " + _today_taipei_iso() + "\n"]
     lines.append(f"_Generated {datetime.now(_TPE).strftime('%H:%M %Z')}._\n")
@@ -427,6 +499,12 @@ def post_close_brief() -> None:
     for n in ticker_news[:5]:
         lines.append(f"- {n['ticker_id']} {n['company_name']} [{n['source']}]: {n['title'][:120]}")
 
+    if watchlist:
+        lines.append(f"\n## Watchlist ({len(watchlist)} names)")
+        for w in watchlist:
+            lines.append(f"- **{w.get('ticker','?')} {w.get('company','?')}** "
+                         f"— {w.get('reason','')[:140]}")
+
     lines.append(f"\n## Active theses: {active_theses}")
     if active_theses == 0:
         lines.append("\n_No active theses yet. Run `decide-on-ticker` Skill in Claude app to open one._")
@@ -437,7 +515,7 @@ def post_close_brief() -> None:
                          f"[{t['_path']}]")
 
     # Action checklist last — derived from everything above.
-    checklist = _action_checklist(extremes, ticker_news, theses)
+    checklist = _action_checklist(extremes, ticker_news, theses, watchlist)
     lines.append("\n## Action checklist for tomorrow\n")
     lines.append(_format_checklist(checklist))
 
@@ -454,9 +532,10 @@ def post_close_brief() -> None:
     short = (f"<b>Post-close {_today_taipei_iso()}</b>\n"
              f"Top sector: <b>{sectors[0]['pillar']}/{sectors[0]['node']}</b> "
              f"({'+' if sectors[0]['foreign_5d']>=0 else ''}{sectors[0]['foreign_5d']:,.0f} shares 5d)\n"
-             f"Indicator extremes: {len(extremes)} • "
-             f"Watchlist news: {len(ticker_news)} • "
-             f"Active theses: {active_theses}\n")
+             f"Watchlist: {len(watchlist)} • "
+             f"Theses: {active_theses} • "
+             f"Extremes: {len(extremes)} • "
+             f"News mentions: {len(ticker_news)}\n")
     if extremes:
         short += "\n<b>Notable</b>:\n"
         for s in extremes[:3]:

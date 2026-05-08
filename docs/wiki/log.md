@@ -246,3 +246,19 @@ attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
 - `src/cron/brief.py` — pre-market and post-close briefs now generate a 1-3 item action checklist from the day's data: open theses → "review trigger conditions", extreme foreign_z → "watch follow-through", top news → "cross-reference". Telegram messages now end with the checklist so the do-list is the last thing the user reads.
 - Smoke test on today's data surfaced two new alerts: **6488 GlobalWafers** and **3324 Auras** both at `foreign_net_z20 = +4.25` (extreme accumulation), based on freshly-landed 2026-05-08 T86 data from the daily run that just completed.
 - Decided NOT to borrow: their methodology (no rigorous backtest culture), data sources (wrong markets), LLM abstraction (we're committed to Anthropic), or web-app paradigm (we're MCP+Skills).
+
+## [2026-05-08] decision | Watchlist layer added — 6488 + 3324
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- Created `docs/watchlist/` with `README.md` (conventions + lifecycle), `active.md` (the table, parsed by cron), and `archived/` (closed-out entries).
+- Added today's two extreme-foreign-z names with reason context distinguishing the two setups:
+  - **6488 GlobalWafers** — foreign_z=+4.25 (5d cum +9.24M shares) at 52w high, but total_z=−4.25 (foreigners buying while domestic institutions distribute). Escalation trigger: foreign_z stays > 1.5 for 2 more sessions OR domestic flow flips aligned.
+  - **3324 Auras** — foreign_z=+4.25 today, 5d cum still −2.96M (sharp reversal), 12% off 52w high, all institutions aligned today (total_z=+4.25 too). Escalation trigger: another foreign net-buy day in next 3 sessions AND price reclaims SMA-50 (1041).
+- Cron `src/cron/brief.py` extended:
+  - New `_watchlist()` parser reads `docs/watchlist/active.md` (lightweight markdown-table parser, no yaml dep).
+  - Action-checklist priority order now: (1) open theses → review triggers, (2) watchlist names with extreme flow today → escalation candidate, (3) plain extremes → "add to watchlist if it sustains", (4) top news cross-reference.
+  - Briefs now have a `## Watchlist` section + show watchlist count in the Telegram header.
+- Smoke test on today's data produced action checklist:
+  1. Review thesis on 3443 GUC
+  2. Escalation candidate: 6488 環球晶 (watchlist + foreign_z +4.25)
+  3. Escalation candidate: 3324 雙鴻 (watchlist + foreign_z +4.25)
+- Watchlist intentionally excludes thesised names (3443 sits in `docs/theses/` instead). Names should escalate to thesis or drop within ~5 trading days.
