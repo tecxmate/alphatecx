@@ -18,7 +18,10 @@ on:
   workflow_dispatch:
 
 env:
-  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  # Append gssencmode=disable — some PG servers (and middleware in front
+  # of them) hang on the GSS encryption negotiation step from clients
+  # with no Kerberos keytab. Disabling forces straight TLS.
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}&gssencmode=disable
 
 jobs:
   news:
