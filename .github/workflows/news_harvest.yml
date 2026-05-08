@@ -37,51 +37,29 @@ jobs:
           python-version: '3.12'
           cache: pip
 
-      - name: Prefer IPv4 (GH runners have no working IPv6)
-        # Neon hostnames resolve to A + AAAA records; default Linux
-        # getaddrinfo prefers IPv6, but the runner's IPv6 path is dead
-        # so connections time out on the unreachable address. This
-        # gai.conf line raises IPv4 precedence above IPv6.
+      - name: Pin Neon hostname to IPv4 in /etc/hosts
+        # GH runners advertise IPv6 but the path is dead; psycopg with
+        # hostaddr= overrides also hangs at TLS/SNI on Neon's pooler
+        # (cause not yet identified). Editing /etc/hosts forces glibc
+        # getaddrinfo to return only the IPv4 address for our pooler
+        # hostname — DNS isn't consulted, libpq does normal hostname
+        # connection with correct SNI, no IPv6 path tried at all.
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          sudo bash -c 'echo "precedence ::ffff:0:0/96 100" >> /etc/gai.conf'
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Diagnose connection
-        run: |
-          set +e
           python -c "
           import os, socket, urllib.parse as u
           host = u.urlparse(os.environ['DATABASE_URL']).hostname
-          print('Hostname:', host)
-          ips4 = sorted({sa[0] for fam,_,_,_,sa in socket.getaddrinfo(host, None) if fam == socket.AF_INET})
-          for ip in ips4: print('  IPv4:', ip)
-          " | tee /tmp/ips.txt
-          # Raw TCP probe to each IPv4 — does the runner have network reach at all?
-          for ip in $(grep "IPv4:" /tmp/ips.txt | awk '{print $2}'); do
-            echo "--- nc -vz $ip 5432 ---"
-            timeout 8 nc -vz "$ip" 5432 2>&1 || echo "  TCP-failed"
-          done
-          echo "--- psycopg with direct (non-pooler) endpoint + IPv4 pin ---"
-          python <<'PY'
-          import os, traceback, urllib.parse as u
-          import psycopg
-          dsn = os.environ['DATABASE_URL'].replace('-pooler', '')
-          for variant_name, extra in [
-              ("direct host", ""),
-              ("direct host + gssencmode=disable", "&gssencmode=disable"),
-          ]:
-              try:
-                  print(f"--- {variant_name} ---")
-                  with psycopg.connect(dsn + extra, connect_timeout=12) as c:
-                      with c.cursor() as cur:
-                          cur.execute("SELECT 1")
-                          print(f"  CONNECTED ({variant_name})")
-                          break
-              except Exception as e:
-                  print(f"  FAILED: {type(e).__name__}: {str(e)[:120]}")
-          PY
+          # Pick first IPv4 — Neon's pooler is multi-IP load-balanced;
+          # pinning to one is fine for ~minutes-long workflow runs.
+          ipv4 = sorted({sa[0] for fam,_,_,_,sa in socket.getaddrinfo(host, None) if fam == socket.AF_INET})[0]
+          print(f'{ipv4}\t{host}')
+          " | sudo tee -a /etc/hosts
+          echo "--- /etc/hosts entry installed ---"
+          getent ahosts "$(python -c 'import os, urllib.parse as u; print(u.urlparse(os.environ[\"DATABASE_URL\"]).hostname)')" | head -3
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
       - name: Harvest news feeds
         run: python -m src.news.harvest
