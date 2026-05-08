@@ -48,5 +48,31 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Diagnose connection
+        run: |
+          python <<'PY'
+          import os, socket, traceback, urllib.parse as u
+          import psycopg
+          from src.harvester.loader import _force_ipv4
+
+          dsn = os.environ['DATABASE_URL']
+          host = u.urlparse(dsn).hostname
+          # Show all addresses returned by getaddrinfo
+          for fam, _, _, _, sa in socket.getaddrinfo(host, None):
+              print(f"  resolved: {fam.name if hasattr(fam,'name') else fam} -> {sa[0]}")
+
+          dsn_v4 = _force_ipv4(dsn)
+          print(f"  v4-pinned DSN query: {u.urlparse(dsn_v4).query}")
+          try:
+              with psycopg.connect(dsn_v4, connect_timeout=15) as c:
+                  with c.cursor() as cur:
+                      cur.execute("SELECT version()")
+                      print("  CONNECTED:", cur.fetchone()[0][:60])
+          except Exception as e:
+              print(f"  FAILED: {type(e).__name__}: {e}")
+              traceback.print_exc()
+              raise
+          PY
+
       - name: Harvest news feeds
         run: python -m src.news.harvest
