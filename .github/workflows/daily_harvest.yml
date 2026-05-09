@@ -100,6 +100,14 @@ jobs:
         continue-on-error: true
         run: python -m src.dashboard.build
 
+      - name: Build per-ticker detail pages
+        # One pre-rendered page per classified/watchlist/thesis ticker with
+        # candlestick + Bollinger + foreign-flow + sector relative-strength
+        # + thesis levels + news. Served at /d/{TOKEN}/t/{ticker}.
+        if: success()
+        continue-on-error: true
+        run: python -m src.dashboard.build_ticker_pages
+
       - name: Regenerate 3D correlation snapshot
         # Refreshes mcp_server/api/static/graph_snapshot.json from the latest
         # OHLCV. Non-fatal: a stale snapshot is better than failing the run.
@@ -119,7 +127,8 @@ jobs:
           git add mcp_server/api/static/graph_snapshot.json \
                   mcp_server/api/static/graph.html \
                   mcp_server/api/static/graph.png \
-                  mcp_server/api/static/dashboard.html
+                  mcp_server/api/static/dashboard.html \
+                  mcp_server/api/static/ticker/
           if git diff --cached --quiet; then
             echo "no static-asset changes to commit"
           else

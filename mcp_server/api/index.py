@@ -894,6 +894,18 @@ def dashboard_js(token: str):
     return graph_view.get_dashboard_js()
 
 
+@app.get(f"/d/{{token}}/t/{{ticker}}")
+def ticker_page(token: str, ticker: str):
+    """Per-ticker analytical detail page (candlestick + flow + RS + thesis + news).
+
+    Pages are pre-rendered nightly by `python -m src.dashboard.build_ticker_pages`
+    and read from mcp_server/api/static/ticker/{ticker}.html. Same auth as /d/.
+    """
+    if token != MCP_BEARER_TOKEN:
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_ticker_page(ticker)
+
+
 if not MCP_BEARER_TOKEN:
     raise RuntimeError(
         "MCP_BEARER_TOKEN is not set. Refusing to start with no auth — "

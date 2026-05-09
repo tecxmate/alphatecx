@@ -78,6 +78,15 @@ def _pill(text, color):
             f'{escape(str(text))}</span>')
 
 
+def _ticker_link(ticker: str, label: str | None = None) -> str:
+    """Anchor to the per-ticker detail page (relative to /d/{TOKEN}/)."""
+    if not ticker:
+        return ""
+    return (f'<a href="t/{escape(ticker)}" '
+            f'style="color:#2563eb;text-decoration:none;font-weight:600">'
+            f'{escape(label or ticker)}</a>')
+
+
 def _row_html(cells, classes=""):
     cls = f' class="{classes}"' if classes else ""
     tds = "".join(f"<td>{c}</td>" for c in cells)
@@ -266,7 +275,7 @@ def render_watchlist(rows: list[dict]) -> str:
         pillar = r["ai_pillar"] or ""
         pill = _pill(pillar, PILLAR_COLOR.get(pillar, "#94a3b8")) if pillar else ""
         body.append([
-            f'<b>{escape(r["ticker_id"])}</b>',
+            _ticker_link(r["ticker_id"]),
             escape(r["company_name"] or ""),
             pill,
             escape(r["node"] or ""),
@@ -295,7 +304,7 @@ def render_theses(rows: list[dict]) -> str:
         if ret is not None:
             cls = "pos" if ret >= 0 else "neg"
         body.append([
-            f'<b>{escape(r["ticker"])}</b>',
+            _ticker_link(r["ticker"]),
             escape(r["company"]),
             r["days_open"] if r["days_open"] is not None else "",
             _num(r["current_close"], 2),
@@ -323,7 +332,7 @@ def render_discovery(rows: list[dict]) -> str:
             f'{n["id"]} ({n["rho"]})' for n in (r.get("neighbours") or [])[:5]
         )
         body.append([
-            f'<b>{escape(r["ticker"])}</b>',
+            _ticker_link(r["ticker"]),
             escape(r["name"]),
             pill,
             escape(r.get("suggested_node") or ""),
@@ -346,9 +355,9 @@ def render_leadlag(rows: list[dict]) -> str:
         dn_pill = _pill(r["down_pillar"], PILLAR_COLOR.get(r["down_pillar"], "#94a3b8")) if r["down_pillar"] else ""
         gain_cls = "pos" if r["gain"] > 0 else ("neg" if r["gain"] < 0 else "")
         body.append([
-            f'<b>{escape(r["up"])}</b> {escape(r["up_name"] or "")} {up_pill}',
+            f'{_ticker_link(r["up"])} {escape(r["up_name"] or "")} {up_pill}',
             "→",
-            f'<b>{escape(r["down"])}</b> {escape(r["down_name"] or "")} {dn_pill}',
+            f'{_ticker_link(r["down"])} {escape(r["down_name"] or "")} {dn_pill}',
             r["lag"],
             r["rho_lag"],
             r["rho_0"],

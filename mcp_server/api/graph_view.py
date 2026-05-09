@@ -11,6 +11,7 @@ Endpoints (mounted under /g/{TOKEN}/):
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -62,3 +63,16 @@ def get_dashboard_js() -> Response:
         raise HTTPException(404, "dashboard.js missing")
     return Response(content=_DASHBOARD_JS.read_text(),
                     media_type="application/javascript")
+
+
+_TICKER_DIR = _STATIC / "ticker"
+_TICKER_RE  = re.compile(r"^[0-9A-Za-z]{1,8}$")
+
+
+def get_ticker_page(ticker: str) -> HTMLResponse:
+    if not _TICKER_RE.match(ticker):
+        raise HTTPException(404, "invalid ticker")
+    path = _TICKER_DIR / f"{ticker}.html"
+    if not path.exists():
+        raise HTTPException(404, f"no page for {ticker}")
+    return HTMLResponse(content=path.read_text())
