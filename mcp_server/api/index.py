@@ -780,6 +780,8 @@ async def auth_gate(request: Request, call_next):
         return await call_next(request)
     if MCP_BEARER_TOKEN and path.startswith(f"/g/{MCP_BEARER_TOKEN}"):
         return await call_next(request)
+    if MCP_BEARER_TOKEN and path.startswith(f"/d/{MCP_BEARER_TOKEN}"):
+        return await call_next(request)
     return JSONResponse(status_code=404, content={"error": "not_found"})
 
 
@@ -802,6 +804,13 @@ def graph_png(token: str):
     if token != MCP_BEARER_TOKEN:
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_graph_png()
+
+
+@app.get(f"/d/{{token}}/")
+def dashboard(token: str):
+    if token != MCP_BEARER_TOKEN:
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_dashboard_html()
 
 
 if not MCP_BEARER_TOKEN:

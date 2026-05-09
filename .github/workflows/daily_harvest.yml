@@ -93,6 +93,13 @@ jobs:
         continue-on-error: true
         run: python -m src.cron.thesis_status
 
+      - name: Build data dashboard
+        # Static HTML at mcp_server/api/static/dashboard.html with 4 tabs:
+        # Watchlist / Theses / Discovery / Lead-lag. Served at /d/{TOKEN}/.
+        if: success()
+        continue-on-error: true
+        run: python -m src.dashboard.build
+
       - name: Regenerate 3D correlation snapshot
         # Refreshes mcp_server/api/static/graph_snapshot.json from the latest
         # OHLCV. Non-fatal: a stale snapshot is better than failing the run.
@@ -100,20 +107,23 @@ jobs:
         continue-on-error: true
         run: python -m src.quant.correlation_snapshot --window 120
 
-      - name: Commit & push refreshed snapshot
-        # The snapshot file is the source of truth for the /g/{TOKEN}/ viewer
-        # served from Vercel — push triggers a Vercel redeploy with the new
-        # data. Skipped silently on no-change days (weekends/holidays).
+      - name: Commit & push refreshed snapshot + dashboard
+        # All four static artefacts are sources of truth for the Vercel
+        # routes (/g/, /d/, etc.). Push triggers a Vercel redeploy with the
+        # new data. Skipped silently on no-change days (weekends/holidays).
         if: success()
         continue-on-error: true
         run: |
           git config user.name  "alphatecx-cron"
           git config user.email "alphatecx-cron@users.noreply.github.com"
-          git add mcp_server/api/static/graph_snapshot.json
+          git add mcp_server/api/static/graph_snapshot.json \
+                  mcp_server/api/static/graph.html \
+                  mcp_server/api/static/graph.png \
+                  mcp_server/api/static/dashboard.html
           if git diff --cached --quiet; then
-            echo "snapshot unchanged, nothing to commit"
+            echo "no static-asset changes to commit"
           else
-            git commit -m "chore(graph): daily snapshot refresh [skip ci]"
+            git commit -m "chore(graph): daily refresh [skip ci]"
             git push origin main
           fi
 
