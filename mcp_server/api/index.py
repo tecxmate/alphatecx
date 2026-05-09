@@ -656,6 +656,47 @@ def q_index_history(
 
 
 @mcp.tool()
+def q_factor_alpha(ticker_id: str, days: int = 120) -> dict:
+    """Decompose a ticker's recent returns into factor exposures + residual α.
+
+    Fits an OLS regression of the ticker's daily log-returns over the last
+    `days` trading days against three factors:
+
+      market  — 0050 ETF return (broad TW market)
+      sector  — pillar sector index return (e.g. 半導體類指數 for semis)
+      flow    — long-short portfolio of classified tickers ranked daily
+                by 20-day rolling z-score of T86 foreign_net (top quintile
+                minus bottom quintile, equal-weight). This isolates whether
+                the ticker is exposed to the "foreign-buying tide" or has
+                idiosyncratic drift on top of it.
+
+    Returns:
+      alpha_daily        residual mean daily return after factor exposure
+      alpha_annualized   alpha_daily × 252 (rough annualisation)
+      alpha_tstat        t-statistic on alpha; |t|>2 is significant
+      alpha_significant  bool: |t|>2
+      betas              dict: factor name -> beta
+      beta_tstats        dict: factor name -> beta t-stat
+      r_squared          % of variance explained by factors
+      interpretation     plain-English summary suitable for direct quoting
+
+    Use case: "is this ticker's recent outperformance real (positive α with
+    significant t-stat), or is it just exposure to the flow factor that any
+    name with similar foreign-buying would have shown?" Read alpha_tstat
+    and the interpretation field together to decide.
+
+    Args:
+        ticker_id: e.g. '3231', '2330'.
+        days: Trailing trading days for the regression window (default 120).
+              Minimum ~30 needed; more is more reliable.
+    """
+    from src.quant.factor_alpha import compute_factor_alpha
+    result = compute_factor_alpha(ticker_id, days=days)
+    return _stamp(result, source="factor_alpha",
+                  as_of=_today_iso(), freshness="on-demand")
+
+
+@mcp.tool()
 def q_lead_lag(
     upstream: Optional[str] = None,
     downstream: Optional[str] = None,
