@@ -17,10 +17,12 @@ from fastapi import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 _STATIC = Path(__file__).parent / "static"
-_HTML_PATH      = _STATIC / "graph.html"
-_PNG_PATH       = _STATIC / "graph.png"
-_JSON_PATH      = _STATIC / "graph_snapshot.json"
-_DASHBOARD_PATH = _STATIC / "dashboard.html"
+_HTML_PATH        = _STATIC / "graph.html"
+_PNG_PATH         = _STATIC / "graph.png"
+_JSON_PATH        = _STATIC / "graph_snapshot.json"
+_DASHBOARD_PATH   = _STATIC / "dashboard.html"
+_DASHBOARD_CSS    = _STATIC / "dashboard.css"
+_DASHBOARD_JS     = _STATIC / "dashboard.js"
 
 
 def get_viewer_html() -> HTMLResponse:
@@ -47,3 +49,16 @@ def get_dashboard_html() -> HTMLResponse:
         raise HTTPException(503, "dashboard.html not yet generated; "
                                  "run `python -m src.dashboard.build`")
     return HTMLResponse(content=_DASHBOARD_PATH.read_text())
+
+
+def get_dashboard_css() -> Response:
+    if not _DASHBOARD_CSS.exists():
+        raise HTTPException(404, "dashboard.css missing")
+    return Response(content=_DASHBOARD_CSS.read_text(), media_type="text/css")
+
+
+def get_dashboard_js() -> Response:
+    if not _DASHBOARD_JS.exists():
+        raise HTTPException(404, "dashboard.js missing")
+    return Response(content=_DASHBOARD_JS.read_text(),
+                    media_type="application/javascript")

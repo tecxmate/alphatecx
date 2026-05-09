@@ -813,6 +813,20 @@ def dashboard(token: str):
     return graph_view.get_dashboard_html()
 
 
+@app.get(f"/d/{{token}}/dashboard.css")
+def dashboard_css(token: str):
+    if token != MCP_BEARER_TOKEN:
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_dashboard_css()
+
+
+@app.get(f"/d/{{token}}/dashboard.js")
+def dashboard_js(token: str):
+    if token != MCP_BEARER_TOKEN:
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_dashboard_js()
+
+
 if not MCP_BEARER_TOKEN:
     raise RuntimeError(
         "MCP_BEARER_TOKEN is not set. Refusing to start with no auth — "

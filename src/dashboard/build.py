@@ -365,111 +365,15 @@ def build_html(watchlist, theses, discovery, leadlag) -> str:
               f"thes{'es' if len(theses)!=1 else 'is'} · "
               f"{len(discovery)} discovery · {len(leadlag)} lead-lag")
 
-    css = """
-    html,body { margin:0; padding:0; background:#ffffff; color:#0f172a;
-      font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
-      font-size:14px; line-height:1.5; }
-    .wrap { max-width:1500px; margin:0 auto; padding:14px 20px 28px; }
-    .header { display:flex; justify-content:space-between; align-items:flex-end;
-      margin-bottom:10px; gap:12px; flex-wrap:wrap; }
-    .header h1 { font-size:18px; font-weight:600; margin:0; }
-    .meta { color:#64748b; font-size:12px; }
-    .tabs { display:flex; gap:4px; margin:6px 0 10px; flex-wrap:wrap;
-      border-bottom:1px solid #e2e8f0; }
-    .tab { padding:8px 14px; border:1px solid transparent; border-bottom:none;
-      background:transparent; color:#64748b; font-size:13px; cursor:pointer;
-      font-family:inherit; border-radius:6px 6px 0 0; margin-bottom:-1px; }
-    .tab:hover { color:#0f172a; background:#f8fafc; }
-    .tab.active { background:#fff; color:#0f172a; font-weight:600;
-      border:1px solid #e2e8f0; border-bottom:1px solid #fff; }
-    .toolbar { display:flex; gap:10px; align-items:center; margin:10px 0; }
-    .toolbar input { flex:1; max-width:380px; padding:7px 12px;
-      border:1px solid #cbd5e0; border-radius:6px; font-size:13px;
-      font-family:inherit; }
-    .toolbar input:focus { outline:none; border-color:#2563eb;
-      box-shadow:0 0 0 3px rgba(37,99,235,0.15); }
-    .panel { display:none; }
-    .panel.active { display:block; }
-    table.dt { width:100%; border-collapse:collapse; font-size:13px;
-      background:white; border:1px solid #e2e8f0; border-radius:6px;
-      overflow:hidden; }
-    table.dt th { padding:8px 12px; text-align:left; background:#f8fafc;
-      color:#475569; font-weight:600; cursor:pointer; user-select:none;
-      border-bottom:1px solid #e2e8f0; white-space:nowrap; font-size:12px; }
-    table.dt th::after { content:" \\00a0\\00a0"; color:#cbd5e0; font-size:10px; }
-    table.dt th[data-dir="asc"]::after  { content:" ▲"; color:#2563eb; }
-    table.dt th[data-dir="desc"]::after { content:" ▼"; color:#2563eb; }
-    table.dt th:hover { background:#eef2f7; color:#0f172a; }
-    table.dt td { padding:7px 12px; border-bottom:1px solid #f1f5f9;
-      vertical-align:top; }
-    table.dt tbody tr:hover { background:#f8fafc; }
-    .pos { color:#16a34a; font-weight:500; }
-    .neg { color:#dc2626; font-weight:500; }
-    .empty { padding:24px; color:#94a3b8; font-style:italic; text-align:center;
-      background:#f8fafc; border:1px dashed #cbd5e0; border-radius:6px; }
-    """
-
-    js = """
-    (function() {
-      const tabs   = document.querySelectorAll('.tab');
-      const panels = document.querySelectorAll('.panel');
-      const search = document.getElementById('q');
-
-      function show(name) {
-        tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-        panels.forEach(p => p.classList.toggle('active', p.dataset.panel === name));
-        if (history.replaceState) history.replaceState(null, '', '#' + name);
-        applyFilter();
-      }
-      tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.tab)));
-
-      // Sortable headers
-      document.querySelectorAll('table.dt thead th').forEach(th => {
-        th.addEventListener('click', () => {
-          const tbl = th.closest('table');
-          const idx = parseInt(th.dataset.col);
-          const type = th.dataset.sortType;
-          const cur = th.dataset.dir;
-          const next = cur === 'asc' ? 'desc' : 'asc';
-          tbl.querySelectorAll('thead th').forEach(h => h.dataset.dir = '');
-          th.dataset.dir = next;
-          const rows = Array.from(tbl.tBodies[0].rows);
-          rows.sort((a, b) => {
-            let av = a.cells[idx].textContent.trim();
-            let bv = b.cells[idx].textContent.trim();
-            if (type === 'num') {
-              av = parseFloat(av.replace(/[^0-9.\\-+]/g, '')) || 0;
-              bv = parseFloat(bv.replace(/[^0-9.\\-+]/g, '')) || 0;
-              return next === 'asc' ? av - bv : bv - av;
-            }
-            return next === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
-          });
-          rows.forEach(r => tbl.tBodies[0].appendChild(r));
-        });
-      });
-
-      // Search across visible panel only
-      function applyFilter() {
-        const q = (search.value || '').toLowerCase();
-        const tbl = document.querySelector('.panel.active table.dt');
-        if (!tbl) return;
-        for (const tr of tbl.tBodies[0].rows) {
-          tr.style.display = q && !tr.textContent.toLowerCase().includes(q) ? 'none' : '';
-        }
-      }
-      search.addEventListener('input', applyFilter);
-
-      // Open from hash
-      const hash = (location.hash || '').replace(/^#/, '');
-      if (hash && document.querySelector(`.panel[data-panel="${hash}"]`)) show(hash);
-    })();
-    """
-
+    # CSS + JS live in mcp_server/api/static/dashboard.{css,js}, served by
+    # FastAPI at /d/{TOKEN}/dashboard.{css,js}. Keeping them out of this
+    # template means UI tweaks no longer require regenerating the data HTML.
     return f"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>alphatecx · data dashboard</title>
-<style>{css}</style></head><body>
+<link rel="stylesheet" href="dashboard.css">
+</head><body>
 <div class="wrap">
   <div class="header">
     <h1>Taiwan AI universe — data dashboard</h1>
@@ -490,7 +394,7 @@ def build_html(watchlist, theses, discovery, leadlag) -> str:
   <div class="panel" data-panel="discovery">{render_discovery(discovery)}</div>
   <div class="panel" data-panel="leadlag">{render_leadlag(leadlag)}</div>
 </div>
-<script>{js}</script>
+<script src="dashboard.js"></script>
 </body></html>"""
 
 
