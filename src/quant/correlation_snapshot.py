@@ -228,7 +228,7 @@ def build_snapshot(window_days: int = 120) -> dict:
         "corr_edges": corr_edges,   # high-correlation pairs (>= 0.7)
         "discovery":  discovery,    # unclassified tickers that cluster with a pillar
     }
-    return snapshot
+    return snapshot, corr, tickers
 
 
 def _discovery_candidates(corr, tickers, nodes, idx):
@@ -292,7 +292,7 @@ def _discovery_candidates(corr, tickers, nodes, idx):
 
 
 def build_plotly_html(snap: dict) -> str:
-    """Render the snapshot as a self-contained interactive HTML via plotly."""
+    """[Deprecated] Plotly 3D viewer — kept for reference, no longer wired up."""
     import plotly.graph_objects as go
 
     nodes = snap["nodes"]
@@ -436,6 +436,209 @@ def build_plotly_html(snap: dict) -> str:
 </body></html>"""
 
 
+def build_matplotlib_panels(snap: dict, corr: np.ndarray, tickers: list[str]) -> bytes:
+    """Render the snapshot as a 2x2 light-theme PNG (returns raw bytes).
+
+    Panels:
+        TL: cluster map (correlation MDS X vs Y) — color = pillar
+        TR: cluster axis vs 30d return (X vs ret_30d)
+        BL: risk/return scatter (annualised vol vs ret_30d)
+        BR: correlation heatmap, sorted by pillar
+    """
+    import io
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+
+    PILLAR_COLOR = {
+        "semiconductor":  "#2563eb",
+        "infrastructure": "#ea580c",
+        "equipment":      "#7c3aed",
+        "energy":         "#16a34a",
+        None:             "#cbd5e0",
+    }
+    PILLAR_ORDER = ["semiconductor", "equipment", "infrastructure", "energy", None]
+
+    nodes = snap["nodes"]
+    by_id = {n["id"]: n for n in nodes}
+    ids        = [n["id"]      for n in nodes]
+    names      = [n["name"]    for n in nodes]
+    pillars    = [n["pillar"]  for n in nodes]
+    xs         = np.array([n["x"]       for n in nodes])
+    ys         = np.array([n["y"]       for n in nodes])
+    ret30      = np.array([n["ret_30d"] for n in nodes])
+    vols       = np.array([n["vol"]     for n in nodes])
+    colors     = [PILLAR_COLOR[p] for p in pillars]
+    is_ctx     = np.array([p is None for p in pillars])
+    sizes      = np.where(is_ctx, 12, np.clip(vols * 60, 18, 90))
+
+    plt.rcParams.update({
+        "font.family": "DejaVu Sans",
+        "axes.facecolor": "white",
+        "figure.facecolor": "white",
+        "axes.edgecolor": "#94a3b8",
+        "axes.labelcolor": "#475569",
+        "xtick.color": "#64748b",
+        "ytick.color": "#64748b",
+        "axes.titlecolor": "#0f172a",
+        "axes.titlesize": 12,
+        "axes.titleweight": "600",
+        "axes.labelsize": 10,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+    })
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
+    fig.suptitle(
+        f"Taiwan AI universe — {snap['n_tickers']} tickers · window {snap['window_days']}d · as of {snap['asof']}",
+        fontsize=14, fontweight="600", color="#0f172a", y=0.995,
+    )
+
+    # ── TL: cluster map ──
+    ax = axes[0, 0]
+    # Draw context first (under)
+    ax.scatter(xs[is_ctx],  ys[is_ctx],  c="#cbd5e0", s=8, alpha=0.5, linewidths=0)
+    # Then classified
+    ax.scatter(xs[~is_ctx], ys[~is_ctx], c=[colors[i] for i in range(len(nodes)) if not is_ctx[i]],
+               s=sizes[~is_ctx], alpha=0.85, linewidths=0.4, edgecolors="white")
+    # Label only classified
+    for i, n in enumerate(nodes):
+        if pillars[i] is None: continue
+        ax.annotate(ids[i], (xs[i], ys[i]), fontsize=7, color="#334155",
+                    xytext=(3, 3), textcoords="offset points")
+    ax.set_title("Correlation cluster (top-down)")
+    ax.set_xlabel("MDS axis 1")
+    ax.set_ylabel("MDS axis 2")
+    ax.grid(True, linestyle="--", linewidth=0.5, color="#e2e8f0")
+    ax.axhline(0, color="#cbd5e0", linewidth=0.7)
+    ax.axvline(0, color="#cbd5e0", linewidth=0.7)
+
+    # Overlay supply-chain edges as faint grey lines (cluster panel only)
+    for e in snap["edges"]:
+        a, b = by_id.get(e["from"]), by_id.get(e["to"])
+        if not a or not b: continue
+        ax.plot([a["x"], b["x"]], [a["y"], b["y"]],
+                color="#fbbf24", linewidth=0.6, alpha=0.45, zorder=1)
+
+    # ── TR: cluster axis vs 30d return ──
+    ax = axes[0, 1]
+    ax.axhline(0, color="#94a3b8", linewidth=0.8, zorder=1)
+    ax.scatter(xs[is_ctx],  ret30[is_ctx],  c="#cbd5e0", s=8, alpha=0.5, linewidths=0)
+    ax.scatter(xs[~is_ctx], ret30[~is_ctx],
+               c=[colors[i] for i in range(len(nodes)) if not is_ctx[i]],
+               s=sizes[~is_ctx], alpha=0.85, linewidths=0.4, edgecolors="white")
+    for i, n in enumerate(nodes):
+        if pillars[i] is None: continue
+        if abs(ret30[i]) > 0.15:  # only label movers
+            ax.annotate(ids[i], (xs[i], ret30[i]), fontsize=7, color="#334155",
+                        xytext=(3, 3), textcoords="offset points")
+    ax.set_title("Cluster position vs 30d return")
+    ax.set_xlabel("MDS axis 1 (cluster)")
+    ax.set_ylabel("30-day return")
+    ax.yaxis.set_major_formatter(plt.matplotlib.ticker.PercentFormatter(1.0))
+    ax.grid(True, linestyle="--", linewidth=0.5, color="#e2e8f0")
+
+    # ── BL: risk/return scatter ──
+    ax = axes[1, 0]
+    ax.axhline(0, color="#94a3b8", linewidth=0.8, zorder=1)
+    ax.scatter(vols[is_ctx],  ret30[is_ctx],  c="#cbd5e0", s=8, alpha=0.5, linewidths=0)
+    ax.scatter(vols[~is_ctx], ret30[~is_ctx],
+               c=[colors[i] for i in range(len(nodes)) if not is_ctx[i]],
+               s=sizes[~is_ctx], alpha=0.85, linewidths=0.4, edgecolors="white")
+    for i, n in enumerate(nodes):
+        if pillars[i] is None: continue
+        if vols[i] > 0.6 or abs(ret30[i]) > 0.3:  # label outliers
+            ax.annotate(ids[i], (vols[i], ret30[i]), fontsize=7, color="#334155",
+                        xytext=(3, 3), textcoords="offset points")
+    ax.set_title("Risk vs return")
+    ax.set_xlabel("Annualised volatility")
+    ax.set_ylabel("30-day return")
+    ax.xaxis.set_major_formatter(plt.matplotlib.ticker.PercentFormatter(1.0))
+    ax.yaxis.set_major_formatter(plt.matplotlib.ticker.PercentFormatter(1.0))
+    ax.grid(True, linestyle="--", linewidth=0.5, color="#e2e8f0")
+
+    # ── BR: correlation heatmap, sorted by pillar then ticker (classified only) ──
+    ax = axes[1, 1]
+    ticker_to_idx = {t: i for i, t in enumerate(tickers)}
+    classified_in_corr = [n for n in nodes if n["pillar"] and n["id"] in ticker_to_idx]
+    classified_in_corr.sort(key=lambda n: (PILLAR_ORDER.index(n["pillar"]), n["id"]))
+    if len(classified_in_corr) >= 4:
+        order = [ticker_to_idx[n["id"]] for n in classified_in_corr]
+        sub = corr[np.ix_(order, order)]
+        im = ax.imshow(sub, cmap="RdYlBu_r", vmin=-1, vmax=1, aspect="auto")
+        labels = [n["id"] for n in classified_in_corr]
+        ax.set_xticks(range(len(labels)))
+        ax.set_yticks(range(len(labels)))
+        ax.set_xticklabels(labels, rotation=90, fontsize=6)
+        ax.set_yticklabels(labels, fontsize=6)
+        for tick, n in zip(ax.get_yticklabels(), classified_in_corr):
+            tick.set_color(PILLAR_COLOR[n["pillar"]])
+        for tick, n in zip(ax.get_xticklabels(), classified_in_corr):
+            tick.set_color(PILLAR_COLOR[n["pillar"]])
+        ax.set_title("Correlation heatmap (classified, sorted by pillar)")
+        cbar = plt.colorbar(im, ax=ax, fraction=0.04, pad=0.02)
+        cbar.ax.tick_params(labelsize=8)
+    else:
+        ax.text(0.5, 0.5, "not enough classified data", ha="center", va="center",
+                transform=ax.transAxes, color="#94a3b8")
+        ax.set_axis_off()
+
+    # Pillar legend (single, on the figure)
+    handles = [mpatches.Patch(color=PILLAR_COLOR[p],
+               label=p if p else "context (unclassified)")
+               for p in PILLAR_ORDER]
+    fig.legend(handles=handles, loc="lower center",
+               bbox_to_anchor=(0.5, -0.005), ncol=5,
+               frameon=False, fontsize=10)
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.97])
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=140, bbox_inches="tight",
+                facecolor="white")
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def build_html_wrapper(png_bytes: bytes, snap: dict) -> str:
+    """Wrap the PNG in a minimal light-theme HTML page with discovery list."""
+    import base64
+    b64 = base64.b64encode(png_bytes).decode("ascii")
+    disc = snap.get("discovery", [])
+    PILLAR_COLOR = {"semiconductor": "#2563eb", "infrastructure": "#ea580c",
+                    "equipment": "#7c3aed", "energy": "#16a34a"}
+    rows = "".join(
+        f'<li><b>{c["ticker"]}</b> {c["name"]} → '
+        f'<span style="color:{PILLAR_COLOR.get(c["suggested_pillar"], "#64748b")}">'
+        f'{c["suggested_pillar"]}</span> '
+        f'<span style="color:#64748b">(ρ≈{c["conviction"]})</span></li>'
+        for c in disc[:10]
+    )
+    disc_block = f"<h2>Discovery candidates</h2><ol>{rows}</ol>" if rows else ""
+
+    return f"""<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>alphatecx · TW correlation map</title>
+<style>
+  html,body {{ margin:0; padding:0; background:#ffffff; color:#0f172a;
+    font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif; }}
+  .wrap {{ max-width:1400px; margin:0 auto; padding:18px 22px; }}
+  h1 {{ font-size:18px; margin:0 0 4px; }}
+  .meta {{ color:#64748b; font-size:13px; margin-bottom:14px; }}
+  img {{ max-width:100%; height:auto; display:block; border:1px solid #e2e8f0; border-radius:8px; }}
+  .disc {{ margin-top:18px; padding:14px 18px; background:#f8fafc;
+    border:1px solid #e2e8f0; border-radius:8px; max-width:600px; }}
+  .disc h2 {{ font-size:14px; margin:0 0 8px; color:#0f172a; }}
+  .disc ol {{ margin:0; padding-left:20px; font-size:13px; line-height:1.7; }}
+</style></head><body>
+<div class="wrap">
+  <h1>Taiwan AI universe — correlation map</h1>
+  <div class="meta">{snap['n_tickers']} tickers · window {snap['window_days']}d · as of {snap['asof']}</div>
+  <img src="data:image/png;base64,{b64}" alt="correlation map">
+  <div class="disc">{disc_block}</div>
+</div>
+</body></html>"""
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--window", type=int, default=120)
@@ -445,18 +648,22 @@ def main():
                     default="mcp_server/api/static/graph.html")
     args = ap.parse_args()
 
-    snapshot = build_snapshot(window_days=args.window)
+    snapshot, corr, tickers = build_snapshot(window_days=args.window)
 
     json_path = Path(args.out_json)
     json_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.write_text(json.dumps(snapshot, indent=2))
 
+    png = build_matplotlib_panels(snapshot, corr, tickers)
+    png_path = Path(args.out_json).parent / "graph.png"
+    png_path.write_bytes(png)
+
     html_path = Path(args.out_html)
     html_path.parent.mkdir(parents=True, exist_ok=True)
-    html_path.write_text(build_plotly_html(snapshot))
+    html_path.write_text(build_html_wrapper(png, snapshot))
 
-    log.info("Wrote %s + %s (%d nodes, %d edges, %d corr_edges)",
-             json_path, html_path,
+    log.info("Wrote %s + %s + %s (%d nodes, %d edges, %d corr_edges)",
+             json_path, html_path, png_path,
              len(snapshot["nodes"]), len(snapshot["edges"]),
              len(snapshot["corr_edges"]))
 

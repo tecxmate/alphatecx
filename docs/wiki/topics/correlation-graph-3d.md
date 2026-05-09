@@ -66,9 +66,20 @@ Coordinates are normalised so the largest absolute coordinate equals 1, regardle
 | Hover tooltip | ticker · name · pillar/node · vol · 30d return · US partners |
 | Toggles | context tickers · correlation edges · supply edges · labels |
 
-Frontend: **plotly** (pure Python). The snapshot generator emits a self-contained HTML file via `plotly.graph_objects.Figure.to_html()` with `include_plotlyjs="cdn"`. Plotly's WebGL backend gives drag-to-rotate, scroll-zoom, and hover tooltips out of the box. The FastAPI route just reads and returns the file (~33 LOC of Python; no JS, no importmap, no manual scaffolding).
+Frontend: **matplotlib 2×2 panels** (light theme). The snapshot generator emits a high-DPI PNG and wraps it in a minimal HTML page; the FastAPI route just serves the files.
 
-Earlier iteration used hand-rolled three.js (~400 LOC of JS with custom drop-lines, compass, camera presets). Replaced 2026-05-10 in favour of plotly because: (a) the custom features were nice-to-have, not essential; (b) maintaining JS in a Python project costs more than the visual polish was worth; (c) plotly's modebar gives camera reset / zoom / pan for free; (d) we still get camera presets via plotly's `updatemenus` buttons.
+Why we keep retreating from interactivity:
+1. **three.js** (~400 LOC JS) — disorienting axes, lots of code to maintain.
+2. **plotly 3D** (~150 LOC Python) — interactive but the user found 3D hard to read.
+3. **matplotlib 2D 2×2** (current, ~180 LOC Python) — static but immediately readable. 4 complementary views, each axis directly meaningful.
+
+The 2×2 layout:
+- **TL — Correlation cluster (top-down).** MDS-1 vs MDS-2; supply-chain edges drawn as faint yellow lines. Labels on classified tickers.
+- **TR — Cluster vs 30d return.** MDS-1 vs return; reveals which cluster is leading or lagging. Labels on 15%+ movers.
+- **BL — Risk vs return.** Annualised volatility vs 30d return. Outlier labels.
+- **BR — Correlation heatmap.** Classified tickers only, sorted by pillar then ticker; tick labels colored by pillar so the block structure is visible at a glance.
+
+Single legend across the bottom of the figure. Light theme: white background, soft pastel pillar colors, dark axis labels.
 
 ---
 
@@ -118,9 +129,10 @@ Net result: ~50 classified + 150 context + benchmark ≈ **200 tickers** in the 
 
 ## Files
 
-- `src/quant/correlation_snapshot.py` — pipeline; `build_plotly_html()` renders the figure
-- `mcp_server/api/graph_view.py` — 33-line FastAPI view, just serves the prebuilt file
-- `mcp_server/api/static/graph.html` — generated plotly viewer (committed)
-- `mcp_server/api/static/graph_snapshot.json` — same data in JSON for programmatic access
-- `mcp_server/api/index.py` — auth gate & route registration
+- `src/quant/correlation_snapshot.py` — pipeline; `build_matplotlib_panels()` renders the 2×2 PNG
+- `mcp_server/api/graph_view.py` — FastAPI views: HTML, PNG, JSON
+- `mcp_server/api/static/graph.png` — generated matplotlib figure (committed; Telegram-friendly)
+- `mcp_server/api/static/graph.html` — minimal HTML wrapper around the PNG with discovery panel
+- `mcp_server/api/static/graph_snapshot.json` — raw data for programmatic access
+- `mcp_server/api/index.py` — auth gate & route registration (`/g/{TOKEN}/`, `/g/{TOKEN}/graph.png`, `/g/{TOKEN}/data.json`)
 - `sql/009_sc_revamp.sql` — `sc_edges` table referenced by the snapshot

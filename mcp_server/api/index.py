@@ -749,6 +749,13 @@ def graph_data(token: str):
     return graph_view.get_snapshot_json()
 
 
+@app.get(f"/g/{{token}}/graph.png")
+def graph_png(token: str):
+    if token != MCP_BEARER_TOKEN:
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_graph_png()
+
+
 if not MCP_BEARER_TOKEN:
     raise RuntimeError(
         "MCP_BEARER_TOKEN is not set. Refusing to start with no auth — "
