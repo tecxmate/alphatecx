@@ -327,3 +327,53 @@ def execute_sql_file(filepath: str) -> None:
     with cur() as c:
         c.execute(sql)
     log.info("Executed SQL file: %s", filepath)
+
+
+def upsert_valuation(df: pl.DataFrame, c=None) -> int:
+    """Upsert per-ticker P/E, P/B, dividend-yield (BWIBBU_d)."""
+    if df.is_empty():
+        return 0
+    _save_local(df, "raw_twse_valuation", "date")
+    records = _df_to_records(df)
+    sql = """
+        INSERT INTO raw_twse_valuation (date, ticker_id, company_name, market,
+            close, dividend_yield, dividend_year, pe_ratio, pb_ratio, fiscal_period)
+        VALUES (%(date)s, %(ticker_id)s, %(company_name)s, %(market)s,
+                %(close)s, %(dividend_yield)s, %(dividend_year)s, %(pe_ratio)s,
+                %(pb_ratio)s, %(fiscal_period)s)
+        ON CONFLICT (date, ticker_id) DO UPDATE SET
+            company_name = EXCLUDED.company_name,
+            close = EXCLUDED.close,
+            dividend_yield = EXCLUDED.dividend_yield,
+            dividend_year = EXCLUDED.dividend_year,
+            pe_ratio = EXCLUDED.pe_ratio,
+            pb_ratio = EXCLUDED.pb_ratio,
+            fiscal_period = EXCLUDED.fiscal_period,
+            ingested_at = now()
+    """
+    with _cursor_or_default(c) as cc:
+        cc.executemany(sql, records)
+    log.info("Upserted %d rows into raw_twse_valuation", len(records))
+    return len(records)
+
+
+def upsert_indices(df: pl.DataFrame, c=None) -> int:
+    """Upsert sector / cross-market indices (MI_INDEX type=IND)."""
+    if df.is_empty():
+        return 0
+    _save_local(df, "raw_twse_index", "date")
+    records = _df_to_records(df)
+    sql = """
+        INSERT INTO raw_twse_index (date, index_name, close, change_pts, change_pct, direction)
+        VALUES (%(date)s, %(index_name)s, %(close)s, %(change_pts)s, %(change_pct)s, %(direction)s)
+        ON CONFLICT (date, index_name) DO UPDATE SET
+            close = EXCLUDED.close,
+            change_pts = EXCLUDED.change_pts,
+            change_pct = EXCLUDED.change_pct,
+            direction = EXCLUDED.direction,
+            ingested_at = now()
+    """
+    with _cursor_or_default(c) as cc:
+        cc.executemany(sql, records)
+    log.info("Upserted %d rows into raw_twse_index", len(records))
+    return len(records)

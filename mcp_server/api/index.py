@@ -589,6 +589,73 @@ def w_remove(ticker_id: str) -> dict:
 # ── Tool: Lead-lag analysis ─────────────────────────────────────────────
 
 @mcp.tool()
+def q_valuation(
+    ticker_id: Optional[str] = None,
+    pillar: Optional[str] = None,
+    max_pe: Optional[float] = None,
+    max_pb: Optional[float] = None,
+    min_yield: Optional[float] = None,
+    top_n: int = 30,
+) -> dict:
+    """Latest valuation metrics (P/E, P/B, dividend yield) per ticker.
+
+    Sourced from TWSE BWIBBU_d, harvested daily. Filters compose AND-style:
+    e.g. pillar='semiconductor' + max_pb=2 returns AI-semi names trading
+    below 2× book. NULL pe_ratio means the company has no positive
+    earnings — those rows are excluded if max_pe is set.
+
+    Args:
+        ticker_id: Optional single-ticker lookup.
+        pillar: 'semiconductor' | 'infrastructure' | 'equipment' | 'energy'.
+        max_pe: Cap on P/E ratio. NULL P/E excluded when set.
+        max_pb: Cap on P/B ratio.
+        min_yield: Minimum dividend yield in % (e.g. 3.0 for 3%+).
+        top_n: Result limit (default 30).
+
+    Returns rows sorted by P/B asc (cheapest first), each with company_name,
+    pillar, node, close, dividend_yield, dividend_year, pe, pb, fiscal_period.
+    """
+    rows = db_v2.query_valuation(
+        ticker_id=ticker_id, pillar=pillar,
+        max_pe=max_pe, max_pb=max_pb, min_yield=min_yield, top_n=top_n,
+    )
+    asof = rows[0]["date"] if rows else None
+    return _stamp(
+        {"valuations": rows, "count": len(rows)},
+        source="raw_twse_valuation",
+        as_of=asof,
+        freshness="daily",
+    )
+
+
+@mcp.tool()
+def q_index_history(
+    index_name: Optional[str] = None,
+    days: int = 30,
+) -> dict:
+    """Sector / cross-market index closes & changes from TWSE MI_INDEX.
+
+    With index_name: returns up to `days` recent observations for that one
+    index (e.g. '半導體類指數'). Without: snapshot of every index for the
+    most recent date.
+
+    Args:
+        index_name: Exact Chinese index name. Common ones include
+                    '發行量加權股價指數' (TAIEX), '半導體類指數',
+                    '電子工業類指數', '金融保險類指數'.
+        days: Trailing trading days when index_name is given (default 30).
+    """
+    rows = db_v2.query_index_history(index_name=index_name, days=days)
+    asof = rows[0]["date"] if rows else None
+    return _stamp(
+        {"indices": rows, "count": len(rows)},
+        source="raw_twse_index",
+        as_of=asof,
+        freshness="daily",
+    )
+
+
+@mcp.tool()
 def q_lead_lag(
     upstream: Optional[str] = None,
     downstream: Optional[str] = None,

@@ -45,6 +45,9 @@ TPEX_MARGIN = "https://www.tpex.org.tw/www/zh-tw/margin/balance"
 TWSE_STOCK_DAY = "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY"
 TPEX_TRADING_STOCK = "https://www.tpex.org.tw/www/zh-tw/afterTrading/tradingStock"
 
+TWSE_BWIBBU = "https://www.twse.com.tw/rwd/zh/afterTrading/BWIBBU_d"
+TWSE_MI_INDEX = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX"
+
 MOPS_TWSE_REV = "https://openapi.twse.com.tw/v1/opendata/t187ap05_L"
 MOPS_TPEX_REV = "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap05_O"
 
@@ -415,4 +418,75 @@ def fetch_mops_revenue(market: str = "TWSE") -> list[dict]:
             "ytd_yoy_pct": _to_float(row.get("累計營業收入-前期比較增減(%)")),
         })
     log.info("MOPS revenue %s: %d rows", market, len(rows))
+    return rows
+
+
+# ── BWIBBU_d: per-ticker valuation (P/E, P/B, dividend yield) ───────────────
+
+def fetch_twse_valuation(target_date: str) -> list[dict]:
+    """Fetch TWSE per-ticker valuation metrics for a specific date.
+
+    BWIBBU_d returns one row per listed common stock with that day's close,
+    dividend yield (%), dividend ROC year, P/E, P/B, and the fiscal period
+    those ratios reference. P/E is '-' when the issuer has no positive
+    earnings; we coerce that to NULL.
+    """
+    j = _get_json(TWSE_BWIBBU, {"response": "json", "date": target_date})
+    if not j or j.get("stat") != "OK":
+        return []
+    rows = []
+    for row in j.get("data") or []:
+        if len(row) < 8:
+            continue
+        ticker = str(row[0]).strip()
+        if not ticker:
+            continue
+        rows.append({
+            "date": f"{target_date[:4]}-{target_date[4:6]}-{target_date[6:8]}",
+            "ticker_id": ticker,
+            "company_name": str(row[1]).strip(),
+            "market": "TWSE",
+            "close": _to_float(row[2]),
+            "dividend_yield": _to_float(row[3]),
+            "dividend_year": _to_int(row[4]) if str(row[4]).strip() != "-" else None,
+            "pe_ratio": _to_float(row[5]),
+            "pb_ratio": _to_float(row[6]),
+            "fiscal_period": str(row[7]).strip() if row[7] else None,
+        })
+    log.info("TWSE BWIBBU_d %s: %d rows", target_date, len(rows))
+    return rows
+
+
+# ── MI_INDEX: sector & cross-market indices ─────────────────────────────────
+
+def fetch_twse_indices(target_date: str) -> list[dict]:
+    """Fetch TWSE sector / cross-market index closes & changes for a date.
+
+    MI_INDEX with type=IND returns multi-table JSON. The first table is
+    'TWSE 價格指數' (TAIEX + per-sector indices, ~56 rows); the second is
+    cross-market indices (~48 rows). We flatten both.
+    """
+    j = _get_json(TWSE_MI_INDEX, {"response": "json", "date": target_date, "type": "IND"})
+    if not j:
+        return []
+    rows = []
+    for table in j.get("tables") or []:
+        for row in table.get("data") or []:
+            if len(row) < 5:
+                continue
+            name = str(row[0]).strip()
+            if not name or "指數" not in name:
+                continue
+            # TWSE wraps the direction sign in styled HTML for color; strip it.
+            raw_dir = str(row[2] or "")
+            direction = "+" if "+" in raw_dir else ("-" if "-" in raw_dir else None)
+            rows.append({
+                "date": f"{target_date[:4]}-{target_date[4:6]}-{target_date[6:8]}",
+                "index_name": name,
+                "close": _to_float(row[1]),
+                "direction": direction,
+                "change_pts": _to_float(row[3]),
+                "change_pct": _to_float(row[4]),
+            })
+    log.info("TWSE MI_INDEX %s: %d index rows", target_date, len(rows))
     return rows

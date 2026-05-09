@@ -733,6 +733,71 @@ def query_digest_for_date(digest_date: str, kind: Optional[str] = None) -> list[
 
 # ── Data Status ────────────────────────────────────────────────────────────
 
+def query_valuation(
+    ticker_id: Optional[str] = None,
+    pillar: Optional[str] = None,
+    max_pe: Optional[float] = None,
+    max_pb: Optional[float] = None,
+    min_yield: Optional[float] = None,
+    top_n: int = 30,
+) -> list[dict]:
+    """Latest P/E, P/B, dividend yield from raw_twse_valuation joined with
+    dim_ticker for pillar/node context.
+
+    Filters compose AND-style: pillar='semiconductor' + max_pe=20 returns
+    only semi names trading below P/E 20. NULL pe_ratio means the issuer
+    has no positive earnings — those rows are excluded by max_pe filter.
+    """
+    where = ["v.date = (SELECT MAX(date) FROM raw_twse_valuation)"]
+    params: list = []
+    if ticker_id:
+        where.append("v.ticker_id = %s"); params.append(ticker_id)
+    if pillar:
+        where.append("dt.ai_pillar = %s"); params.append(pillar)
+    if max_pe is not None:
+        where.append("v.pe_ratio IS NOT NULL AND v.pe_ratio <= %s"); params.append(max_pe)
+    if max_pb is not None:
+        where.append("v.pb_ratio IS NOT NULL AND v.pb_ratio <= %s"); params.append(max_pb)
+    if min_yield is not None:
+        where.append("v.dividend_yield >= %s"); params.append(min_yield)
+    params.append(int(top_n))
+
+    sql = f"""
+        SELECT v.ticker_id, v.company_name, dt.ai_pillar, dt.node,
+               v.close, v.dividend_yield, v.dividend_year,
+               v.pe_ratio, v.pb_ratio, v.fiscal_period, v.date
+          FROM raw_twse_valuation v
+          LEFT JOIN dim_ticker dt ON dt.ticker_id = v.ticker_id
+         WHERE {' AND '.join(where)}
+         ORDER BY v.pb_ratio NULLS LAST, v.pe_ratio NULLS LAST
+         LIMIT %s
+    """
+    return _serialize(_fetch(sql, tuple(params)))
+
+
+def query_index_history(
+    index_name: Optional[str] = None,
+    days: int = 30,
+) -> list[dict]:
+    """Recent close + change for a given sector / cross-market index, or
+    a one-day snapshot of all indices if index_name is None."""
+    if index_name:
+        sql = """
+            SELECT date, index_name, close, change_pts, change_pct, direction
+              FROM raw_twse_index
+             WHERE index_name = %s
+             ORDER BY date DESC LIMIT %s
+        """
+        return _serialize(_fetch(sql, (index_name, int(days))))
+    sql = """
+        SELECT date, index_name, close, change_pts, change_pct, direction
+          FROM raw_twse_index
+         WHERE date = (SELECT MAX(date) FROM raw_twse_index)
+         ORDER BY index_name
+    """
+    return _serialize(_fetch(sql))
+
+
 def query_lead_lag(
     upstream: Optional[str] = None,
     downstream: Optional[str] = None,

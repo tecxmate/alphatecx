@@ -105,3 +105,33 @@ def extract_supply_chain_tickers(t86_df: pl.DataFrame) -> pl.DataFrame:
         .unique(subset=["ticker_id"], keep="last")
         .sort("ticker_id")
     )
+
+
+def valuation_to_frame(rows: list[dict]) -> pl.DataFrame:
+    """Convert BWIBBU_d valuation rows to a typed Polars DataFrame."""
+    if not rows:
+        return pl.DataFrame(schema={
+            "date": pl.Date, "ticker_id": pl.Utf8, "company_name": pl.Utf8,
+            "market": pl.Utf8, "close": pl.Float64,
+            "dividend_yield": pl.Float64, "dividend_year": pl.Int64,
+            "pe_ratio": pl.Float64, "pb_ratio": pl.Float64,
+            "fiscal_period": pl.Utf8,
+        })
+    df = pl.DataFrame(rows)
+    df = df.with_columns(pl.col("date").str.to_date("%Y-%m-%d"))
+    df = df.unique(subset=["date", "ticker_id"], keep="last")
+    return df
+
+
+def indices_to_frame(rows: list[dict]) -> pl.DataFrame:
+    """Convert MI_INDEX rows to a typed Polars DataFrame."""
+    if not rows:
+        return pl.DataFrame(schema={
+            "date": pl.Date, "index_name": pl.Utf8,
+            "close": pl.Float64, "change_pts": pl.Float64,
+            "change_pct": pl.Float64, "direction": pl.Utf8,
+        })
+    df = pl.DataFrame(rows)
+    df = df.with_columns(pl.col("date").str.to_date("%Y-%m-%d"))
+    df = df.unique(subset=["date", "index_name"], keep="last")
+    return df

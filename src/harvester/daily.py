@@ -103,7 +103,7 @@ def harvest_today() -> dict:
     others. The Telegram summary at the end shows what succeeded."""
     results = {
         "t86": 0, "holdings": 0, "margin": 0, "revenue": 0,
-        "ohlcv": 0, "news_new": 0, "errors": [],
+        "ohlcv": 0, "valuation": 0, "indices": 0, "news_new": 0, "errors": [],
     }
 
     # Find most recent trading day from TWSE's calendar logic.
@@ -191,6 +191,38 @@ def harvest_today() -> dict:
     except Exception as e:
         log.error("OHLCV failed: %s", e)
         results["errors"].append(f"ohlcv: {e}")
+
+    # ── 5a. Valuation (P/E, P/B, dividend yield) — single TWSE-wide call ──
+    try:
+        rows = twse.fetch_twse_valuation(target)
+        if rows:
+            df = transform.valuation_to_frame(rows)
+            with loader.atomic() as c:
+                count = loader.upsert_valuation(df, c=c)
+                loader.log_ingestion("twse_valuation", iso, count, c=c)
+            results["valuation"] = count
+        else:
+            loader.log_ingestion("twse_valuation", iso, 0, "empty")
+    except Exception as e:
+        log.error("Valuation failed: %s", e)
+        results["errors"].append(f"valuation: {e}")
+    twse._rate_limit()
+
+    # ── 5b. Sector + cross-market indices ─────────────────────────────────
+    try:
+        rows = twse.fetch_twse_indices(target)
+        if rows:
+            df = transform.indices_to_frame(rows)
+            with loader.atomic() as c:
+                count = loader.upsert_indices(df, c=c)
+                loader.log_ingestion("twse_index", iso, count, c=c)
+            results["indices"] = count
+        else:
+            loader.log_ingestion("twse_index", iso, 0, "empty")
+    except Exception as e:
+        log.error("Indices failed: %s", e)
+        results["errors"].append(f"indices: {e}")
+    twse._rate_limit()
 
     # ── 6. News ───────────────────────────────────────────────────────────
     try:

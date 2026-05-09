@@ -281,6 +281,72 @@ def backfill_ohlcv(months: int) -> dict:
     return {"source": "ohlcv", "rows": total_rows, "skipped": skipped, "errors": errors}
 
 
+def backfill_valuation(days: int) -> dict:
+    """Backfill BWIBBU_d valuation (P/E, P/B, dividend yield)."""
+    log.info("=== Backfilling valuation (%d trading days) ===", days)
+    dates = twse.trading_days_range(days)
+    already = loader.get_ingested_dates("twse_valuation")
+    total_rows = skipped = errors = 0
+    for i, d in enumerate(dates):
+        iso = f"{d[:4]}-{d[4:6]}-{d[6:8]}"
+        if iso in already:
+            skipped += 1
+            continue
+        log.info("[%d/%d] valuation date=%s", i + 1, len(dates), d)
+        try:
+            rows = twse.fetch_twse_valuation(d)
+            if rows:
+                df = transform.valuation_to_frame(rows)
+                with loader.atomic() as c:
+                    count = loader.upsert_valuation(df, c=c)
+                    loader.log_ingestion("twse_valuation", iso, count, c=c)
+                total_rows += count
+            else:
+                loader.log_ingestion("twse_valuation", iso, 0, "empty")
+        except Exception as e:
+            log.error("  Error %s: %s", d, e)
+            loader.log_ingestion("twse_valuation", iso, 0, "error", str(e))
+            errors += 1
+        if i < len(dates) - 1:
+            time.sleep(TWSE_REQUEST_DELAY)
+    log.info("valuation backfill done: %d rows, %d skipped, %d errors",
+             total_rows, skipped, errors)
+    return {"source": "valuation", "rows": total_rows, "skipped": skipped, "errors": errors}
+
+
+def backfill_indices(days: int) -> dict:
+    """Backfill MI_INDEX sector indices."""
+    log.info("=== Backfilling indices (%d trading days) ===", days)
+    dates = twse.trading_days_range(days)
+    already = loader.get_ingested_dates("twse_index")
+    total_rows = skipped = errors = 0
+    for i, d in enumerate(dates):
+        iso = f"{d[:4]}-{d[4:6]}-{d[6:8]}"
+        if iso in already:
+            skipped += 1
+            continue
+        log.info("[%d/%d] indices date=%s", i + 1, len(dates), d)
+        try:
+            rows = twse.fetch_twse_indices(d)
+            if rows:
+                df = transform.indices_to_frame(rows)
+                with loader.atomic() as c:
+                    count = loader.upsert_indices(df, c=c)
+                    loader.log_ingestion("twse_index", iso, count, c=c)
+                total_rows += count
+            else:
+                loader.log_ingestion("twse_index", iso, 0, "empty")
+        except Exception as e:
+            log.error("  Error %s: %s", d, e)
+            loader.log_ingestion("twse_index", iso, 0, "error", str(e))
+            errors += 1
+        if i < len(dates) - 1:
+            time.sleep(TWSE_REQUEST_DELAY)
+    log.info("indices backfill done: %d rows, %d skipped, %d errors",
+             total_rows, skipped, errors)
+    return {"source": "indices", "rows": total_rows, "skipped": skipped, "errors": errors}
+
+
 def backfill_revenue() -> dict:
     """Backfill monthly revenue (latest month only — MOPS has no historical API)."""
     log.info("=== Backfilling Monthly Revenue ===")
@@ -312,7 +378,8 @@ def main():
     parser = argparse.ArgumentParser(description="Backfill TWSE/TPEX data into Supabase")
     parser.add_argument("--days", type=int, default=TWSE_BACKFILL_DAYS,
                         help="Number of trading days to backfill (default: %(default)s)")
-    parser.add_argument("--only", choices=["t86", "holdings", "margin", "revenue", "ohlcv"],
+    parser.add_argument("--only", choices=["t86", "holdings", "margin", "revenue",
+                                            "ohlcv", "valuation", "indices"],
                         help="Only run one specific backfill")
     parser.add_argument("--skip-t86", action="store_true",
                         help="Skip T86 backfill (do holdings/margin/revenue)")
@@ -334,12 +401,18 @@ def main():
             results.append(backfill_revenue())
         elif args.only == "ohlcv":
             results.append(backfill_ohlcv(args.ohlcv_months))
+        elif args.only == "valuation":
+            results.append(backfill_valuation(args.days))
+        elif args.only == "indices":
+            results.append(backfill_indices(args.days))
     else:
         if not args.skip_t86:
             results.append(backfill_t86(args.days))
         results.append(backfill_holdings(args.days))
         results.append(backfill_margin(args.days))
         results.append(backfill_revenue())
+        results.append(backfill_valuation(args.days))
+        results.append(backfill_indices(args.days))
 
     # Refresh materialized views after all data is loaded
     try:
