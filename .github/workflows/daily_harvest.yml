@@ -86,6 +86,13 @@ jobs:
         continue-on-error: true
         run: python -m src.quant.leadlag --window 60 --max-lag 7
 
+      - name: Thesis status heartbeat
+        # Read docs/theses/*.md with status:active, post a structured
+        # current-state report to Telegram + daily_digest. Non-fatal.
+        if: success()
+        continue-on-error: true
+        run: python -m src.cron.thesis_status
+
       - name: Regenerate 3D correlation snapshot
         # Refreshes mcp_server/api/static/graph_snapshot.json from the latest
         # OHLCV. Non-fatal: a stale snapshot is better than failing the run.
