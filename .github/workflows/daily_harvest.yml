@@ -28,6 +28,10 @@ env:
 jobs:
   harvest:
     runs-on: ubuntu-latest
+    # contents: write is required for the snapshot-refresh step that commits
+    # the regenerated graph_snapshot.json back to main.
+    permissions:
+      contents: write
     # Generous timeout — TWSE+OHLCV+news+signals can take ~30 min total at
     # the rate-limit cadence. Don't make it tighter than reality or healthy
     # runs will start getting killed mid-flight.
@@ -74,6 +78,30 @@ jobs:
         if: success()
         continue-on-error: true
         run: python -m src.cron.brief --mode post_close
+
+      - name: Regenerate 3D correlation snapshot
+        # Refreshes mcp_server/api/static/graph_snapshot.json from the latest
+        # OHLCV. Non-fatal: a stale snapshot is better than failing the run.
+        if: success()
+        continue-on-error: true
+        run: python -m src.quant.correlation_snapshot --window 120
+
+      - name: Commit & push refreshed snapshot
+        # The snapshot file is the source of truth for the /g/{TOKEN}/ viewer
+        # served from Vercel — push triggers a Vercel redeploy with the new
+        # data. Skipped silently on no-change days (weekends/holidays).
+        if: success()
+        continue-on-error: true
+        run: |
+          git config user.name  "alphatecx-cron"
+          git config user.email "alphatecx-cron@users.noreply.github.com"
+          git add mcp_server/api/static/graph_snapshot.json
+          if git diff --cached --quiet; then
+            echo "snapshot unchanged, nothing to commit"
+          else
+            git commit -m "chore(graph): daily snapshot refresh [skip ci]"
+            git push origin main
+          fi
 
       - name: Notify on failure
         if: failure()
