@@ -28,6 +28,8 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [System Architecture (v2)](topics/system-architecture.md) — Neon-centered stateful pipeline, schema, MCP security, daily workflow
 - [Historical Data Backfill](topics/historical-backfill.md) — 90-day backfill strategy, rate limits, storage estimates
 - [Infrastructure accounts](topics/infrastructure-accounts.md) — Neon, Vercel, Telegram: which org/account owns what, console URLs
+- [Supply Chain Audit & Expansion 2026-05-10](topics/supply-chain-audit-2026-05-10.md) — fixed 4 wrong-coded tickers in Gemini's seed; expanded to 50 classified across 21 nodes; added `sc_edges` for explicit supplier→customer links
+- [3D Correlation Graph](topics/correlation-graph-3d.md) — Mantegna-distance MDS embedding of TW universe; three.js viewer at `/g/{TOKEN}/`; pipeline + auth + math
 
 ## Log
 - [log.md](log.md) — append-only chronological record

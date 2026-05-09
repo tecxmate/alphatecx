@@ -154,18 +154,46 @@ def backfill_margin(days: int) -> dict:
     return {"source": "margin", "rows": total_rows, "skipped": skipped, "errors": errors}
 
 
-def _ohlcv_targets() -> list[tuple[str, str]]:
+def _ohlcv_targets(context_count: int = 150) -> list[tuple[str, str]]:
     """Return [(ticker_id, market), ...] for OHLCV backfill.
 
-    Reads classified tickers from dim_supply_chain (the curated 27) and
-    appends a market benchmark. Backfilling all 7k tickers is not worth it —
-    we only run quant indicators on stocks we actually care about.
+    Includes:
+      1. All classified tickers (dim_supply_chain) — primary signal universe.
+      2. 0050 ETF benchmark.
+      3. Top `context_count` unclassified tickers by T86 absolute flow,
+         excluding ETFs/warrants (ticker_id >= 6 chars or starts '00').
+         This populates the 3D correlation graph with a "grey background" so
+         the AI cluster contrasts against the broader market.
     """
-    benchmarks = [("0050", "TWSE")]  # Yuanta Taiwan 50 — broad TWSE proxy
+    benchmarks = [("0050", "TWSE")]
     with loader.cur() as c:
         c.execute("SELECT ticker_id, market FROM dim_supply_chain")
         classified = [(r[0], r[1]) for r in c.fetchall()]
-    return sorted(set(classified + benchmarks))
+
+        c.execute(
+            """
+            WITH active AS (
+              SELECT ticker_id, market,
+                     SUM(ABS(total_net))::bigint AS abs_flow_sum,
+                     COUNT(*) AS days
+              FROM raw_twse_t86
+              GROUP BY ticker_id, market
+              HAVING COUNT(*) >= 25
+            )
+            SELECT a.ticker_id, a.market
+            FROM active a
+            LEFT JOIN dim_ticker dt USING (ticker_id)
+            WHERE COALESCE(dt.ai_pillar, '') = ''
+              AND LENGTH(a.ticker_id) <= 5
+              AND a.ticker_id NOT LIKE '00%%'
+            ORDER BY a.abs_flow_sum DESC
+            LIMIT %s
+            """,
+            (context_count,),
+        )
+        context = [(r[0], r[1]) for r in c.fetchall()]
+
+    return sorted(set(classified + benchmarks + context))
 
 
 def _ohlcv_already_have(ticker_id: str, year: int, month: int) -> bool:

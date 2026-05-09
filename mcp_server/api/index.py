@@ -37,6 +37,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 import db_v2
+import graph_view
 
 MCP_BEARER_TOKEN = os.getenv("MCP_BEARER_TOKEN", "")
 
@@ -729,7 +730,23 @@ async def auth_gate(request: Request, call_next):
         return await call_next(request)
     if MCP_BEARER_TOKEN and path.startswith(f"/mcp/{MCP_BEARER_TOKEN}"):
         return await call_next(request)
+    if MCP_BEARER_TOKEN and path.startswith(f"/g/{MCP_BEARER_TOKEN}"):
+        return await call_next(request)
     return JSONResponse(status_code=404, content={"error": "not_found"})
+
+
+@app.get(f"/g/{{token}}/")
+def graph_index(token: str):
+    if token != MCP_BEARER_TOKEN:
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_viewer_html()
+
+
+@app.get(f"/g/{{token}}/data.json")
+def graph_data(token: str):
+    if token != MCP_BEARER_TOKEN:
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_snapshot_json()
 
 
 if not MCP_BEARER_TOKEN:
