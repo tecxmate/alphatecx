@@ -291,21 +291,174 @@ def _discovery_candidates(corr, tickers, nodes, idx):
     return out
 
 
+def build_plotly_html(snap: dict) -> str:
+    """Render the snapshot as a self-contained interactive HTML via plotly."""
+    import plotly.graph_objects as go
+
+    nodes = snap["nodes"]
+    PILLAR_COLOR = {
+        "semiconductor":  "#4f9cff",
+        "infrastructure": "#ff7a59",
+        "equipment":      "#9b6dff",
+        "energy":         "#22c55e",
+    }
+
+    # Group nodes by pillar so each pillar gets its own legend entry.
+    pillars = {}
+    for n in nodes:
+        key = n["pillar"] or "context"
+        pillars.setdefault(key, []).append(n)
+
+    fig = go.Figure()
+
+    # Supply-chain edges (yellow) — drawn first so they sit behind nodes.
+    sc_x, sc_y, sc_z = [], [], []
+    by_id = {n["id"]: n for n in nodes}
+    for e in snap["edges"]:
+        a, b = by_id.get(e["from"]), by_id.get(e["to"])
+        if not a or not b: continue
+        sc_x += [a["x"], b["x"], None]
+        sc_y += [a["y"], b["y"], None]
+        sc_z += [a["z"], b["z"], None]
+    if sc_x:
+        fig.add_trace(go.Scatter3d(
+            x=sc_x, y=sc_y, z=sc_z, mode="lines",
+            line=dict(color="rgba(255,209,102,0.45)", width=2),
+            name="supply chain", hoverinfo="skip"
+        ))
+
+    # Correlation edges (faint blue)
+    cc_x, cc_y, cc_z = [], [], []
+    for e in snap["corr_edges"]:
+        a, b = by_id.get(e["from"]), by_id.get(e["to"])
+        if not a or not b: continue
+        cc_x += [a["x"], b["x"], None]
+        cc_y += [a["y"], b["y"], None]
+        cc_z += [a["z"], b["z"], None]
+    if cc_x:
+        fig.add_trace(go.Scatter3d(
+            x=cc_x, y=cc_y, z=cc_z, mode="lines",
+            line=dict(color="rgba(79,156,255,0.18)", width=1),
+            name="correlation ≥ 0.7", hoverinfo="skip"
+        ))
+
+    # Node traces — one per pillar
+    for pillar_name, ns in pillars.items():
+        is_ctx = pillar_name == "context"
+        color = PILLAR_COLOR.get(pillar_name, "#3a3a3a")
+        sizes = [max(6, min(22, n["vol"] * 30)) for n in ns]
+        if is_ctx:
+            sizes = [4] * len(ns)
+        text = [
+            f"<b>{n['id']} {n['name']}</b><br>"
+            f"{(n['pillar'] or 'unclassified')} / {n['node'] or '—'}<br>"
+            f"vol {n['vol']*100:.1f}% · 30d ret {n['ret_30d']*100:+.1f}%"
+            for n in ns
+        ]
+        fig.add_trace(go.Scatter3d(
+            x=[n["x"] for n in ns], y=[n["y"] for n in ns], z=[n["z"] for n in ns],
+            mode="markers",
+            marker=dict(size=sizes, color=color,
+                        opacity=0.35 if is_ctx else 0.95,
+                        line=dict(width=0)),
+            text=text, hovertemplate="%{text}<extra></extra>",
+            name=pillar_name,
+        ))
+
+    # Layout — dark theme, axis titles, camera presets via updatemenus.
+    fig.update_layout(
+        paper_bgcolor="#0a0d12", plot_bgcolor="#0a0d12",
+        font=dict(color="#cdd5df", family="-apple-system,system-ui,sans-serif"),
+        margin=dict(l=0, r=0, t=40, b=0),
+        title=dict(text=f"Taiwan AI universe — {snap['n_tickers']} tickers, "
+                        f"window {snap['window_days']}d, as of {snap['asof']}",
+                   x=0.02, xanchor="left", font=dict(size=14)),
+        scene=dict(
+            xaxis=dict(title="correlation cluster", showbackground=False,
+                       zerolinecolor="#2a3440", gridcolor="#1a2230",
+                       color="#8a96a3"),
+            yaxis=dict(title="correlation cluster", showbackground=False,
+                       zerolinecolor="#2a3440", gridcolor="#1a2230",
+                       color="#8a96a3"),
+            zaxis=dict(title="30-day return (×3 visual scale)",
+                       showbackground=False, zerolinecolor="#4a5568",
+                       gridcolor="#1a2230", color="#cdd5df"),
+            aspectmode="cube",
+            camera=dict(eye=dict(x=1.5, y=1.5, z=1.0)),
+        ),
+        legend=dict(bgcolor="rgba(18,22,28,0.85)", bordercolor="#1f2630",
+                    borderwidth=1, font=dict(size=11)),
+        updatemenus=[dict(
+            type="buttons", direction="right", x=0.5, xanchor="center",
+            y=1.08, yanchor="top", showactive=False,
+            bgcolor="#1a2230", bordercolor="#2a323d",
+            buttons=[
+                dict(label="Isometric", method="relayout",
+                     args=[{"scene.camera.eye": {"x": 1.5, "y": 1.5, "z": 1.0}}]),
+                dict(label="Cluster (top)", method="relayout",
+                     args=[{"scene.camera.eye": {"x": 0.001, "y": 0.001, "z": 2.5}}]),
+                dict(label="Momentum (side)", method="relayout",
+                     args=[{"scene.camera.eye": {"x": 2.5, "y": 0.001, "z": 0.4}}]),
+            ],
+        )],
+    )
+
+    plotly_html = fig.to_html(full_html=False, include_plotlyjs="cdn",
+                              config={"displayModeBar": True, "displaylogo": False})
+
+    disc = snap.get("discovery", [])
+    disc_rows = "".join(
+        f'<li><b>{c["ticker"]}</b> {c["name"]} → '
+        f'<span style="color:{PILLAR_COLOR.get(c["suggested_pillar"], "#888")}">{c["suggested_pillar"]}</span> '
+        f'(ρ≈{c["conviction"]})</li>'
+        for c in disc[:10]
+    )
+    disc_html = (f'<div class="disc"><h2>Discovery candidates</h2><ol>{disc_rows}</ol></div>'
+                 if disc_rows else "")
+
+    return f"""<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>alphatecx · TW correlation map</title>
+<style>
+  html,body {{ margin:0; padding:0; height:100%; background:#0a0d12; color:#cdd5df;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif; }}
+  #plot {{ width:100vw; height:100vh; }}
+  .disc {{ position:fixed; bottom:12px; right:12px; max-width:340px; max-height:55vh;
+    padding:10px 14px; background:rgba(18,22,28,0.92); border:1px solid #1f2630;
+    border-radius:10px; font-size:12px; line-height:1.6; overflow-y:auto; z-index:1000; }}
+  .disc h2 {{ font-size:12px; margin:0 0 6px; color:#e6ecf2; }}
+  .disc ol {{ margin:0; padding-left:18px; }}
+  .disc li {{ margin:3px 0; }}
+</style></head><body>
+<div id="plot">{plotly_html}</div>
+{disc_html}
+</body></html>"""
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--window", type=int, default=120, help="Days of history to use")
-    ap.add_argument("--out", type=str,
-                    default="mcp_server/api/static/graph_snapshot.json",
-                    help="Output JSON path")
+    ap.add_argument("--window", type=int, default=120)
+    ap.add_argument("--out-json", type=str,
+                    default="mcp_server/api/static/graph_snapshot.json")
+    ap.add_argument("--out-html", type=str,
+                    default="mcp_server/api/static/graph.html")
     args = ap.parse_args()
 
     snapshot = build_snapshot(window_days=args.window)
-    out_path = Path(args.out)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(snapshot, indent=2))
-    log.info("Wrote %s (%d nodes, %d edges, %d corr_edges)",
-             out_path, len(snapshot["nodes"]),
-             len(snapshot["edges"]), len(snapshot["corr_edges"]))
+
+    json_path = Path(args.out_json)
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    json_path.write_text(json.dumps(snapshot, indent=2))
+
+    html_path = Path(args.out_html)
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text(build_plotly_html(snapshot))
+
+    log.info("Wrote %s + %s (%d nodes, %d edges, %d corr_edges)",
+             json_path, html_path,
+             len(snapshot["nodes"]), len(snapshot["edges"]),
+             len(snapshot["corr_edges"]))
 
 
 if __name__ == "__main__":

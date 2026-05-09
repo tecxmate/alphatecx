@@ -3,7 +3,7 @@ title: 3D Correlation Network Graph
 type: topic
 slug: correlation-graph-3d
 date: 2026-05-10
-updated: 2026-05-10
+updated: 2026-05-10b
 attributed_to: [claude-code]
 belongs_to: [alphatecx, taiwan-ai-supply-chain]
 source: chat
@@ -66,7 +66,9 @@ Coordinates are normalised so the largest absolute coordinate equals 1, regardle
 | Hover tooltip | ticker · name · pillar/node · vol · 30d return · US partners |
 | Toggles | context tickers · correlation edges · supply edges · labels |
 
-Frontend: vanilla three.js (no React) loaded from CDN via importmap. ~280 LOC HTML+JS. No build step, no bundler — simpler to deploy on Vercel as a single Python function that returns the HTML string.
+Frontend: **plotly** (pure Python). The snapshot generator emits a self-contained HTML file via `plotly.graph_objects.Figure.to_html()` with `include_plotlyjs="cdn"`. Plotly's WebGL backend gives drag-to-rotate, scroll-zoom, and hover tooltips out of the box. The FastAPI route just reads and returns the file (~33 LOC of Python; no JS, no importmap, no manual scaffolding).
+
+Earlier iteration used hand-rolled three.js (~400 LOC of JS with custom drop-lines, compass, camera presets). Replaced 2026-05-10 in favour of plotly because: (a) the custom features were nice-to-have, not essential; (b) maintaining JS in a Python project costs more than the visual polish was worth; (c) plotly's modebar gives camera reset / zoom / pan for free; (d) we still get camera presets via plotly's `updatemenus` buttons.
 
 ---
 
@@ -116,8 +118,9 @@ Net result: ~50 classified + 150 context + benchmark ≈ **200 tickers** in the 
 
 ## Files
 
-- `src/quant/correlation_snapshot.py` — pipeline
-- `mcp_server/api/graph_view.py` — viewer HTML + JSON endpoints
-- `mcp_server/api/static/graph_snapshot.json` — generated artifact (gitignored if too large; currently small enough to commit)
+- `src/quant/correlation_snapshot.py` — pipeline; `build_plotly_html()` renders the figure
+- `mcp_server/api/graph_view.py` — 33-line FastAPI view, just serves the prebuilt file
+- `mcp_server/api/static/graph.html` — generated plotly viewer (committed)
+- `mcp_server/api/static/graph_snapshot.json` — same data in JSON for programmatic access
 - `mcp_server/api/index.py` — auth gate & route registration
 - `sql/009_sc_revamp.sql` — `sc_edges` table referenced by the snapshot
