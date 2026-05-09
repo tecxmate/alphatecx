@@ -598,51 +598,30 @@ def build_matplotlib_panels(snap: dict, corr: np.ndarray, tickers: list[str]) ->
     return buf.getvalue()
 
 
-def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str]) -> str:
-    """Interactive 2x2 panels via plotly. Light theme. Linked axes where useful.
+PLOTLY_PILLAR_COLOR = {
+    "semiconductor":  "#2563eb",
+    "infrastructure": "#ea580c",
+    "equipment":      "#7c3aed",
+    "energy":         "#16a34a",
+}
+PLOTLY_CTX_COLOR = "#cbd5e0"
+PLOTLY_PILLAR_ORDER = ["semiconductor", "equipment", "infrastructure", "energy"]
 
-    TL: cluster (MDS-1 vs MDS-2) — supply-chain edges + ticker scatter
-    TR: cluster vs 30d return     — X axis linked to TL
-    BL: vol vs 30d return         — independent
-    BR: correlation heatmap       — independent
-    """
+
+def _plotly_hover(n):
+    return (f"<b>{n['id']} {n['name']}</b><br>"
+            f"{(n['pillar'] or 'unclassified')} / {n['node'] or '—'}<br>"
+            f"vol {n['vol']*100:.1f}% · 30d {n['ret_30d']*100:+.1f}%")
+
+
+def _add_cluster_traces(fig, snap, *, row=None, col=None, show_legend=True):
+    """Add supply-chain edges + context + per-pillar scatter (X=x, Y=y)."""
     import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-
-    PILLAR_COLOR = {
-        "semiconductor":  "#2563eb",
-        "infrastructure": "#ea580c",
-        "equipment":      "#7c3aed",
-        "energy":         "#16a34a",
-    }
-    CTX_COLOR = "#cbd5e0"
-    PILLAR_ORDER = ["semiconductor", "equipment", "infrastructure", "energy"]
-
     nodes = snap["nodes"]
     by_id = {n["id"]: n for n in nodes}
+    target = dict(row=row, col=col) if row else {}
 
-    fig = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=(
-            "Correlation cluster (top-down)",
-            "Cluster position vs 30d return",
-            "Risk vs return",
-            "Correlation heatmap (classified, sorted by pillar)",
-        ),
-        horizontal_spacing=0.08, vertical_spacing=0.10,
-        # X-axis of TR is linked to TL so zooming the cluster axis
-        # zooms both panels together.
-        specs=[[{}, {}], [{}, {}]],
-    )
-
-    def hover(n, extra=""):
-        return (f"<b>{n['id']} {n['name']}</b><br>"
-                f"{(n['pillar'] or 'unclassified')} / {n['node'] or '—'}<br>"
-                f"vol {n['vol']*100:.1f}% · 30d {n['ret_30d']*100:+.1f}%"
-                + (("<br>" + extra) if extra else ""))
-
-    # ── TL: cluster + supply-chain edges ──
-    # Edges first (under), unique trace per row=1, col=1
+    # Supply-chain edges
     edge_x, edge_y = [], []
     for e in snap["edges"]:
         a, b = by_id.get(e["from"]), by_id.get(e["to"])
@@ -654,122 +633,236 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str]) -> st
             x=edge_x, y=edge_y, mode="lines",
             line=dict(color="rgba(251,191,36,0.55)", width=1),
             hoverinfo="skip", showlegend=False, name="supply",
-        ), row=1, col=1)
+        ), **target)
 
-    # Context (grey) underlay across all three scatter panels
+    # Context underlay
     ctx = [n for n in nodes if not n["pillar"]]
     if ctx:
         fig.add_trace(go.Scatter(
             x=[n["x"] for n in ctx], y=[n["y"] for n in ctx],
-            mode="markers", marker=dict(size=4, color=CTX_COLOR, opacity=0.6),
-            hovertemplate=[hover(n) + "<extra></extra>" for n in ctx],
-            showlegend=True, name="context", legendgroup="context",
-        ), row=1, col=1)
-        fig.add_trace(go.Scatter(
-            x=[n["x"] for n in ctx], y=[n["ret_30d"] for n in ctx],
-            mode="markers", marker=dict(size=4, color=CTX_COLOR, opacity=0.6),
-            hovertemplate=[hover(n) + "<extra></extra>" for n in ctx],
-            showlegend=False, legendgroup="context",
-        ), row=1, col=2)
-        fig.add_trace(go.Scatter(
-            x=[n["vol"] for n in ctx], y=[n["ret_30d"] for n in ctx],
-            mode="markers", marker=dict(size=4, color=CTX_COLOR, opacity=0.6),
-            hovertemplate=[hover(n) + "<extra></extra>" for n in ctx],
-            showlegend=False, legendgroup="context",
-        ), row=2, col=1)
+            mode="markers", marker=dict(size=4, color=PLOTLY_CTX_COLOR, opacity=0.6),
+            hovertemplate=[_plotly_hover(n) + "<extra></extra>" for n in ctx],
+            showlegend=show_legend, name="context", legendgroup="context",
+        ), **target)
 
-    # Per-pillar traces (one per panel × pillar so legend toggles all panels)
-    for pillar in PILLAR_ORDER:
+    # Per-pillar
+    for pillar in PLOTLY_PILLAR_ORDER:
         ns = [n for n in nodes if n["pillar"] == pillar]
         if not ns: continue
-        col = PILLAR_COLOR[pillar]
         sizes = [max(7, min(18, n["vol"] * 25)) for n in ns]
-
-        common = dict(
+        fig.add_trace(go.Scatter(
+            x=[n["x"] for n in ns], y=[n["y"] for n in ns],
             mode="markers+text",
-            marker=dict(size=sizes, color=col, opacity=0.9,
-                        line=dict(width=0.5, color="white")),
+            marker=dict(size=sizes, color=PLOTLY_PILLAR_COLOR[pillar],
+                        opacity=0.9, line=dict(width=0.5, color="white")),
             text=[n["id"] for n in ns], textposition="top right",
             textfont=dict(size=8, color="#475569"),
-            hovertemplate=[hover(n) + "<extra></extra>" for n in ns],
-            legendgroup=pillar, name=pillar,
-        )
-        # Cluster floor
-        fig.add_trace(go.Scatter(x=[n["x"] for n in ns], y=[n["y"] for n in ns],
-                                 showlegend=True, **common), row=1, col=1)
-        # Cluster vs 30d ret
-        fig.add_trace(go.Scatter(x=[n["x"] for n in ns], y=[n["ret_30d"] for n in ns],
-                                 showlegend=False, **common), row=1, col=2)
-        # Risk/return
-        fig.add_trace(go.Scatter(x=[n["vol"] for n in ns], y=[n["ret_30d"] for n in ns],
-                                 showlegend=False, **common), row=2, col=1)
+            hovertemplate=[_plotly_hover(n) + "<extra></extra>" for n in ns],
+            legendgroup=pillar, name=pillar, showlegend=show_legend,
+        ), **target)
 
-    # ── BR: correlation heatmap (classified only, sorted by pillar) ──
+
+def _add_xy_panel_traces(fig, snap, *, x_field, y_field, row=None, col=None,
+                         show_legend=True):
+    """Generic context + per-pillar scatter for any (x_field, y_field) panel."""
+    import plotly.graph_objects as go
+    nodes = snap["nodes"]
+    target = dict(row=row, col=col) if row else {}
+
+    ctx = [n for n in nodes if not n["pillar"]]
+    if ctx:
+        fig.add_trace(go.Scatter(
+            x=[n[x_field] for n in ctx], y=[n[y_field] for n in ctx],
+            mode="markers", marker=dict(size=4, color=PLOTLY_CTX_COLOR, opacity=0.6),
+            hovertemplate=[_plotly_hover(n) + "<extra></extra>" for n in ctx],
+            showlegend=show_legend, name="context", legendgroup="context",
+        ), **target)
+
+    for pillar in PLOTLY_PILLAR_ORDER:
+        ns = [n for n in nodes if n["pillar"] == pillar]
+        if not ns: continue
+        sizes = [max(7, min(18, n["vol"] * 25)) for n in ns]
+        fig.add_trace(go.Scatter(
+            x=[n[x_field] for n in ns], y=[n[y_field] for n in ns],
+            mode="markers+text",
+            marker=dict(size=sizes, color=PLOTLY_PILLAR_COLOR[pillar],
+                        opacity=0.9, line=dict(width=0.5, color="white")),
+            text=[n["id"] for n in ns], textposition="top right",
+            textfont=dict(size=8, color="#475569"),
+            hovertemplate=[_plotly_hover(n) + "<extra></extra>" for n in ns],
+            legendgroup=pillar, name=pillar, showlegend=show_legend,
+        ), **target)
+
+
+def _add_heatmap_trace(fig, snap, corr, tickers, *, row=None, col=None,
+                       colorbar_x=1.0, colorbar_y=0.5, colorbar_len=0.9):
+    import plotly.graph_objects as go
+    nodes = snap["nodes"]
     ticker_to_idx = {t: i for i, t in enumerate(tickers)}
     classified = [n for n in nodes if n["pillar"] and n["id"] in ticker_to_idx]
-    classified.sort(key=lambda n: (PILLAR_ORDER.index(n["pillar"]), n["id"]))
-    if len(classified) >= 4:
-        order = [ticker_to_idx[n["id"]] for n in classified]
-        sub = corr[np.ix_(order, order)]
-        labels = [n["id"] for n in classified]
-        fig.add_trace(go.Heatmap(
-            z=sub, x=labels, y=labels,
-            colorscale="RdBu_r", zmid=0, zmin=-1, zmax=1,
-            colorbar=dict(thickness=12, len=0.4, y=0.22, x=1.0,
-                          title=dict(text="ρ", font=dict(size=10))),
-            hovertemplate="%{y} ↔ %{x}<br>ρ = %{z:.2f}<extra></extra>",
-            showscale=True,
-        ), row=2, col=2)
+    classified.sort(key=lambda n: (PLOTLY_PILLAR_ORDER.index(n["pillar"]), n["id"]))
+    if len(classified) < 4:
+        return
+    order = [ticker_to_idx[n["id"]] for n in classified]
+    sub = corr[np.ix_(order, order)]
+    labels = [n["id"] for n in classified]
+    target = dict(row=row, col=col) if row else {}
+    fig.add_trace(go.Heatmap(
+        z=sub, x=labels, y=labels,
+        colorscale="RdBu_r", zmid=0, zmin=-1, zmax=1,
+        colorbar=dict(thickness=12, len=colorbar_len,
+                      x=colorbar_x, y=colorbar_y,
+                      title=dict(text="ρ", font=dict(size=10))),
+        hovertemplate="%{y} ↔ %{x}<br>ρ = %{z:.2f}<extra></extra>",
+        showscale=True,
+    ), **target)
 
-    # Layout: light theme, linked axes for TL/TR, format Y as % where appropriate
+
+_AXIS_STYLE = dict(showline=True, linecolor="#94a3b8", linewidth=1,
+                   gridcolor="#e2e8f0", zerolinecolor="#cbd5e0",
+                   ticks="outside", tickcolor="#94a3b8")
+_LIGHT_LAYOUT = dict(
+    paper_bgcolor="white", plot_bgcolor="#fafbfc",
+    font=dict(family="-apple-system,system-ui,sans-serif",
+              size=11, color="#334155"),
+    hovermode="closest",
+    legend=dict(orientation="h", x=0.5, xanchor="center", y=-0.10,
+                bgcolor="rgba(248,250,252,0.85)", bordercolor="#e2e8f0",
+                borderwidth=1, font=dict(size=11)),
+)
+
+
+def _fig_individual_cluster(snap):
+    import plotly.graph_objects as go
+    fig = go.Figure()
+    _add_cluster_traces(fig, snap)
     fig.update_layout(
-        title=dict(
-            text=f"<b>Taiwan AI universe</b> — {snap['n_tickers']} tickers · "
-                 f"window {snap['window_days']}d · as of {snap['asof']}",
-            x=0.02, xanchor="left", font=dict(size=14, color="#0f172a"),
-        ),
+        title="Correlation cluster — top-down view",
+        xaxis=dict(title="MDS axis 1", **_AXIS_STYLE),
+        yaxis=dict(title="MDS axis 2", **_AXIS_STYLE),
+        height=720, **_LIGHT_LAYOUT,
+    )
+    return fig
+
+
+def _fig_individual_momentum(snap):
+    import plotly.graph_objects as go
+    fig = go.Figure()
+    _add_xy_panel_traces(fig, snap, x_field="x", y_field="ret_30d")
+    fig.update_layout(
+        title="Cluster position vs 30-day return",
+        xaxis=dict(title="MDS axis 1 (cluster)", **_AXIS_STYLE),
+        yaxis=dict(title="30-day return", tickformat=".0%", **_AXIS_STYLE),
+        height=720, **_LIGHT_LAYOUT,
+    )
+    return fig
+
+
+def _fig_individual_risk(snap):
+    import plotly.graph_objects as go
+    fig = go.Figure()
+    _add_xy_panel_traces(fig, snap, x_field="vol", y_field="ret_30d")
+    fig.update_layout(
+        title="Risk vs return",
+        xaxis=dict(title="annualised volatility", tickformat=".0%", **_AXIS_STYLE),
+        yaxis=dict(title="30-day return", tickformat=".0%", **_AXIS_STYLE),
+        height=720, **_LIGHT_LAYOUT,
+    )
+    return fig
+
+
+def _fig_individual_heatmap(snap, corr, tickers):
+    import plotly.graph_objects as go
+    fig = go.Figure()
+    _add_heatmap_trace(fig, snap, corr, tickers, colorbar_x=1.02)
+    fig.update_layout(
+        title="Correlation heatmap (classified, sorted by pillar)",
+        xaxis=dict(showgrid=False, **_AXIS_STYLE),
+        yaxis=dict(showgrid=False, autorange="reversed", **_AXIS_STYLE),
+        height=720,
         paper_bgcolor="white", plot_bgcolor="#fafbfc",
         font=dict(family="-apple-system,system-ui,sans-serif",
                   size=11, color="#334155"),
-        margin=dict(l=50, r=50, t=80, b=50),
-        height=820,
-        legend=dict(orientation="h", x=0.5, xanchor="center", y=-0.06,
-                    bgcolor="rgba(248,250,252,0.85)", bordercolor="#e2e8f0",
-                    borderwidth=1, font=dict(size=11)),
-        # Hover: show only the trace under cursor, not all
-        hovermode="closest",
     )
+    return fig
 
-    # Axis styling and labels
-    axis_style = dict(showline=True, linecolor="#94a3b8", linewidth=1,
-                      gridcolor="#e2e8f0", zerolinecolor="#cbd5e0",
-                      ticks="outside", tickcolor="#94a3b8")
-    fig.update_xaxes(title_text="MDS axis 1", row=1, col=1, **axis_style)
-    fig.update_yaxes(title_text="MDS axis 2", row=1, col=1, **axis_style)
+
+def _fig_combined(snap, corr, tickers):
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=(
+            "Correlation cluster (top-down)",
+            "Cluster position vs 30d return",
+            "Risk vs return",
+            "Correlation heatmap (classified, sorted by pillar)",
+        ),
+        horizontal_spacing=0.08, vertical_spacing=0.10,
+    )
+    _add_cluster_traces(fig, snap, row=1, col=1, show_legend=True)
+    _add_xy_panel_traces(fig, snap, x_field="x", y_field="ret_30d",
+                         row=1, col=2, show_legend=False)
+    _add_xy_panel_traces(fig, snap, x_field="vol", y_field="ret_30d",
+                         row=2, col=1, show_legend=False)
+    _add_heatmap_trace(fig, snap, corr, tickers,
+                       row=2, col=2, colorbar_x=1.0, colorbar_y=0.22, colorbar_len=0.4)
+    # Layout
+    fig.update_layout(
+        title=dict(text=f"<b>Taiwan AI universe</b> — {snap['n_tickers']} tickers · "
+                        f"window {snap['window_days']}d · as of {snap['asof']}",
+                   x=0.02, xanchor="left", font=dict(size=14, color="#0f172a")),
+        margin=dict(l=50, r=50, t=80, b=50),
+        height=820, **_LIGHT_LAYOUT,
+    )
+    fig.update_xaxes(title_text="MDS axis 1", row=1, col=1, **_AXIS_STYLE)
+    fig.update_yaxes(title_text="MDS axis 2", row=1, col=1, **_AXIS_STYLE)
     fig.update_xaxes(title_text="MDS axis 1 (cluster)", row=1, col=2,
-                     matches="x1", **axis_style)  # link X to TL
+                     matches="x1", **_AXIS_STYLE)
     fig.update_yaxes(title_text="30d return", tickformat=".0%",
-                     row=1, col=2, **axis_style)
+                     row=1, col=2, **_AXIS_STYLE)
     fig.update_xaxes(title_text="annualised volatility", tickformat=".0%",
-                     row=2, col=1, **axis_style)
+                     row=2, col=1, **_AXIS_STYLE)
     fig.update_yaxes(title_text="30d return", tickformat=".0%",
-                     row=2, col=1, **axis_style)
+                     row=2, col=1, **_AXIS_STYLE)
     fig.update_xaxes(showgrid=False, row=2, col=2)
     fig.update_yaxes(showgrid=False, autorange="reversed", row=2, col=2)
+    return fig
 
-    plotly_html = fig.to_html(
-        full_html=False, include_plotlyjs="cdn",
-        config={"displayModeBar": True, "displaylogo": False, "responsive": True,
-                "modeBarButtonsToRemove": ["lasso2d", "select2d"]},
-    )
 
-    # Discovery panel
+def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str]) -> str:
+    """Tabbed HTML page: combined 2x2 plus 4 individual full-size views."""
+    PILLAR_COLOR = PLOTLY_PILLAR_COLOR
+
+    PLOT_CFG = {
+        "displayModeBar": True, "displaylogo": False, "responsive": True,
+        "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+    }
+
+    def fig_to_div(fig, div_id, include_js):
+        return fig.to_html(
+            full_html=False,
+            include_plotlyjs="cdn" if include_js else False,
+            div_id=div_id, config=PLOT_CFG,
+        )
+
+    div_combined = fig_to_div(_fig_combined(snap, corr, tickers),
+                              "fig-all", include_js=True)
+    div_cluster  = fig_to_div(_fig_individual_cluster(snap),
+                              "fig-cluster", include_js=False)
+    div_momentum = fig_to_div(_fig_individual_momentum(snap),
+                              "fig-momentum", include_js=False)
+    div_risk     = fig_to_div(_fig_individual_risk(snap),
+                              "fig-risk", include_js=False)
+    div_heatmap  = fig_to_div(_fig_individual_heatmap(snap, corr, tickers),
+                              "fig-heatmap", include_js=False)
+
     disc = snap.get("discovery", [])
     rows = "".join(
-        f'<li><b>{c["ticker"]}</b> {c["name"]} → '
+        f'<li><b>{c["ticker"]}</b> {c["name"]} \u2192 '
         f'<span style="color:{PILLAR_COLOR.get(c["suggested_pillar"], "#64748b")}">'
         f'{c["suggested_pillar"]}</span> '
-        f'<span style="color:#64748b">(ρ≈{c["conviction"]})</span></li>'
+        f'<span style="color:#64748b">(\u03c1\u2248{c["conviction"]})</span></li>'
         for c in disc[:10]
     )
     disc_block = (f'<div class="disc"><h2>Discovery candidates</h2>'
@@ -778,11 +871,25 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str]) -> st
     return f"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>alphatecx · TW correlation map</title>
+<title>alphatecx \u00b7 TW correlation map</title>
 <style>
   html,body {{ margin:0; padding:0; background:#ffffff; color:#0f172a;
     font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif; }}
   .wrap {{ max-width:1500px; margin:0 auto; padding:14px 18px 28px; }}
+  .header {{ display:flex; justify-content:space-between; align-items:flex-end;
+            margin-bottom:10px; gap:12px; flex-wrap:wrap; }}
+  .header h1 {{ font-size:16px; font-weight:600; margin:0; color:#0f172a; }}
+  .meta {{ color:#64748b; font-size:12px; }}
+  .tabs {{ display:flex; gap:4px; margin:6px 0 10px; flex-wrap:wrap;
+          border-bottom:1px solid #e2e8f0; }}
+  .tab {{ padding:8px 14px; border:1px solid transparent; border-bottom:none;
+        background:transparent; color:#64748b; font-size:13px; cursor:pointer;
+        font-family:inherit; border-radius:6px 6px 0 0; margin-bottom:-1px; }}
+  .tab:hover {{ color:#0f172a; background:#f8fafc; }}
+  .tab.active {{ background:#ffffff; color:#0f172a; font-weight:600;
+                border:1px solid #e2e8f0; border-bottom:1px solid #ffffff; }}
+  .panel {{ display:none; }}
+  .panel.active {{ display:block; }}
   .hint {{ color:#94a3b8; font-size:12px; margin:0 0 6px; }}
   .disc {{ margin-top:14px; padding:14px 18px; background:#f8fafc;
     border:1px solid #e2e8f0; border-radius:8px; max-width:640px; }}
@@ -790,10 +897,41 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str]) -> st
   .disc ol {{ margin:0; padding-left:20px; font-size:13px; line-height:1.7; }}
 </style></head><body>
 <div class="wrap">
-  <p class="hint">Drag to pan · scroll to zoom · double-click to reset · click a pillar in the legend to toggle. Cluster panels share an X axis — zooming one zooms the other.</p>
-  {plotly_html}
+  <div class="header">
+    <h1>Taiwan AI universe \u2014 correlation map</h1>
+    <div class="meta">{snap["n_tickers"]} tickers \u00b7 window {snap["window_days"]}d \u00b7 as of {snap["asof"]}</div>
+  </div>
+  <div class="tabs">
+    <button class="tab active" data-tab="all">All (2\u00d72)</button>
+    <button class="tab" data-tab="cluster">Cluster</button>
+    <button class="tab" data-tab="momentum">Cluster vs return</button>
+    <button class="tab" data-tab="risk">Risk vs return</button>
+    <button class="tab" data-tab="heatmap">Correlation heatmap</button>
+  </div>
+  <p class="hint">Drag to pan \u00b7 scroll to zoom \u00b7 double-click to reset \u00b7 click a pillar in the legend to toggle.</p>
+  <div class="panel active" data-panel="all">{div_combined}</div>
+  <div class="panel" data-panel="cluster">{div_cluster}</div>
+  <div class="panel" data-panel="momentum">{div_momentum}</div>
+  <div class="panel" data-panel="risk">{div_risk}</div>
+  <div class="panel" data-panel="heatmap">{div_heatmap}</div>
   {disc_block}
 </div>
+<script>
+(function() {{
+  const tabs   = document.querySelectorAll('.tab');
+  const panels = document.querySelectorAll('.panel');
+  function show(name) {{
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    panels.forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+    const active = document.querySelector('.panel.active .js-plotly-plot');
+    if (active && window.Plotly) window.Plotly.Plots.resize(active);
+    if (history.replaceState) history.replaceState(null, '', '#' + name);
+  }}
+  tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.tab)));
+  const hash = (location.hash || '').replace(/^#/, '');
+  if (hash && document.querySelector(`.panel[data-panel="${{hash}}"]`)) show(hash);
+}})();
+</script>
 </body></html>"""
 
 
