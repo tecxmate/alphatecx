@@ -95,8 +95,9 @@ def _table_html(table_id: str, headers: list[str], rows: list[list[str]],
         for i, (h, t) in enumerate(headers)
     )
     body = "\n".join(_row_html(r) for r in rows)
-    return (f'<table id="{table_id}" class="dt"><thead><tr>{th}</tr></thead>'
-            f'<tbody>{body}</tbody></table>')
+    return (f'<div class="scroll-x"><table id="{table_id}" class="dt">'
+            f'<thead><tr>{th}</tr></thead>'
+            f'<tbody>{body}</tbody></table></div>')
 
 
 # ── frontmatter parsing (duplicate from thesis_status to keep self-contained) ──

@@ -41,3 +41,19 @@ table.dt tbody tr:hover { background:#f8fafc; }
 .neg { color:#dc2626; font-weight:500; }
 .empty { padding:24px; color:#94a3b8; font-style:italic; text-align:center;
   background:#f8fafc; border:1px dashed #cbd5e0; border-radius:6px; }
+
+/* Mobile: tables get their own horizontal scroll inside the tab so the
+   page itself stays narrow. */
+.scroll-x { overflow-x:auto; -webkit-overflow-scrolling:touch;
+  border:1px solid #e2e8f0; border-radius:6px; background:white; }
+.scroll-x table.dt { border:none; min-width:720px; border-radius:0; }
+
+@media (max-width: 720px) {
+  .wrap { padding:10px 12px 24px; }
+  .header h1 { font-size:16px; }
+  .tab { padding:7px 10px; font-size:12px; }
+  table.dt th, table.dt td { padding:6px 8px; font-size:12px; }
+  .toolbar { flex-direction:column; align-items:stretch; }
+  .toolbar input { max-width:none; }
+  .toolbar .meta { display:none; }
+}
