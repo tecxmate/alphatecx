@@ -598,13 +598,173 @@ def build_matplotlib_panels(snap: dict, corr: np.ndarray, tickers: list[str]) ->
     return buf.getvalue()
 
 
-def build_html_wrapper(png_bytes: bytes, snap: dict) -> str:
-    """Wrap the PNG in a minimal light-theme HTML page with discovery list."""
-    import base64
-    b64 = base64.b64encode(png_bytes).decode("ascii")
+def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str]) -> str:
+    """Interactive 2x2 panels via plotly. Light theme. Linked axes where useful.
+
+    TL: cluster (MDS-1 vs MDS-2) — supply-chain edges + ticker scatter
+    TR: cluster vs 30d return     — X axis linked to TL
+    BL: vol vs 30d return         — independent
+    BR: correlation heatmap       — independent
+    """
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    PILLAR_COLOR = {
+        "semiconductor":  "#2563eb",
+        "infrastructure": "#ea580c",
+        "equipment":      "#7c3aed",
+        "energy":         "#16a34a",
+    }
+    CTX_COLOR = "#cbd5e0"
+    PILLAR_ORDER = ["semiconductor", "equipment", "infrastructure", "energy"]
+
+    nodes = snap["nodes"]
+    by_id = {n["id"]: n for n in nodes}
+
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=(
+            "Correlation cluster (top-down)",
+            "Cluster position vs 30d return",
+            "Risk vs return",
+            "Correlation heatmap (classified, sorted by pillar)",
+        ),
+        horizontal_spacing=0.08, vertical_spacing=0.10,
+        # X-axis of TR is linked to TL so zooming the cluster axis
+        # zooms both panels together.
+        specs=[[{}, {}], [{}, {}]],
+    )
+
+    def hover(n, extra=""):
+        return (f"<b>{n['id']} {n['name']}</b><br>"
+                f"{(n['pillar'] or 'unclassified')} / {n['node'] or '—'}<br>"
+                f"vol {n['vol']*100:.1f}% · 30d {n['ret_30d']*100:+.1f}%"
+                + (("<br>" + extra) if extra else ""))
+
+    # ── TL: cluster + supply-chain edges ──
+    # Edges first (under), unique trace per row=1, col=1
+    edge_x, edge_y = [], []
+    for e in snap["edges"]:
+        a, b = by_id.get(e["from"]), by_id.get(e["to"])
+        if not a or not b: continue
+        edge_x += [a["x"], b["x"], None]
+        edge_y += [a["y"], b["y"], None]
+    if edge_x:
+        fig.add_trace(go.Scatter(
+            x=edge_x, y=edge_y, mode="lines",
+            line=dict(color="rgba(251,191,36,0.55)", width=1),
+            hoverinfo="skip", showlegend=False, name="supply",
+        ), row=1, col=1)
+
+    # Context (grey) underlay across all three scatter panels
+    ctx = [n for n in nodes if not n["pillar"]]
+    if ctx:
+        fig.add_trace(go.Scatter(
+            x=[n["x"] for n in ctx], y=[n["y"] for n in ctx],
+            mode="markers", marker=dict(size=4, color=CTX_COLOR, opacity=0.6),
+            hovertemplate=[hover(n) + "<extra></extra>" for n in ctx],
+            showlegend=True, name="context", legendgroup="context",
+        ), row=1, col=1)
+        fig.add_trace(go.Scatter(
+            x=[n["x"] for n in ctx], y=[n["ret_30d"] for n in ctx],
+            mode="markers", marker=dict(size=4, color=CTX_COLOR, opacity=0.6),
+            hovertemplate=[hover(n) + "<extra></extra>" for n in ctx],
+            showlegend=False, legendgroup="context",
+        ), row=1, col=2)
+        fig.add_trace(go.Scatter(
+            x=[n["vol"] for n in ctx], y=[n["ret_30d"] for n in ctx],
+            mode="markers", marker=dict(size=4, color=CTX_COLOR, opacity=0.6),
+            hovertemplate=[hover(n) + "<extra></extra>" for n in ctx],
+            showlegend=False, legendgroup="context",
+        ), row=2, col=1)
+
+    # Per-pillar traces (one per panel × pillar so legend toggles all panels)
+    for pillar in PILLAR_ORDER:
+        ns = [n for n in nodes if n["pillar"] == pillar]
+        if not ns: continue
+        col = PILLAR_COLOR[pillar]
+        sizes = [max(7, min(18, n["vol"] * 25)) for n in ns]
+
+        common = dict(
+            mode="markers+text",
+            marker=dict(size=sizes, color=col, opacity=0.9,
+                        line=dict(width=0.5, color="white")),
+            text=[n["id"] for n in ns], textposition="top right",
+            textfont=dict(size=8, color="#475569"),
+            hovertemplate=[hover(n) + "<extra></extra>" for n in ns],
+            legendgroup=pillar, name=pillar,
+        )
+        # Cluster floor
+        fig.add_trace(go.Scatter(x=[n["x"] for n in ns], y=[n["y"] for n in ns],
+                                 showlegend=True, **common), row=1, col=1)
+        # Cluster vs 30d ret
+        fig.add_trace(go.Scatter(x=[n["x"] for n in ns], y=[n["ret_30d"] for n in ns],
+                                 showlegend=False, **common), row=1, col=2)
+        # Risk/return
+        fig.add_trace(go.Scatter(x=[n["vol"] for n in ns], y=[n["ret_30d"] for n in ns],
+                                 showlegend=False, **common), row=2, col=1)
+
+    # ── BR: correlation heatmap (classified only, sorted by pillar) ──
+    ticker_to_idx = {t: i for i, t in enumerate(tickers)}
+    classified = [n for n in nodes if n["pillar"] and n["id"] in ticker_to_idx]
+    classified.sort(key=lambda n: (PILLAR_ORDER.index(n["pillar"]), n["id"]))
+    if len(classified) >= 4:
+        order = [ticker_to_idx[n["id"]] for n in classified]
+        sub = corr[np.ix_(order, order)]
+        labels = [n["id"] for n in classified]
+        fig.add_trace(go.Heatmap(
+            z=sub, x=labels, y=labels,
+            colorscale="RdBu_r", zmid=0, zmin=-1, zmax=1,
+            colorbar=dict(thickness=12, len=0.4, y=0.22, x=1.0,
+                          title=dict(text="ρ", font=dict(size=10))),
+            hovertemplate="%{y} ↔ %{x}<br>ρ = %{z:.2f}<extra></extra>",
+            showscale=True,
+        ), row=2, col=2)
+
+    # Layout: light theme, linked axes for TL/TR, format Y as % where appropriate
+    fig.update_layout(
+        title=dict(
+            text=f"<b>Taiwan AI universe</b> — {snap['n_tickers']} tickers · "
+                 f"window {snap['window_days']}d · as of {snap['asof']}",
+            x=0.02, xanchor="left", font=dict(size=14, color="#0f172a"),
+        ),
+        paper_bgcolor="white", plot_bgcolor="#fafbfc",
+        font=dict(family="-apple-system,system-ui,sans-serif",
+                  size=11, color="#334155"),
+        margin=dict(l=50, r=50, t=80, b=50),
+        height=820,
+        legend=dict(orientation="h", x=0.5, xanchor="center", y=-0.06,
+                    bgcolor="rgba(248,250,252,0.85)", bordercolor="#e2e8f0",
+                    borderwidth=1, font=dict(size=11)),
+        # Hover: show only the trace under cursor, not all
+        hovermode="closest",
+    )
+
+    # Axis styling and labels
+    axis_style = dict(showline=True, linecolor="#94a3b8", linewidth=1,
+                      gridcolor="#e2e8f0", zerolinecolor="#cbd5e0",
+                      ticks="outside", tickcolor="#94a3b8")
+    fig.update_xaxes(title_text="MDS axis 1", row=1, col=1, **axis_style)
+    fig.update_yaxes(title_text="MDS axis 2", row=1, col=1, **axis_style)
+    fig.update_xaxes(title_text="MDS axis 1 (cluster)", row=1, col=2,
+                     matches="x1", **axis_style)  # link X to TL
+    fig.update_yaxes(title_text="30d return", tickformat=".0%",
+                     row=1, col=2, **axis_style)
+    fig.update_xaxes(title_text="annualised volatility", tickformat=".0%",
+                     row=2, col=1, **axis_style)
+    fig.update_yaxes(title_text="30d return", tickformat=".0%",
+                     row=2, col=1, **axis_style)
+    fig.update_xaxes(showgrid=False, row=2, col=2)
+    fig.update_yaxes(showgrid=False, autorange="reversed", row=2, col=2)
+
+    plotly_html = fig.to_html(
+        full_html=False, include_plotlyjs="cdn",
+        config={"displayModeBar": True, "displaylogo": False, "responsive": True,
+                "modeBarButtonsToRemove": ["lasso2d", "select2d"]},
+    )
+
+    # Discovery panel
     disc = snap.get("discovery", [])
-    PILLAR_COLOR = {"semiconductor": "#2563eb", "infrastructure": "#ea580c",
-                    "equipment": "#7c3aed", "energy": "#16a34a"}
     rows = "".join(
         f'<li><b>{c["ticker"]}</b> {c["name"]} → '
         f'<span style="color:{PILLAR_COLOR.get(c["suggested_pillar"], "#64748b")}">'
@@ -612,7 +772,8 @@ def build_html_wrapper(png_bytes: bytes, snap: dict) -> str:
         f'<span style="color:#64748b">(ρ≈{c["conviction"]})</span></li>'
         for c in disc[:10]
     )
-    disc_block = f"<h2>Discovery candidates</h2><ol>{rows}</ol>" if rows else ""
+    disc_block = (f'<div class="disc"><h2>Discovery candidates</h2>'
+                  f'<ol>{rows}</ol></div>' if rows else "")
 
     return f"""<!doctype html>
 <html lang="en"><head>
@@ -621,20 +782,17 @@ def build_html_wrapper(png_bytes: bytes, snap: dict) -> str:
 <style>
   html,body {{ margin:0; padding:0; background:#ffffff; color:#0f172a;
     font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif; }}
-  .wrap {{ max-width:1400px; margin:0 auto; padding:18px 22px; }}
-  h1 {{ font-size:18px; margin:0 0 4px; }}
-  .meta {{ color:#64748b; font-size:13px; margin-bottom:14px; }}
-  img {{ max-width:100%; height:auto; display:block; border:1px solid #e2e8f0; border-radius:8px; }}
-  .disc {{ margin-top:18px; padding:14px 18px; background:#f8fafc;
-    border:1px solid #e2e8f0; border-radius:8px; max-width:600px; }}
+  .wrap {{ max-width:1500px; margin:0 auto; padding:14px 18px 28px; }}
+  .hint {{ color:#94a3b8; font-size:12px; margin:0 0 6px; }}
+  .disc {{ margin-top:14px; padding:14px 18px; background:#f8fafc;
+    border:1px solid #e2e8f0; border-radius:8px; max-width:640px; }}
   .disc h2 {{ font-size:14px; margin:0 0 8px; color:#0f172a; }}
   .disc ol {{ margin:0; padding-left:20px; font-size:13px; line-height:1.7; }}
 </style></head><body>
 <div class="wrap">
-  <h1>Taiwan AI universe — correlation map</h1>
-  <div class="meta">{snap['n_tickers']} tickers · window {snap['window_days']}d · as of {snap['asof']}</div>
-  <img src="data:image/png;base64,{b64}" alt="correlation map">
-  <div class="disc">{disc_block}</div>
+  <p class="hint">Drag to pan · scroll to zoom · double-click to reset · click a pillar in the legend to toggle. Cluster panels share an X axis — zooming one zooms the other.</p>
+  {plotly_html}
+  {disc_block}
 </div>
 </body></html>"""
 
@@ -654,13 +812,15 @@ def main():
     json_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.write_text(json.dumps(snapshot, indent=2))
 
+    # PNG (static, Telegram/reports)
     png = build_matplotlib_panels(snapshot, corr, tickers)
     png_path = Path(args.out_json).parent / "graph.png"
     png_path.write_bytes(png)
 
+    # HTML (interactive, web viewer) — plotly 2D with linked axes
     html_path = Path(args.out_html)
     html_path.parent.mkdir(parents=True, exist_ok=True)
-    html_path.write_text(build_html_wrapper(png, snapshot))
+    html_path.write_text(build_plotly_2d_html(snapshot, corr, tickers))
 
     log.info("Wrote %s + %s + %s (%d nodes, %d edges, %d corr_edges)",
              json_path, html_path, png_path,
