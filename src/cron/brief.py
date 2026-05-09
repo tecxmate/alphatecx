@@ -433,6 +433,58 @@ def intraday_alerts() -> None:
 
 # ── Mode: post_close ──────────────────────────────────────────────────────
 
+def _discovery_candidates_from_snapshot(limit: int = 5) -> list[dict]:
+    """Read the latest correlation-graph snapshot and return top discovery
+    candidates (unclassified tickers clustering with a pillar). Empty list
+    if the snapshot file isn't available — non-fatal."""
+    snap_path = (Path(__file__).resolve().parents[2]
+                 / "mcp_server" / "api" / "static" / "graph_snapshot.json")
+    if not snap_path.exists():
+        return []
+    try:
+        data = json.loads(snap_path.read_text())
+    except Exception as e:
+        log.warning("could not read snapshot: %s", e)
+        return []
+    return list(data.get("discovery", []))[:limit]
+
+
+def _query_top_lead_lag(c, limit: int = 5) -> list[dict]:
+    """Top forward-leading pairs from the latest lead_lag snapshot, restricted
+    to high-confidence (gain > 0.05). Empty list if table is empty."""
+    c.execute("""
+        WITH coincident AS (
+            SELECT upstream_id, downstream_id, correlation AS rho_0
+              FROM lead_lag
+             WHERE lag_days = 0
+               AND asof = (SELECT MAX(asof) FROM lead_lag)
+        ),
+        forward AS (
+            SELECT ll.upstream_id, ll.downstream_id, ll.lag_days, ll.correlation,
+                   c.rho_0
+              FROM lead_lag ll JOIN coincident c USING (upstream_id, downstream_id)
+             WHERE ll.lag_days BETWEEN 1 AND 5
+               AND ll.asof = (SELECT MAX(asof) FROM lead_lag)
+        )
+        SELECT f.upstream_id, up.company_name, f.downstream_id, dn.company_name,
+               f.lag_days,
+               ROUND(f.correlation::numeric, 2),
+               ROUND((f.correlation - f.rho_0)::numeric, 2)
+          FROM forward f
+          LEFT JOIN dim_ticker up ON up.ticker_id = f.upstream_id
+          LEFT JOIN dim_ticker dn ON dn.ticker_id = f.downstream_id
+         WHERE f.correlation >= 0.4
+           AND (f.correlation - f.rho_0) >= 0.05
+         ORDER BY (f.correlation - f.rho_0) DESC
+         LIMIT %s
+    """, (limit,))
+    return [
+        {"up": r[0], "up_name": r[1], "down": r[2], "down_name": r[3],
+         "lag": r[4], "rho_lag": float(r[5]), "gain": float(r[6])}
+        for r in c.fetchall()
+    ]
+
+
 def post_close_brief() -> None:
     """Run after the daily harvest at ~16:45 Taipei. Recap of today's
     moves, indicator deltas, and thesis-status pointer. Always sends Telegram."""
@@ -461,6 +513,10 @@ def post_close_brief() -> None:
         theses = _active_theses()
         active_theses = len(theses)
         watchlist = _watchlist()
+
+        # New: discovery candidates + top lead-lag pairs
+        discovery = _discovery_candidates_from_snapshot(limit=5)
+        leadlag = _query_top_lead_lag(c, limit=5)
 
     lines = ["# Post-close brief — " + _today_taipei_iso() + "\n"]
     lines.append(f"_Generated {datetime.now(_TPE).strftime('%H:%M %Z')}._\n")
@@ -498,6 +554,26 @@ def post_close_brief() -> None:
                          f"horizon {t.get('horizon','?')}, last_review {t.get('last_review','?')} "
                          f"[{t['_path']}]")
 
+    # New: discovery candidates from correlation graph
+    if discovery:
+        lines.append(f"\n## Discovery candidates ({len(discovery)})")
+        lines.append("_Unclassified tickers tracking a classified pillar — possible "
+                     "supply-chain peers worth investigating._\n")
+        for c_ in discovery:
+            sn = (c_.get("suggested_node") + " · ") if c_.get("suggested_node") else ""
+            lines.append(f"- **{c_['ticker']} {c_['name']}** → "
+                         f"{c_['suggested_pillar']} ({sn}ρ≈{c_['conviction']})")
+
+    # New: lead-lag (top forward-leading pairs)
+    if leadlag:
+        lines.append(f"\n## Lead-lag signals ({len(leadlag)})")
+        lines.append("_Upstream → downstream pairs where today's upstream move "
+                     "predicts the downstream's move N days later._\n")
+        for ll in leadlag:
+            lines.append(f"- **{ll['up']} {ll['up_name'] or ''}** → "
+                         f"**{ll['down']} {ll['down_name'] or ''}** at lag {ll['lag']}d "
+                         f"(ρ={ll['rho_lag']}, gain {ll['gain']:+.2f})")
+
     # Action checklist last — derived from everything above.
     checklist = _action_checklist(extremes, ticker_news, theses, watchlist)
     lines.append("\n## Action checklist for tomorrow\n")
@@ -509,7 +585,8 @@ def post_close_brief() -> None:
     with cur() as c:
         c.execute("SET search_path TO public, neon_auth")
         _write_digest(c, "post_close", title, body,
-                      inputs=["view_sector_momentum", "view_latest_signals", "raw_news"],
+                      inputs=["view_sector_momentum", "view_latest_signals", "raw_news",
+                              "graph_snapshot.json", "lead_lag"],
                       alerts=[{"ticker": s["ticker_id"], "reason": _format_signal_alert(s)} for s in extremes[:8]])
 
     # Telegram: short summary + action checklist
@@ -524,6 +601,16 @@ def post_close_brief() -> None:
         short += "\n<b>Notable</b>:\n"
         for s in extremes[:3]:
             short += f"• {_format_signal_alert(s)}\n"
+    if discovery:
+        short += "\n🔍 <b>Discovery candidates</b>:\n"
+        for c_ in discovery[:3]:
+            short += (f"• {c_['ticker']} {c_['name']} → "
+                      f"{c_['suggested_pillar']} (ρ≈{c_['conviction']})\n")
+    if leadlag:
+        short += "\n🔗 <b>Lead-lag</b>:\n"
+        for ll in leadlag[:3]:
+            short += (f"• {ll['up']}→{ll['down']} lag {ll['lag']}d "
+                      f"(ρ={ll['rho_lag']}, +{ll['gain']:.2f})\n")
     short += "\n<b>Actions for tomorrow</b>:\n" + _format_checklist(checklist)
     send(short)
 
