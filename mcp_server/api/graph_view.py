@@ -55,6 +55,14 @@ VIEWER_HTML = r"""<!doctype html>
            font-size:12px; line-height:1.6; }
   #ctrls label { display:flex; gap:8px; align-items:center; user-select:none; cursor:pointer; }
   #ctrls input[type=checkbox] { accent-color:#4f9cff; }
+  #presets { position:absolute; top:12px; left:50%; transform:translateX(-50%);
+             padding:6px 8px; background:rgba(18,22,28,0.92); border:1px solid #1f2630;
+             border-radius:8px; display:flex; gap:6px; }
+  #presets button { background:#1a2230; color:#cdd5df; border:1px solid #2a323d;
+                    border-radius:5px; padding:5px 10px; font-size:11px; cursor:pointer;
+                    font-family:inherit; }
+  #presets button:hover { background:#243040; color:#e6ecf2; }
+  #presets button.active { background:#4f9cff; color:#0a0d12; border-color:#4f9cff; }
   #disc { position:absolute; bottom:12px; right:12px; max-width:340px; max-height:55vh;
           padding:10px 12px; background:rgba(18,22,28,0.92); border:1px solid #1f2630;
           border-radius:10px; font-size:12px; line-height:1.5; overflow-y:auto; }
@@ -73,7 +81,12 @@ VIEWER_HTML = r"""<!doctype html>
 <div id="info">
   <h1>Taiwan AI supply chain — 3D correlation map</h1>
   <div class="meta" id="meta">loading…</div>
-  <div>Each node is a stock. Position is its correlation distance from every other stock (Mantegna distance, classical MDS). Tickers that move together cluster spatially. Solid lines are explicit supply-chain edges; faint blue lines are correlation pairs ≥ 0.7.</div>
+  <div><b>Floor (X,Y):</b> correlation cluster — tickers that move together sit close. <b>Vertical (Z):</b> 30-day return — above the horizon = rising, below = falling. Solid yellow lines = explicit supply-chain edges; faint blue lines = correlation ≥ 0.7.</div>
+</div>
+<div id="presets">
+  <button data-view="iso"   class="active">Isometric</button>
+  <button data-view="top">Cluster (top-down)</button>
+  <button data-view="side">Momentum (side)</button>
 </div>
 <div id="legend">
   <div class="row"><span class="swatch" style="background:#4f9cff"></span> Semiconductor</div>
@@ -105,18 +118,81 @@ const SNAPSHOT_URL = './data.json';
 
 const scene  = new THREE.Scene();
 scene.background = new THREE.Color(0x0a0d12);
-const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.01, 100);
-camera.position.set(2.6, 2.0, 2.6);
+scene.fog = new THREE.Fog(0x0a0d12, 4, 9);
+// Use Y-up convention (three.js default). We map snapshot z → world y so
+// "up" in the screen really is "up" — keeps OrbitControls intuitive.
+const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, 0.01, 100);
 const renderer = new THREE.WebGLRenderer({ antialias:true });
 renderer.setPixelRatio(devicePixelRatio);
 renderer.setSize(innerWidth, innerHeight);
 document.getElementById('app').appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+controls.target.set(0, 0, 0);
 
-const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+const ambient = new THREE.AmbientLight(0xffffff, 0.6);
 const dir = new THREE.DirectionalLight(0xffffff, 0.8); dir.position.set(3,4,3);
 scene.add(ambient, dir);
+
+// ── ground grid + horizon plane (Y=0 = "no change in 30d") ────────────────
+const grid = new THREE.GridHelper(2.4, 12, 0x2a3440, 0x1a2230);
+grid.position.y = 0;
+scene.add(grid);
+
+// Faint translucent disk to make the horizon plane more visible
+const horizonGeom = new THREE.CircleGeometry(1.2, 48);
+const horizonMat  = new THREE.MeshBasicMaterial({
+  color: 0x111923, transparent: true, opacity: 0.35, side: THREE.DoubleSide
+});
+const horizon = new THREE.Mesh(horizonGeom, horizonMat);
+horizon.rotation.x = -Math.PI / 2;
+horizon.position.y = -0.001;
+scene.add(horizon);
+
+// ── Z-axis (vertical) ladder with percent ticks ──────────────────────────
+function makeAxisLabel(text, color = '#8a96a3'){
+  const c = document.createElement('canvas'); c.width=128; c.height=40;
+  const ctx = c.getContext('2d');
+  ctx.font = '600 22px -apple-system,system-ui,sans-serif';
+  ctx.fillStyle = color; ctx.textBaseline = 'middle';
+  ctx.fillText(text, 4, 20);
+  const tex = new THREE.CanvasTexture(c);
+  const mat = new THREE.SpriteMaterial({ map:tex, depthTest:false, transparent:true });
+  const sp = new THREE.Sprite(mat); sp.scale.set(0.32, 0.10, 1);
+  return sp;
+}
+
+// Axis line at x=-1.1, z=-1.1 going up
+const Z_SCALE = 3.0; // matches snapshot Z_SCALE — 1.0 visual = 33% return
+const axisX = -1.1, axisZ = -1.1;
+{
+  const pts = [new THREE.Vector3(axisX, -1, axisZ), new THREE.Vector3(axisX, 1, axisZ)];
+  const g = new THREE.BufferGeometry().setFromPoints(pts);
+  const m = new THREE.LineBasicMaterial({ color: 0x4a5568 });
+  scene.add(new THREE.Line(g, m));
+  // Tick marks at -30%, -15%, 0, 15%, 30% returns
+  const ticks = [-0.30, -0.15, 0, 0.15, 0.30];
+  for (const r of ticks) {
+    const yv = r * Z_SCALE;
+    const tg = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(axisX-0.04, yv, axisZ),
+      new THREE.Vector3(axisX+0.04, yv, axisZ)
+    ]);
+    scene.add(new THREE.Line(tg, m));
+    const lbl = makeAxisLabel((r >= 0 ? '+' : '') + Math.round(r*100) + '%',
+                              r > 0 ? '#22c55e' : (r < 0 ? '#ef4444' : '#cdd5df'));
+    lbl.position.set(axisX - 0.18, yv, axisZ);
+    scene.add(lbl);
+  }
+  // "30d return" label at top
+  const top = makeAxisLabel('30d return →', '#cdd5df');
+  top.position.set(axisX - 0.05, 1.1, axisZ);
+  scene.add(top);
+}
+
+// Floor compass: arrows for each pillar's centroid direction (filled later)
+const compassGroup = new THREE.Group();
+scene.add(compassGroup);
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -138,6 +214,11 @@ function makeLabel(text){
   const sp = new THREE.Sprite(mat); sp.scale.set(0.28, 0.07, 1);
   return sp;
 }
+
+// snapshot uses (x, y) = floor, z = vertical momentum.
+// three.js default is Y-up, so we map snapshot.{x,y,z} → world.{x, z_snap, y_snap}
+// Helper: turn a snapshot node into a world-space Vector3.
+function nodePos(n){ return new THREE.Vector3(n.x, n.z, n.y); }
 
 const PILLAR_HEX = {semiconductor:'#4f9cff', infrastructure:'#ff7a59', equipment:'#9b6dff', energy:'#22c55e'};
 
@@ -173,15 +254,25 @@ async function load(){
       transparent: isContext, opacity: isContext ? 0.35 : 1.0
     });
     const sphere = new THREE.Mesh(geo, mat);
-    sphere.position.set(n.x, n.y, n.z);
+    const p = nodePos(n);
+    sphere.position.copy(p);
     sphere.userData = n;
     scene.add(sphere);
     if (isContext) contextMeshes.push(sphere); else nodeMeshes.push(sphere);
     idIdx[n.id] = sphere;
 
+    // Drop-line from horizon to node — instantly conveys "above/below 0%"
+    if (!isContext && Math.abs(p.y) > 0.02) {
+      const dropPts = [new THREE.Vector3(p.x, 0, p.z), new THREE.Vector3(p.x, p.y, p.z)];
+      const dg = new THREE.BufferGeometry().setFromPoints(dropPts);
+      const dropColor = p.y > 0 ? 0x22c55e : 0xef4444;
+      const dm = new THREE.LineBasicMaterial({ color: dropColor, transparent: true, opacity: 0.35 });
+      scene.add(new THREE.Line(dg, dm));
+    }
+
     if (!isContext) {
       const lbl = makeLabel(`${n.id} ${n.name}`);
-      lbl.position.set(n.x, n.y + radius + 0.04, n.z);
+      lbl.position.set(p.x, p.y + radius + 0.04, p.z);
       lbl.visible = false;
       scene.add(lbl);
       labelSprites.push(lbl);
@@ -206,6 +297,30 @@ async function load(){
     const mat = new THREE.LineBasicMaterial({ color: 0x4f9cff, transparent:true, opacity: Math.max(0.05, Math.min(0.5, op)) });
     const line = new THREE.Line(geom, mat);
     scene.add(line); corrEdgeLines.push(line);
+  }
+
+  // Floor compass — arrow toward each pillar centroid, plus a label.
+  const pillarPts = {};
+  for (const n of d.nodes) {
+    if (!n.pillar) continue;
+    (pillarPts[n.pillar] ||= []).push([n.x, n.y]);  // floor coords
+  }
+  for (const [pillar, pts] of Object.entries(pillarPts)) {
+    const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+    const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+    const len = Math.hypot(cx, cy) || 1;
+    const dirX = cx / len, dirY = cy / len;
+    // Arrow on the floor plane (world Y=0): origin → 0.7 along the unit dir.
+    const reach = 0.85;
+    const tip = new THREE.Vector3(dirX * reach, 0.005, dirY * reach);
+    const root = new THREE.Vector3(0, 0.005, 0);
+    const ag = new THREE.BufferGeometry().setFromPoints([root, tip]);
+    const am = new THREE.LineBasicMaterial({ color: PILLAR_HEX[pillar] || 0x888888, transparent:true, opacity: 0.6 });
+    compassGroup.add(new THREE.Line(ag, am));
+    const lbl = makeLabel(pillar, PILLAR_HEX[pillar] || '#888');
+    lbl.position.set(dirX * (reach + 0.12), 0.05, dirY * (reach + 0.12));
+    lbl.scale.set(0.42, 0.13, 1);
+    compassGroup.add(lbl);
   }
 }
 
@@ -249,6 +364,24 @@ function applyToggles(){
   for (const s of labelSprites) s.visible = tLab.checked;
 }
 [tCtx, tCorr, tSup, tLab].forEach(el => el.addEventListener('change', applyToggles));
+
+// Camera presets
+const VIEWS = {
+  iso:  { pos: [2.4, 1.8, 2.4], target: [0, 0, 0] },
+  top:  { pos: [0, 3.4, 0.001], target: [0, 0, 0] },        // looking straight down
+  side: { pos: [3.0, 0.6, 0.001], target: [0, 0, 0] }       // looking along X
+};
+function setView(name){
+  const v = VIEWS[name] || VIEWS.iso;
+  camera.position.set(...v.pos);
+  controls.target.set(...v.target);
+  controls.update();
+  document.querySelectorAll('#presets button').forEach(b =>
+    b.classList.toggle('active', b.dataset.view === name));
+}
+document.querySelectorAll('#presets button').forEach(b =>
+  b.addEventListener('click', () => setView(b.dataset.view)));
+setView('iso');
 
 function loop(){ controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop); }
 load().then(loop).catch(err => {

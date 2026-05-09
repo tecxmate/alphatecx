@@ -122,8 +122,14 @@ def compute_returns(wide: pl.DataFrame) -> tuple[np.ndarray, list[str]]:
     return rets, tickers
 
 
-def correlation_to_3d(rets: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Returns (corr_matrix, 3D coords)."""
+def correlation_to_2d_floor(rets: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Returns (corr_matrix, 2D floor coords).
+
+    X,Y = classical MDS of Mantegna correlation distance (preserves cluster
+    geometry on the horizontal plane). The vertical Z axis is added later
+    from a meaningful quantity (e.g. 30-day return) so 'up' literally means
+    'going up'.
+    """
     # Standardize columns
     rets_std = (rets - rets.mean(axis=0)) / (rets.std(axis=0) + 1e-12)
     corr = (rets_std.T @ rets_std) / rets.shape[0]
@@ -133,21 +139,18 @@ def correlation_to_3d(rets: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     # Mantegna distance: d_ij = sqrt(2*(1 - rho))
     dist = np.sqrt(np.clip(2.0 * (1.0 - corr), 0, None))
 
-    # Classical MDS: double-center then take top 3 eigenvectors
+    # Classical MDS: double-center then take top 2 eigenvectors for the floor
     n = dist.shape[0]
     sq = dist ** 2
     J = np.eye(n) - np.ones((n, n)) / n
     B = -0.5 * J @ sq @ J
-    # Symmetric eigendecomposition
     eigvals, eigvecs = np.linalg.eigh(B)
-    # Take the top 3 (eigh returns ascending)
-    idx = np.argsort(eigvals)[::-1][:3]
-    coords = eigvecs[:, idx] * np.sqrt(np.maximum(eigvals[idx], 0))
-    # Normalize to roughly unit cube for stable rendering
-    coords -= coords.mean(axis=0)
-    span = np.abs(coords).max() + 1e-9
-    coords = coords / span
-    return corr, coords
+    idx = np.argsort(eigvals)[::-1][:2]
+    floor = eigvecs[:, idx] * np.sqrt(np.maximum(eigvals[idx], 0))
+    floor -= floor.mean(axis=0)
+    span = np.abs(floor).max() + 1e-9
+    floor = floor / span
+    return corr, floor
 
 
 def compute_node_attrs(rets: np.ndarray, tickers: list[str]) -> dict[str, dict]:
@@ -164,23 +167,29 @@ def compute_node_attrs(rets: np.ndarray, tickers: list[str]) -> dict[str, dict]:
 def build_snapshot(window_days: int = 120) -> dict:
     wide = fetch_returns(window_days)
     rets, tickers = compute_returns(wide)
-    corr, coords = correlation_to_3d(rets)
+    corr, floor = correlation_to_2d_floor(rets)
     attrs = compute_node_attrs(rets, tickers)
     meta = fetch_meta()
     edges = fetch_edges()
+
+    # Z axis is 30-day return — directly readable: up = rising, down = falling.
+    # Scale so a +/- 30% move spans roughly the same visual range as the floor.
+    Z_SCALE = 3.0
+    z_clip = 0.95  # cap visually so extreme outliers don't break framing
 
     nodes = []
     for i, tid in enumerate(tickers):
         m = meta.get(tid, {"name": tid, "pillar": None, "node": None, "partners": []})
         a = attrs[tid]
+        z_visual = float(np.clip(a["ret_30d"] * Z_SCALE, -z_clip, z_clip))
         nodes.append({
             "id":      tid,
             "name":    m["name"],
             "pillar":  m["pillar"],
             "node":    m["node"],
-            "x":       float(coords[i, 0]),
-            "y":       float(coords[i, 1]),
-            "z":       float(coords[i, 2]),
+            "x":       float(floor[i, 0]),
+            "y":       float(floor[i, 1]),
+            "z":       z_visual,
             "vol":     round(a["vol"], 4),
             "ret_30d": round(a["ret_30d"], 4),
             "color":   PILLAR_COLOR.get(m["pillar"], PILLAR_COLOR[None]),
@@ -208,6 +217,12 @@ def build_snapshot(window_days: int = 120) -> dict:
         "asof":       date.today().isoformat(),
         "window_days": window_days,
         "n_tickers":   len(nodes),
+        "axes": {
+            "x": "correlation cluster (MDS-1)",
+            "y": "correlation cluster (MDS-2)",
+            "z": "30-day return (up = rising)",
+            "z_scale": Z_SCALE,    # multiply visual z by 1/Z_SCALE to recover ret_30d
+        },
         "nodes":      nodes,
         "edges":      edges,        # supply-chain edges (sc_edges)
         "corr_edges": corr_edges,   # high-correlation pairs (>= 0.7)
