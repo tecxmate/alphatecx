@@ -41,6 +41,8 @@ sql_files = [
     "sql/006_digests.sql",
     "sql/007_watchlist.sql",
     "sql/008_universe.sql",
+    "sql/009_sc_revamp.sql",
+    "sql/010_leadlag.sql",
 ]
 if args.rls:
     pw = os.getenv("MCP_VIEWER_PASSWORD")

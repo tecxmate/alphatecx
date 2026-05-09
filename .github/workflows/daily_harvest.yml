@@ -79,6 +79,13 @@ jobs:
         continue-on-error: true
         run: python -m src.cron.brief --mode post_close
 
+      - name: Recompute lead-lag pairs
+        # Cross-correlation at lags 1..7 days for the classified universe.
+        # Cheap (~15s); fed to MCP `q_lead_lag` tool. Non-fatal.
+        if: success()
+        continue-on-error: true
+        run: python -m src.quant.leadlag --window 60 --max-lag 7
+
       - name: Regenerate 3D correlation snapshot
         # Refreshes mcp_server/api/static/graph_snapshot.json from the latest
         # OHLCV. Non-fatal: a stale snapshot is better than failing the run.

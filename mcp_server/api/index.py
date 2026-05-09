@@ -586,6 +586,54 @@ def w_remove(ticker_id: str) -> dict:
     return db_v2.mutate_watchlist_remove(ticker_id=ticker_id)
 
 
+# ── Tool: Lead-lag analysis ─────────────────────────────────────────────
+
+@mcp.tool()
+def q_lead_lag(
+    upstream: Optional[str] = None,
+    downstream: Optional[str] = None,
+    min_corr: float = 0.4,
+    min_gain: float = 0.0,
+    top_n: int = 20,
+) -> dict:
+    """Pairs where the upstream ticker's price moves predict the downstream's
+    price moves N days later.
+
+    Computed nightly from the last 60 trading days of returns. For each pair
+    of classified tickers we compute correlation at lags 0..7 days and keep
+    rows where lag>0 has meaningful forward predictive correlation.
+
+    Use this to find supply-chain lead-lag effects: e.g. TSMC's foreign-flow
+    moves often precede downstream ODMs by 1-3 days. A high `gain` (forward
+    rho minus same-day rho) is the strongest signal — it means tomorrow's
+    move in `downstream_id` is better predicted by today's move in
+    `upstream_id` than by today's same-day correlation.
+
+    Args:
+        upstream: Optional ticker filter — only return rows where this is
+                  the leading ticker.
+        downstream: Optional ticker filter — only return rows where this is
+                    the lagging ticker.
+        min_corr: Minimum forward correlation (default 0.4).
+        min_gain: Minimum forward-correlation gain over coincident (default 0.0).
+        top_n: Limit (default 20).
+
+    Returns rows with: upstream_id/name/pillar, downstream_id/name/pillar,
+    lag_days, rho_lag, rho_0, gain, n_obs, window_days, asof.
+    """
+    rows = db_v2.query_lead_lag(
+        upstream=upstream, downstream=downstream,
+        min_corr=min_corr, min_gain=min_gain, top_n=top_n,
+    )
+    asof = rows[0]["asof"] if rows else None
+    return _stamp(
+        {"pairs": rows, "count": len(rows)},
+        source="lead_lag",
+        as_of=asof,
+        freshness="nightly",
+    )
+
+
 # ── Tool: Digests (Phase 3) ──────────────────────────────────────────────
 
 @mcp.tool()

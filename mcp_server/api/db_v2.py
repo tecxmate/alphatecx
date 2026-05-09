@@ -733,6 +733,60 @@ def query_digest_for_date(digest_date: str, kind: Optional[str] = None) -> list[
 
 # ── Data Status ────────────────────────────────────────────────────────────
 
+def query_lead_lag(
+    upstream: Optional[str] = None,
+    downstream: Optional[str] = None,
+    min_corr: float = 0.4,
+    min_gain: float = 0.0,
+    top_n: int = 20,
+) -> list[dict]:
+    """Forward-lag pairs from the latest snapshot.
+
+    Returns rows where the upstream's returns at day t correlate with the
+    downstream's returns at day t+lag (lag > 0). `min_corr` filters absolute
+    forward correlation; `min_gain` filters how much the forward correlation
+    beats the same-day baseline. Sorted by gain descending.
+    """
+    where = ["forward.lag_days BETWEEN 1 AND 7",
+             "forward.correlation >= %s",
+             "(forward.correlation - coincident.correlation) >= %s",
+             "forward.asof = (SELECT MAX(asof) FROM lead_lag)"]
+    params: list = [min_corr, min_gain]
+    if upstream:
+        where.append("forward.upstream_id = %s")
+        params.append(upstream)
+    if downstream:
+        where.append("forward.downstream_id = %s")
+        params.append(downstream)
+    params.append(int(top_n))
+
+    sql = f"""
+        WITH coincident AS (
+            SELECT upstream_id, downstream_id, correlation
+              FROM lead_lag
+             WHERE lag_days = 0
+               AND asof = (SELECT MAX(asof) FROM lead_lag)
+        )
+        SELECT forward.upstream_id,
+               up.company_name AS upstream_name, up.ai_pillar AS upstream_pillar,
+               forward.downstream_id,
+               down.company_name AS downstream_name, down.ai_pillar AS downstream_pillar,
+               forward.lag_days,
+               ROUND(forward.correlation::numeric, 3) AS rho_lag,
+               ROUND(coincident.correlation::numeric, 3) AS rho_0,
+               ROUND((forward.correlation - coincident.correlation)::numeric, 3) AS gain,
+               forward.n_obs, forward.window_days, forward.asof
+          FROM lead_lag forward
+          JOIN coincident USING (upstream_id, downstream_id)
+          LEFT JOIN dim_ticker up   ON up.ticker_id   = forward.upstream_id
+          LEFT JOIN dim_ticker down ON down.ticker_id = forward.downstream_id
+         WHERE {' AND '.join(where)}
+         ORDER BY gain DESC, forward.correlation DESC
+         LIMIT %s
+    """
+    return _serialize(_fetch(sql, tuple(params)))
+
+
 def query_data_status() -> dict:
     table_names = [
         "raw_twse_t86", "raw_twse_holdings", "raw_twse_margin",
