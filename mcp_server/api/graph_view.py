@@ -11,13 +11,14 @@ Endpoints (mounted under /g/{TOKEN}/):
 from __future__ import annotations
 
 import json
-import os
 import re
+import traceback
 from pathlib import Path
 
-import psycopg
 from fastapi import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response
+
+import db_v2
 
 _VALID_PILLARS = {"semiconductor", "equipment", "infrastructure", "energy"}
 _TICKER_ID_RE  = re.compile(r"^[0-9A-Za-z]{1,8}$")
@@ -83,13 +84,6 @@ def get_ticker_page(ticker: str) -> HTMLResponse:
     return HTMLResponse(content=path.read_text())
 
 
-def _database_url() -> str:
-    url = os.getenv("DATABASE_URL") or os.getenv("MCP_DATABASE_URL")
-    if not url:
-        raise HTTPException(500, "DATABASE_URL not configured")
-    return url
-
-
 def classify_ticker(payload: dict) -> JSONResponse:
     """Persist (pillar, node) for a ticker. Insert if missing, else update.
 
@@ -116,8 +110,16 @@ def classify_ticker(payload: dict) -> JSONResponse:
               node       = EXCLUDED.node,
               updated_at = now()
     """
-    with psycopg.connect(_database_url()) as conn, conn.cursor() as cur:
-        cur.execute(sql, (ticker_id, pillar, node))
-        conn.commit()
+    try:
+        with db_v2.pool().connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (ticker_id, pillar, node))
+            conn.commit()
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": f"{type(e).__name__}: {e}",
+                     "trace": traceback.format_exc().splitlines()[-3:]},
+        )
     return JSONResponse(content={"ok": True, "ticker_id": ticker_id,
                                  "pillar": pillar, "node": node})
