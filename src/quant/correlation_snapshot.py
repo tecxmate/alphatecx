@@ -740,16 +740,6 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
         if disc_rows else '<div class="empty">No discovery candidates above threshold.</div>'
     )
 
-    tracked_table = (
-        '<div class="table-tools"><input class="table-filter" data-target="tracked-table" '
-        'type="search" placeholder="Search tracked tickers to show results"></div>'
-        '<div id="tracked-state" class="empty">Search by ticker, company, pillar, or node to load up to 20 matches.</div>'
-        '<div class="table-scroll"><table id="tracked-table" class="terminal-table">'
-        '<thead><tr><th>Ticker</th><th>Name</th><th>Pillar</th><th>Node</th><th>Action</th></tr></thead>'
-        '<tbody></tbody></table></div>'
-        '<div id="tracked-pager" class="pager"></div>'
-    )
-
     return f"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -871,7 +861,6 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
     <button class="tab" data-tab="risk">Risk vs return</button>
     <button class="tab" data-tab="heatmap">Correlation heatmap</button>
     <button class="tab" data-tab="discovery">Discovery candidates</button>
-    <button class="tab" data-tab="tracked">Tracked tickers</button>
   </div>
   <p id="graph-hint" class="hint">Drag to pan \u00b7 scroll to zoom \u00b7 double-click to reset \u00b7 click a pillar in the legend to toggle.</p>
   <div class="classify">
@@ -896,7 +885,6 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
   <div class="panel" data-panel="risk">{div_risk}</div>
   <div class="panel" data-panel="heatmap">{div_heatmap}</div>
   <div class="panel" data-panel="discovery">{disc_table}</div>
-  <div class="panel" data-panel="tracked">{tracked_table}</div>
 </div>
 <script>
 (function() {{
@@ -946,7 +934,6 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
 (function() {{
   const DIRECTORY = {directory_json};
   const TOKEN     = location.pathname.split('/')[2] || '';
-  const PILLARS   = ['', 'semiconductor', 'equipment', 'infrastructure', 'energy'];
   const $search   = document.getElementById('cls-search');
   const $sugg     = document.getElementById('cls-suggest');
   const $pillar   = document.getElementById('cls-pillar');
@@ -1037,110 +1024,6 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
     }}
   }});
 
-  function esc(s) {{
-    return String(s || '').replace(/[&<>"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));
-  }}
-  function pillarOptions(current) {{
-    return PILLARS.map(p => {{
-      const label = p || 'unclassified';
-      return `<option value="${{p}}" ${{p === (current || '') ? 'selected' : ''}}>${{label}}</option>`;
-    }}).join('');
-  }}
-  function bindRowSave(btn) {{
-    btn.addEventListener('click', async () => {{
-      const row = btn.closest('tr');
-      const msg = row.querySelector('.row-msg');
-      const ticker_id = row.dataset.ticker;
-      const pillar = row.querySelector('.row-pillar').value || null;
-      const node = row.querySelector('.row-node').value.trim() || null;
-      if (!pillar) {{
-        msg.textContent = 'pick pillar';
-        msg.className = 'row-msg err';
-        return;
-      }}
-      btn.disabled = true;
-      msg.textContent = 'saving...';
-      msg.className = 'row-msg';
-      try {{
-        const r = await fetch(`/g/${{TOKEN}}/classify`, {{
-          method: 'POST',
-          headers: {{ 'Content-Type': 'application/json' }},
-          body: JSON.stringify({{ ticker_id, pillar, node }}),
-        }});
-        const j = await r.json();
-        if (!r.ok || !j.ok) throw new Error(j.error || 'save failed');
-        msg.textContent = 'saved';
-        msg.className = 'row-msg ok';
-        row.dataset.q = `${{ticker_id}} ${{row.cells[1].textContent}} ${{pillar}} ${{node || ''}}`;
-      }} catch (err) {{
-        msg.textContent = err.message;
-        msg.className = 'row-msg err';
-      }} finally {{
-        btn.disabled = false;
-      }}
-    }});
-  }}
-  const TRACKED_PAGE_SIZE = 20;
-  let trackedMatches = [];
-  let trackedPage = 0;
-
-  function trackedQuery(t) {{
-    return `${{t.id}} ${{t.name}} ${{t.pillar || ''}} ${{t.node || ''}}`.toLowerCase();
-  }}
-  function setTrackedState(text) {{
-    const state = document.getElementById('tracked-state');
-    if (state) state.textContent = text;
-  }}
-  function renderTrackedPage() {{
-    const body = document.querySelector('#tracked-table tbody');
-    const pager = document.getElementById('tracked-pager');
-    if (!body || !pager) return;
-    const start = trackedPage * TRACKED_PAGE_SIZE;
-    const pageRows = trackedMatches.slice(start, start + TRACKED_PAGE_SIZE);
-    body.innerHTML = pageRows.map(t => `
-      <tr data-ticker="${{esc(t.id)}}" data-q="${{esc(`${{t.id}} ${{t.name}} ${{t.pillar || ''}} ${{t.node || ''}}`)}}">
-        <td><b>${{esc(t.id)}}</b></td>
-        <td>${{esc(t.name)}}</td>
-        <td><select class="row-pillar">${{pillarOptions(t.pillar)}}</select></td>
-        <td><input class="row-node" type="text" value="${{esc(t.node || '')}}" placeholder="node"></td>
-        <td><button class="row-save">Save</button><span class="row-msg"></span></td>
-      </tr>
-    `).join('');
-    body.querySelectorAll('.row-save').forEach(bindRowSave);
-    if (!trackedMatches.length) {{
-      pager.innerHTML = '';
-      return;
-    }}
-    const totalPages = Math.ceil(trackedMatches.length / TRACKED_PAGE_SIZE);
-    pager.innerHTML = `
-      <button id="tracked-prev" ${{trackedPage <= 0 ? 'disabled' : ''}}>Prev</button>
-      <span>${{start + 1}}-${{Math.min(start + TRACKED_PAGE_SIZE, trackedMatches.length)}} of ${{trackedMatches.length}}</span>
-      <button id="tracked-next" ${{trackedPage >= totalPages - 1 ? 'disabled' : ''}}>Next</button>
-    `;
-    document.getElementById('tracked-prev')?.addEventListener('click', () => {{
-      trackedPage = Math.max(0, trackedPage - 1);
-      renderTrackedPage();
-    }});
-    document.getElementById('tracked-next')?.addEventListener('click', () => {{
-      trackedPage = Math.min(totalPages - 1, trackedPage + 1);
-      renderTrackedPage();
-    }});
-  }}
-  function runTrackedSearch(raw) {{
-    const q = raw.trim().toLowerCase();
-    trackedPage = 0;
-    if (!q) {{
-      trackedMatches = [];
-      document.querySelector('#tracked-table tbody').innerHTML = '';
-      document.getElementById('tracked-pager').innerHTML = '';
-      setTrackedState('Search by ticker, company, pillar, or node to load up to 20 matches.');
-      return;
-    }}
-    trackedMatches = DIRECTORY.filter(t => trackedQuery(t).includes(q));
-    setTrackedState(trackedMatches.length ? '' : 'No tracked tickers matched that search.');
-    renderTrackedPage();
-  }}
-  document.querySelector('input[data-target="tracked-table"]')?.addEventListener('input', e => runTrackedSearch(e.target.value));
 }})();
 </script>
 </body></html>"""

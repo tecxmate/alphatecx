@@ -83,3 +83,4 @@ The `alphatecx-v2` server exposes 7 tools:
 - 2026-05-11: Began Bloomberg-lite frontend redesign with a shared dense terminal-style design system, light/dark theme toggle, and mobile handling for tabs, tables, ticker charts, and graph panels. [niko, antigravity-agent]
 - 2026-05-11: Graph viewer navigation now treats Discovery candidates as a first-level tab and adds a Tracked tickers tab with client-rendered inline classification editing, preserving initial page weight. [niko, antigravity-agent]
 - 2026-05-11: Tracked tickers tab changed to lazy search-only rendering with 20 rows per page, and graph interaction hints now display only on Plotly graph tabs. [niko, antigravity-agent]
+- 2026-05-11: Ticker management moved from the graph viewer to a dedicated Home-linked `/t/{token}/` directory. The page renders 20 rows by default, supports search/paging, keeps inline pillar/node edits, and stores user folders/lists in `dim_ticker.tags`. [niko, antigravity-agent]

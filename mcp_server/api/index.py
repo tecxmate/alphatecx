@@ -1134,6 +1134,13 @@ def home(token: str):
     return graph_view.get_home_html(token)
 
 
+@app.get(f"/t/{{token}}/")
+def tickers(token: str):
+    if not token_matches(token, MCP_BEARER_TOKEN):
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_tickers_html(token)
+
+
 @app.get(f"/g/{{token}}/data.json")
 def graph_data(token: str):
     if not token_matches(token, MCP_BEARER_TOKEN):
@@ -1157,6 +1164,17 @@ async def graph_classify(token: str, request: Request):
     except Exception:
         return JSONResponse(status_code=400, content={"ok": False, "error": "invalid json"})
     return graph_view.classify_ticker(payload)
+
+
+@app.post(f"/t/{{token}}/folders")
+async def ticker_folders(token: str, request: Request):
+    if not token_matches(token, MCP_BEARER_TOKEN):
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"ok": False, "error": "invalid json"})
+    return graph_view.update_ticker_folders(payload)
 
 
 @app.get(f"/d/{{token}}/")

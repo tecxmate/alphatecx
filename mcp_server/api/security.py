@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 PUBLIC_PATHS = frozenset({"/", "/health"})
-TOKEN_PREFIXES = ("/mcp", "/g", "/d", "/h")
+TOKEN_PREFIXES = ("/mcp", "/g", "/d", "/h", "/t")
 
 
 def is_authorized_path(path: str, token: str) -> bool:

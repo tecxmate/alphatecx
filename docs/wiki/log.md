@@ -376,3 +376,9 @@ attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
 - User requested lazy loading for the Tracked tickers tab: do not render all rows, show searched results only, 20 per page.
 - Added search-only rendering with Prev/Next paging and preserved inline category/node editing.
 - Moved the graph pan/zoom hint so it only appears on Plotly graph tabs, not table tabs.
+
+## [2026-05-11] chat | Dedicated ticker directory
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User requested renaming tracked tickers to Tickers and giving them a Home-linked page.
+- Added `/t/{token}/` as a dedicated ticker directory with default 20-row rendering, search, paging, inline pillar/node editing, and folder/list grouping stored in `dim_ticker.tags`.
+- Removed the old Tracked tickers graph tab so graph navigation stays focused on charts and Discovery candidates.
