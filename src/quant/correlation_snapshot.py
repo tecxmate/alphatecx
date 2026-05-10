@@ -719,15 +719,34 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
                               "fig-heatmap", include_js=False)
 
     disc = snap.get("discovery", [])
-    rows = "".join(
-        f'<li><b>{c["ticker"]}</b> {c["name"]} \u2192 '
-        f'<span style="color:{PILLAR_COLOR.get(c["suggested_pillar"], "#64748b")}">'
-        f'{c["suggested_pillar"]}</span> '
-        f'<span style="color:#64748b">(\u03c1\u2248{c["conviction"]})</span></li>'
-        for c in disc[:10]
+    disc_rows = "".join(
+        f'<tr data-q="{c["ticker"]} {c["name"]} {c["suggested_pillar"]} {c.get("suggested_node") or ""}">'
+        f'<td><b>{c["ticker"]}</b></td>'
+        f'<td>{c["name"]}</td>'
+        f'<td><span class="pill" style="--pill:{PILLAR_COLOR.get(c["suggested_pillar"], "#64748b")}">{c["suggested_pillar"]}</span></td>'
+        f'<td>{c.get("suggested_node") or ""}</td>'
+        f'<td>{c["conviction"]}</td>'
+        f'<td>{"; ".join(f"{n["id"]} {n["rho"]}" for n in (c.get("neighbours") or [])[:4])}</td>'
+        f'</tr>'
+        for c in disc
     )
-    disc_block = (f'<div class="disc"><h2>Discovery candidates</h2>'
-                  f'<ol>{rows}</ol></div>' if rows else "")
+    disc_table = (
+        '<div class="table-tools"><input class="table-filter" data-target="discovery-table" '
+        'type="search" placeholder="Filter discovery candidates"></div>'
+        '<div class="table-scroll"><table id="discovery-table" class="terminal-table">'
+        '<thead><tr><th>Ticker</th><th>Name</th><th>Suggested pillar</th>'
+        '<th>Suggested node</th><th>Conviction</th><th>Top neighbours</th></tr></thead>'
+        f'<tbody>{disc_rows}</tbody></table></div>'
+        if disc_rows else '<div class="empty">No discovery candidates above threshold.</div>'
+    )
+
+    tracked_table = (
+        '<div class="table-tools"><input class="table-filter" data-target="tracked-table" '
+        'type="search" placeholder="Filter tracked tickers"></div>'
+        '<div class="table-scroll"><table id="tracked-table" class="terminal-table">'
+        '<thead><tr><th>Ticker</th><th>Name</th><th>Pillar</th><th>Node</th><th>Action</th></tr></thead>'
+        '<tbody></tbody></table></div>'
+    )
 
     return f"""<!doctype html>
 <html lang="en"><head>
@@ -790,6 +809,32 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
     border-bottom:1px solid var(--line-soft); }}
   .cls-suggest div:hover, .cls-suggest div.active {{ background:var(--surface-2); }}
   .cls-suggest .pill {{ float:right; font-size:11px; color:var(--muted); }}
+  .table-tools {{ margin:6px 0 8px; }}
+  .table-filter {{ width:min(420px, 100%); box-sizing:border-box; padding:6px 9px;
+    border:1px solid var(--line); background:var(--surface); color:var(--text);
+    font:inherit; font-size:12px; }}
+  .table-scroll {{ overflow:auto; border:1px solid var(--line); background:var(--surface);
+    -webkit-overflow-scrolling:touch; }}
+  .terminal-table {{ width:100%; min-width:860px; border-collapse:collapse;
+    font-size:12px; font-variant-numeric:tabular-nums; }}
+  .terminal-table th {{ text-align:left; color:var(--muted); background:var(--surface-2);
+    border-bottom:1px solid var(--line); border-right:1px solid var(--line-soft);
+    padding:6px 8px; text-transform:uppercase; font-size:11px; }}
+  .terminal-table td {{ border-bottom:1px solid var(--line-soft);
+    border-right:1px solid var(--line-soft); padding:5px 8px; vertical-align:middle; }}
+  .terminal-table tr:hover {{ background:var(--surface-2); }}
+  .terminal-table select,.terminal-table input {{ width:100%; box-sizing:border-box;
+    border:1px solid var(--line); background:var(--surface); color:var(--text);
+    padding:4px 6px; font:inherit; font-size:12px; }}
+  .terminal-table button {{ border:1px solid var(--line); background:var(--text);
+    color:var(--surface); padding:4px 8px; font:inherit; font-size:11px; cursor:pointer; }}
+  .row-msg {{ margin-left:7px; color:var(--muted); font-size:11px; }}
+  .row-msg.ok {{ color:#16a34a; }}
+  .row-msg.err {{ color:#dc2626; }}
+  .pill {{ display:inline-block; padding:2px 7px; color:white; background:var(--pill);
+    font-weight:650; border-radius:999px; white-space:nowrap; }}
+  .empty {{ padding:18px; border:1px dashed var(--line); color:var(--muted);
+    background:var(--surface); }}
   @media (max-width: 820px) {{
     .wrap {{ padding:8px; }}
     .header-actions {{ width:100%; justify-content:space-between; }}
@@ -800,6 +845,7 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
     .cls-suggest {{ left:10px; right:10px; width:auto; top:76px; }}
     .panel {{ overflow-x:auto; -webkit-overflow-scrolling:touch; }}
     .panel .js-plotly-plot {{ min-width:720px; }}
+    .terminal-table {{ min-width:760px; }}
   }}
 </style></head><body>
 <div class="wrap">
@@ -816,6 +862,8 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
     <button class="tab" data-tab="momentum">Cluster vs return</button>
     <button class="tab" data-tab="risk">Risk vs return</button>
     <button class="tab" data-tab="heatmap">Correlation heatmap</button>
+    <button class="tab" data-tab="discovery">Discovery candidates</button>
+    <button class="tab" data-tab="tracked">Tracked tickers</button>
   </div>
   <p class="hint">Drag to pan \u00b7 scroll to zoom \u00b7 double-click to reset \u00b7 click a pillar in the legend to toggle.</p>
   <div class="classify">
@@ -839,7 +887,8 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
   <div class="panel" data-panel="momentum">{div_momentum}</div>
   <div class="panel" data-panel="risk">{div_risk}</div>
   <div class="panel" data-panel="heatmap">{div_heatmap}</div>
-  {disc_block}
+  <div class="panel" data-panel="discovery">{disc_table}</div>
+  <div class="panel" data-panel="tracked">{tracked_table}</div>
 </div>
 <script>
 (function() {{
@@ -873,8 +922,20 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
   if (hash && document.querySelector(`.panel[data-panel="${{hash}}"]`)) show(hash);
 }})();
 (function() {{
+  document.querySelectorAll('.table-filter').forEach(input => {{
+    input.addEventListener('input', () => {{
+      const table = document.getElementById(input.dataset.target);
+      const q = input.value.trim().toLowerCase();
+      table.querySelectorAll('tbody tr').forEach(row => {{
+        row.style.display = q && !(row.dataset.q || row.textContent).toLowerCase().includes(q) ? 'none' : '';
+      }});
+    }});
+  }});
+}})();
+(function() {{
   const DIRECTORY = {directory_json};
   const TOKEN     = location.pathname.split('/')[2] || '';
+  const PILLARS   = ['', 'semiconductor', 'equipment', 'infrastructure', 'energy'];
   const $search   = document.getElementById('cls-search');
   const $sugg     = document.getElementById('cls-suggest');
   const $pillar   = document.getElementById('cls-pillar');
@@ -964,6 +1025,67 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
       $save.disabled = false;
     }}
   }});
+
+  function esc(s) {{
+    return String(s || '').replace(/[&<>"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));
+  }}
+  function pillarOptions(current) {{
+    return PILLARS.map(p => {{
+      const label = p || 'unclassified';
+      return `<option value="${{p}}" ${{p === (current || '') ? 'selected' : ''}}>${{label}}</option>`;
+    }}).join('');
+  }}
+  function bindRowSave(btn) {{
+    btn.addEventListener('click', async () => {{
+      const row = btn.closest('tr');
+      const msg = row.querySelector('.row-msg');
+      const ticker_id = row.dataset.ticker;
+      const pillar = row.querySelector('.row-pillar').value || null;
+      const node = row.querySelector('.row-node').value.trim() || null;
+      if (!pillar) {{
+        msg.textContent = 'pick pillar';
+        msg.className = 'row-msg err';
+        return;
+      }}
+      btn.disabled = true;
+      msg.textContent = 'saving...';
+      msg.className = 'row-msg';
+      try {{
+        const r = await fetch(`/g/${{TOKEN}}/classify`, {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify({{ ticker_id, pillar, node }}),
+        }});
+        const j = await r.json();
+        if (!r.ok || !j.ok) throw new Error(j.error || 'save failed');
+        msg.textContent = 'saved';
+        msg.className = 'row-msg ok';
+        row.dataset.q = `${{ticker_id}} ${{row.cells[1].textContent}} ${{pillar}} ${{node || ''}}`;
+      }} catch (err) {{
+        msg.textContent = err.message;
+        msg.className = 'row-msg err';
+      }} finally {{
+        btn.disabled = false;
+      }}
+    }});
+  }}
+  function renderTracked() {{
+    const body = document.querySelector('#tracked-table tbody');
+    if (!body || body.dataset.rendered) return;
+    body.innerHTML = DIRECTORY.map(t => `
+      <tr data-ticker="${{esc(t.id)}}" data-q="${{esc(`${{t.id}} ${{t.name}} ${{t.pillar || ''}} ${{t.node || ''}}`)}}">
+        <td><b>${{esc(t.id)}}</b></td>
+        <td>${{esc(t.name)}}</td>
+        <td><select class="row-pillar">${{pillarOptions(t.pillar)}}</select></td>
+        <td><input class="row-node" type="text" value="${{esc(t.node || '')}}" placeholder="node"></td>
+        <td><button class="row-save">Save</button><span class="row-msg"></span></td>
+      </tr>
+    `).join('');
+    body.dataset.rendered = '1';
+    body.querySelectorAll('.row-save').forEach(bindRowSave);
+  }}
+  document.querySelector('[data-tab="tracked"]')?.addEventListener('click', renderTracked);
+  if (location.hash === '#tracked') renderTracked();
 }})();
 </script>
 </body></html>"""

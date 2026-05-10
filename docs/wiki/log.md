@@ -364,3 +364,9 @@ attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
 - User requested a systematic Bloomberg Terminal-lite frontend, not dark-only and mobile friendly.
 - Added shared dense light/dark theme styling, theme persistence, hub/dashboard/ticker theme toggles, and mobile scrolling for dense tables/graphs.
 - Graph page keeps Plotly panels readable on mobile through horizontal plot regions instead of compressing charts to phone width.
+
+## [2026-05-11] chat | Graph discovery + tracked editor tabs
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User requested Discovery candidates as a top-level graph tab next to All/Cluster/Risk/Heatmap.
+- Added a Tracked tickers tab with filterable inline pillar/node editing using the existing classify endpoint.
+- Kept the tracked table client-rendered from the existing directory JSON so initial graph HTML stays performant.
