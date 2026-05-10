@@ -656,6 +656,45 @@ def q_index_history(
 
 
 @mcp.tool()
+def q_regime(window: int = 30, days: int = 120) -> dict:
+    """Detect the current market regime across two axes.
+
+    Computes both metrics over the last `window` trading days:
+
+      vol regime    annualised realised volatility of the broad market
+                    (0050 ETF) over the last `window` days
+                      <12% → low (calm trend, alpha-friendly)
+                      12-25% → normal
+                      >25% → high (stress, cut size)
+
+      corr regime   average pairwise correlation across classified
+                    tickers' returns over the same window
+                      <0.30 → dispersed (idiosyncratic, alpha-friendly)
+                      0.30-0.55 → normal
+                      >0.55 → crowded (factor-dominated, beta-only)
+
+    Combined into a regime_label (e.g. 'high_vol_crowded' = worst time
+    for fundamental single-name bets; 'low_vol_dispersed' = best).
+
+    Also reports vol_trend / corr_trend (rising/falling/flat) over the
+    prior ~60 days so you can tell if conditions are improving.
+
+    Args:
+        window: rolling window in trading days (default 30).
+        days:   total history needed (default 120 — 4× the window).
+
+    Use case: every position-sizing or thesis-opening decision should
+    take regime into account. In high_vol_crowded → cut size, lean on
+    factor exposure not alpha. In low_vol_dispersed → fundamental bets
+    are most likely to pay off; q_factor_screen alphas are reliable.
+    """
+    from src.quant.regime import compute_regime
+    result = compute_regime(window=int(window), days=int(days))
+    return _stamp(result, source="regime",
+                  as_of=_today_iso(), freshness="on-demand")
+
+
+@mcp.tool()
 def q_quality_score(
     ticker_id: Optional[str] = None,
     pillar: Optional[str] = None,
