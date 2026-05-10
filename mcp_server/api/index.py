@@ -1127,6 +1127,13 @@ def graph_index(token: str):
     return graph_view.get_viewer_html()
 
 
+@app.get(f"/h/{{token}}/")
+def home(token: str):
+    if not token_matches(token, MCP_BEARER_TOKEN):
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_home_html(token)
+
+
 @app.get(f"/g/{{token}}/data.json")
 def graph_data(token: str):
     if not token_matches(token, MCP_BEARER_TOKEN):
@@ -1157,6 +1164,13 @@ def dashboard(token: str):
     if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_dashboard_html()
+
+
+@app.get(f"/d/{{token}}/home")
+def dashboard_home(token: str):
+    if not token_matches(token, MCP_BEARER_TOKEN):
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_home_html(token)
 
 
 @app.get(f"/d/{{token}}/dashboard.css")

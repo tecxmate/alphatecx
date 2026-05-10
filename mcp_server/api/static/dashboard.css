@@ -6,6 +6,8 @@ html,body { margin:0; padding:0; background:#ffffff; color:#0f172a;
   margin-bottom:10px; gap:12px; flex-wrap:wrap; }
 .header h1 { font-size:18px; font-weight:600; margin:0; }
 .meta { color:#64748b; font-size:12px; }
+.meta a { color:#2563eb; text-decoration:none; font-weight:500; }
+.meta a:hover { text-decoration:underline; }
 .tabs { display:flex; gap:4px; margin:6px 0 10px; flex-wrap:wrap;
   border-bottom:1px solid #e2e8f0; }
 .tab { padding:8px 14px; border:1px solid transparent; border-bottom:none;

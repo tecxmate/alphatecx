@@ -18,12 +18,12 @@ import json
 import re
 import time
 import traceback
+from html import escape
 from pathlib import Path
 
+import db_v2
 from fastapi import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response
-
-import db_v2
 
 _VALID_PILLARS = {"semiconductor", "equipment", "infrastructure", "energy"}
 _TICKER_ID_RE  = re.compile(r"^[0-9A-Za-z]{1,8}$")
@@ -36,6 +36,7 @@ _JSON_PATH        = _STATIC / "graph_snapshot.json"
 _DASHBOARD_PATH   = _STATIC / "dashboard.html"
 _DASHBOARD_CSS    = _STATIC / "dashboard.css"
 _DASHBOARD_JS     = _STATIC / "dashboard.js"
+_TICKER_DIR       = _STATIC / "ticker"
 
 
 _CACHE: dict = {"html": None, "expires_at": 0.0}
@@ -47,7 +48,9 @@ def _render_html() -> str:
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from src.quant.correlation_snapshot import (
-        build_snapshot, build_plotly_2d_html, fetch_all_tickers,
+        build_plotly_2d_html,
+        build_snapshot,
+        fetch_all_tickers,
     )
     snapshot, corr, tickers = build_snapshot(window_days=_WINDOW_DAYS)
     return build_plotly_2d_html(snapshot, corr, tickers, fetch_all_tickers())
@@ -70,7 +73,7 @@ def get_viewer_html() -> HTMLResponse:
                 content=_HTML_PATH.read_text(),
                 headers={"x-graph-fallback": f"{type(e).__name__}: {e}"[:200]},
             )
-        raise HTTPException(503, f"graph render failed: {type(e).__name__}: {e}")
+        raise HTTPException(503, f"graph render failed: {type(e).__name__}: {e}") from e
     _CACHE["html"] = html
     _CACHE["expires_at"] = now + _CACHE_TTL_SECONDS
     return HTMLResponse(content=html)
@@ -86,6 +89,91 @@ def get_snapshot_json() -> JSONResponse:
     if not _JSON_PATH.exists():
         raise HTTPException(503, "snapshot not yet generated")
     return JSONResponse(content=json.loads(_JSON_PATH.read_text()))
+
+
+def get_home_html(token: str) -> HTMLResponse:
+    ticker_pages = sorted(p.stem for p in _TICKER_DIR.glob("*.html")) if _TICKER_DIR.exists() else []
+    ticker_links = "".join(
+        f'<a class="ticker" href="/d/{escape(token)}/t/{escape(ticker)}">{escape(ticker)}</a>'
+        for ticker in ticker_pages
+    )
+    if not ticker_links:
+        ticker_links = '<span class="muted">Run ticker page generation to populate ticker links.</span>'
+
+    html = f"""<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>alphatecx · home</title>
+<style>
+html,body {{ margin:0; padding:0; background:#fff; color:#0f172a;
+  font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  font-size:14px; line-height:1.5; }}
+.wrap {{ max-width:1120px; margin:0 auto; padding:18px 20px 34px; }}
+header {{ display:flex; align-items:flex-end; justify-content:space-between;
+  gap:14px; flex-wrap:wrap; border-bottom:1px solid #e2e8f0; padding-bottom:12px; }}
+h1 {{ font-size:22px; line-height:1.2; margin:0; font-weight:650; }}
+.meta,.muted {{ color:#64748b; font-size:12px; }}
+.grid {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:16px; }}
+.link {{ display:block; border:1px solid #dbe3ee; border-radius:8px; padding:14px 16px;
+  text-decoration:none; color:#0f172a; background:#fff; min-height:86px; }}
+.link:hover {{ border-color:#2563eb; background:#f8fbff; }}
+.link strong {{ display:block; font-size:15px; margin-bottom:5px; }}
+.link span {{ display:block; color:#64748b; font-size:12px; }}
+.section {{ margin-top:22px; }}
+.section h2 {{ font-size:14px; margin:0 0 8px; font-weight:650; }}
+.ticker-list {{ display:flex; flex-wrap:wrap; gap:6px; }}
+.ticker {{ display:inline-block; padding:4px 8px; border:1px solid #dbe3ee; border-radius:6px;
+  color:#2563eb; text-decoration:none; font-size:12px; background:#fff; }}
+.ticker:hover {{ border-color:#2563eb; background:#f8fbff; }}
+@media (max-width: 820px) {{
+  .wrap {{ padding:14px 12px 28px; }}
+  .grid {{ grid-template-columns:1fr; }}
+  h1 {{ font-size:19px; }}
+}}
+</style></head><body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>alphatecx</h1>
+      <div class="meta">Taiwan AI supply-chain intelligence</div>
+    </div>
+    <div class="meta">{len(ticker_pages)} ticker pages available</div>
+  </header>
+
+  <div class="grid">
+    <a class="link" href="/d/{escape(token)}/">
+      <strong>Data Dashboard</strong>
+      <span>Watchlist, theses, discovery candidates, and lead-lag tables.</span>
+    </a>
+    <a class="link" href="/g/{escape(token)}/">
+      <strong>Correlation Graph</strong>
+      <span>Live-rendered supply-chain correlation map with classification controls.</span>
+    </a>
+    <a class="link" href="/g/{escape(token)}/graph.png">
+      <strong>Graph PNG</strong>
+      <span>Static image snapshot used by reports and Telegram summaries.</span>
+    </a>
+    <a class="link" href="/g/{escape(token)}/data.json">
+      <strong>Graph Data</strong>
+      <span>Raw graph snapshot JSON for debugging or external analysis.</span>
+    </a>
+    <a class="link" href="/health">
+      <strong>Health Check</strong>
+      <span>Public FastAPI health endpoint.</span>
+    </a>
+    <a class="link" href="/mcp/{escape(token)}/">
+      <strong>MCP Endpoint</strong>
+      <span>Streamable HTTP MCP mount for client configuration.</span>
+    </a>
+  </div>
+
+  <div class="section">
+    <h2>Ticker Pages</h2>
+    <div class="ticker-list">{ticker_links}</div>
+  </div>
+</div>
+</body></html>"""
+    return HTMLResponse(content=html)
 
 
 def get_dashboard_html() -> HTMLResponse:
@@ -106,9 +194,6 @@ def get_dashboard_js() -> Response:
         raise HTTPException(404, "dashboard.js missing")
     return Response(content=_DASHBOARD_JS.read_text(),
                     media_type="application/javascript")
-
-
-_TICKER_DIR = _STATIC / "ticker"
 
 
 def get_ticker_page(ticker: str) -> HTMLResponse:

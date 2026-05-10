@@ -463,7 +463,7 @@ def render_page(meta, ohlcv, flow, valuation, sector_idx, signals, news, thesis)
   .nav-back a {{ color:#2563eb; text-decoration:none; }}
 </style></head><body>
 <div class="wrap">
-  <div class="nav-back"><a href="../">← back to dashboard</a></div>
+  <div class="nav-back"><a href="../home">Home</a> · <a href="../">Dashboard</a></div>
   <div class="ticker-header">
     <h1>{escape(ticker)} <span style="color:#64748b; font-weight:500">{escape(name)}</span></h1>
     {pillar_pill} {val_pill} {sig_pill}

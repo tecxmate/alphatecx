@@ -352,3 +352,9 @@ attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
 - Installed local server dependencies and ran FastAPI/MCP server on `127.0.0.1:8000`.
 - Rebuilt dashboard artifacts from Neon; smoke-tested `/health`, dashboard, ticker page, graph, and invalid-token 404s.
 - Noted local env quirk: Python entrypoints load `.env` correctly, but direct zsh `source .env` can fail if DB URLs contain unquoted `&`.
+
+## [2026-05-11] chat | Web hub page
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User asked for one main page because dashboard, graph, and ticker pages were scattered.
+- Added token-protected hub routes `/h/{token}/` and `/d/{token}/home`.
+- Hub links dashboard, graph, graph PNG/JSON, health, MCP endpoint, and all generated ticker pages.

@@ -13,10 +13,12 @@ class SecurityTests(unittest.TestCase):
         self.assertTrue(is_authorized_path("/mcp/secret/", "secret"))
         self.assertTrue(is_authorized_path("/g/secret/data.json", "secret"))
         self.assertTrue(is_authorized_path("/d/secret/t/2330", "secret"))
+        self.assertTrue(is_authorized_path("/h/secret/", "secret"))
 
         self.assertFalse(is_authorized_path("/mcp/secretevil", "secret"))
         self.assertFalse(is_authorized_path("/g/secretevil/data.json", "secret"))
         self.assertFalse(is_authorized_path("/d/secretevil", "secret"))
+        self.assertFalse(is_authorized_path("/h/secretevil", "secret"))
 
     def test_secret_routes_reject_missing_or_wrong_token(self):
         self.assertFalse(is_authorized_path("/mcp/secret", ""))
