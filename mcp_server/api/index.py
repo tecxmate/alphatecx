@@ -688,7 +688,7 @@ def q_regime(window: int = 30, days: int = 120) -> dict:
     factor exposure not alpha. In low_vol_dispersed → fundamental bets
     are most likely to pay off; q_factor_screen alphas are reliable.
     """
-    from src.quant.regime import compute_regime
+    from quant.regime import compute_regime
     result = compute_regime(window=int(window), days=int(days))
     return _stamp(result, source="regime",
                   as_of=_today_iso(), freshness="on-demand")
@@ -736,11 +736,11 @@ def q_quality_score(
     Cross-section returns rows[] sorted by quality_score desc.
     """
     if ticker_id and not (pillar or node or tickers):
-        from src.quant.quality_score import compute_quality_score
+        from quant.quality_score import compute_quality_score
         result = compute_quality_score(ticker_id)
         return _stamp(result, source="quality_score",
                       as_of=_today_iso(), freshness="on-demand")
-    from src.quant.quality_score import compute_quality_screen
+    from quant.quality_score import compute_quality_screen
     rows = compute_quality_screen(
         pillar=pillar, node=node, tickers=tickers, top_n=int(top_n),
     )
@@ -786,7 +786,7 @@ def q_cointegration_pair(
     half_life_days, spread_now/mean/std, z_score, tradeable bool, signal,
     and a plain-English interpretation.
     """
-    from src.quant.cointegration import compute_cointegration
+    from quant.cointegration import compute_cointegration
     result = compute_cointegration(ticker_a, ticker_b, days=days)
     return _stamp(result, source="cointegration",
                   as_of=_today_iso(), freshness="on-demand")
@@ -824,7 +824,7 @@ def q_pca_decompose(
     interpretation_hint), cumulative_variance_pct, and a plain-English
     `interpretation` string.
     """
-    from src.quant.pca_decompose import compute_pca
+    from quant.pca_decompose import compute_pca
     result = compute_pca(tickers=tickers, days=days, k=k)
     return _stamp(result, source="pca_decompose",
                   as_of=_today_iso(), freshness="on-demand")
@@ -869,7 +869,7 @@ def q_factor_screen(
     outperformance; large negative alpha = real underperformance even
     though the index is rising (often the most overlooked short signal).
     """
-    from src.quant.factor_alpha import compute_factor_screen
+    from quant.factor_alpha import compute_factor_screen
     rows = compute_factor_screen(
         pillar=pillar, node=node, tickers=tickers,
         days=days, sort_by=sort_by,
@@ -920,7 +920,7 @@ def q_factor_alpha(ticker_id: str, days: int = 120) -> dict:
         days: Trailing trading days for the regression window (default 120).
               Minimum ~30 needed; more is more reliable.
     """
-    from src.quant.factor_alpha import compute_factor_alpha
+    from quant.factor_alpha import compute_factor_alpha
     result = compute_factor_alpha(ticker_id, days=days)
     return _stamp(result, source="factor_alpha",
                   as_of=_today_iso(), freshness="on-demand")
