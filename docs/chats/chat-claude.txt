@@ -1068,6 +1068,41 @@ All four tools working end-to-end. Notable bonus: u_universe(filter='extreme') s
   one tool call away
 
 
+⏺ Pushed. Auto-deploy should land in ~30s. Wait, then retry your q_quality_score call — it should work now.
+
+  Quick answers to your sub-questions
+
+  "Some data are local right?"
+  No — everything Claude needs is in production:
+  - All raw data (OHLCV, T86, valuation, indices, news, lead-lag, watchlist, theses) lives in Neon →
+  accessible from the deployed function
+  - Static pages (graph, dashboard, ticker pages) are committed to the repo → in the deploy
+  - The fix above just connects the new compute tools to the same DB
+
+  "9-day foreign buy streaks on 3231 & 2356"
+  Yes — that's exactly the kind of thing the cron's view_latest_signals consecutive_foreign_buy_days field
+  is meant to catch but I missed in the Wistron writeup. It's a stronger flow signal than the 20-day z-score
+   because streaks compound. Worth flagging:
+
+  - 3231 Wistron: 9-day streak → unbroken accumulation, harder for any pullback to stick because there's a
+  buyer underneath every day
+  - 2356 Inventec: 9-day streak → the cluster's second-strongest accumulator after Wistron
+
+  For the thesis, 9d streak + 20d sum +169M shares + holdings rising 1.08pt week is a triangulated signal:
+  three separate metrics, all bullish on the same side. That's stronger than my earlier "factor-driven"
+  caveat suggested. Doesn't change the factor-alpha math (still t=0.17 idiosyncratic), but it does say the
+  FACTOR ITSELF is being driven by sustained foreign accumulation rather than retail churn — different
+  texture of the same trade.
+
+  Once the deploy lands, try this in Claude:
+
+  Use q_factor_screen on the whole classified universe (no pillar filter).
+  Sort by alpha_tstat. Show top 15.
+
+  That should sweep all 50 classified tickers and give you the cleanest "real alpha vs factor noise" picture
+   across the board.
+
+
 
 
 
