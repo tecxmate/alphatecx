@@ -656,6 +656,45 @@ def q_index_history(
 
 
 @mcp.tool()
+def q_cointegration_pair(
+    ticker_a: str,
+    ticker_b: str,
+    days: int = 120,
+) -> dict:
+    """Pairs-trading primitive: tests if two tickers' spread mean-reverts.
+
+    Engle-Granger two-step:
+      1. Regress log(P_a) on log(P_b) — residual ε is the spread
+      2. ADF test on ε — is it stationary? (reject unit root → cointegrated)
+      3. Half-life from AR(1) on ε — how fast does a 2σ shock revert?
+      4. Current z-score vs trailing distribution
+
+    Decision rule: pair is "tradeable" when stationary at 5% AND |z|≥1.5.
+    The signal field tells you the direction:
+      'long_a_short_b'  spread far below mean — expects revert up
+      'short_a_long_b'  spread far above mean — expects revert down
+      'wait'            stationary but |z|<1.5
+      'no_signal'       not cointegrated, mean-reversion invalid
+
+    Use case: cluster two same-node tickers (e.g. 3037 Unimicron + 8046
+    Nan Ya PCB substrate peers); if spread is stationary with short
+    half-life, you have a tight stat-arb pair.
+
+    Args:
+        ticker_a, ticker_b: ticker IDs, both must have OHLCV in window.
+        days: regression window (default 120).
+
+    Returns: hedge_ratio, ADF stat + critical values, stationary flags,
+    half_life_days, spread_now/mean/std, z_score, tradeable bool, signal,
+    and a plain-English interpretation.
+    """
+    from src.quant.cointegration import compute_cointegration
+    result = compute_cointegration(ticker_a, ticker_b, days=days)
+    return _stamp(result, source="cointegration",
+                  as_of=_today_iso(), freshness="on-demand")
+
+
+@mcp.tool()
 def q_pca_decompose(
     tickers: list[str],
     days: int = 120,
