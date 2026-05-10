@@ -909,7 +909,7 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
       }});
       const j = await r.json();
       if (!r.ok || !j.ok) throw new Error(j.error || 'save failed');
-      $msg.textContent = 'saved · re-run correlation_snapshot to refresh the graph';
+      $msg.textContent = 'saved · reload the page to see it on the graph';
       $msg.className = 'msg ok';
       const idx = DIRECTORY.findIndex(t => t.id === selected.id);
       if (idx >= 0) {{ DIRECTORY[idx].pillar = pillar; DIRECTORY[idx].node = node; }}
