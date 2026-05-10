@@ -1438,3 +1438,259 @@ All four tools working end-to-end. Notable bonus: u_universe(filter='extreme') s
 
   These are conversations that weren't possible 2 hours ago. Each MCP tool now produces a sentence Claude
   can quote directly into a thesis or trade note.
+
+
+
+⏺ Migration 014 is live in the DB. Retry Save in the browser — should now succeed and show "saved · re-run correlation_snapshot to refresh the graph."
+
+✻ Cogitated for 1m 2s
+
+❯ how to rerun that? only in terminal?                                                                                                                   
+
+  Searched for 1 pattern, read 1 file, listed 1 directory (ctrl+o to expand)
+
+⏺ No — three ways to trigger a regen, in order of effort:
+
+  1. GitHub Actions, manual trigger (easiest, no terminal):
+    - Go to the repo's Actions tab → Daily TWSE Harvest → Run workflow → main → Run.
+    - The workflow regenerates graph.html/png/json, commits them, pushes to main. Vercel redeploys automatically. ~3–5 min end-to-end.
+    - Or from terminal: gh workflow run daily_harvest.yml
+  2. Wait for nightly — it runs automatically at 16:30 Taipei, Mon–Fri.
+  3. Local terminal — .venv/bin/python -m src.quant.correlation_snapshot, then git add … && git commit && git push.
+
+  The Vercel function itself can't regenerate the snapshot (matplotlib is too heavy and the filesystem isn't writable across cold starts), so all paths
+  route through CI or local.
+
+  If you want a one-click "Rebuild graph" button in the viewer, the cleanest implementation is a small endpoint that calls gh workflow run via the GitHub
+   API (needs a PAT with actions:write in Vercel env) — happy to add that, but it's optional. Want it?
+
+✻ Crunched for 25s
+
+❯ is matplot the best and leanest visualizer for financial dashboard online of this kind?                                                                
+
+⏺ No — and you're already not using it for the online view. Quick clarification of what's actually rendering each artifact:
+
+  - Web viewer (graph.html) → Plotly.js. That's what you click in Safari. ~700 KB page because all 506 nodes' coords + Plotly CDN bundle are inlined.
+  - Static PNG (graph.png) → matplotlib. Used for Telegram + reports only. Wrong tool for the web; right tool for "I need a deterministic image to paste
+  in a chat."
+
+  So the real question is whether Plotly is the leanest interactive choice. Honest answer: it's the most convenient (Python → HTML in one call, decent
+  interactivity for free), but it's not the leanest.
+
+  If you want leaner / nicer for a financial dashboard:
+
+  Option: Plotly (current)
+  Bundle: ~3.5 MB CDN
+  Strengths: Server-side render from Python, free zoom/pan/legend
+  When to pick: You stay in Python, scatter + heatmap + lines all in one lib
+  ────────────────────────────────────────
+  Option: ECharts
+  Bundle: ~1 MB
+  Strengths: Beautiful defaults, fast canvas renderer, good on mobile
+  When to pick: You want polish without writing much CSS; scatter/heatmap/network all built-in
+  ────────────────────────────────────────
+  Option: uPlot
+  Bundle: ~50 KB
+  Strengths: Insanely fast for time-series, tiny
+  When to pick: OHLC, equity curves, lots of lines — not scatter clusters
+  ────────────────────────────────────────
+  Option: lightweight-charts (TradingView)
+  Bundle: ~140 KB
+  Strengths: Candles/lines that look like a real terminal
+  When to pick: Per-ticker price pages — already a fit for your /d/{T}/t/{ticker}
+  ────────────────────────────────────────
+  Option: Observable Plot + D3
+  Bundle: 100–400 KB
+  Strengths: Best-in-class for bespoke layouts
+  When to pick: You want to invest design time; small custom charts
+
+  My recommendation for this project, in order of payoff:
+  1. Keep Plotly for the cluster map. Switching it just to save 1 MB on a logged-in internal tool isn't worth the rewrite — the cluster + heatmap +
+  interactive legend are exactly Plotly's sweet spot.
+  2. Swap matplotlib's PNG generation for a headless Plotly export (fig.write_image(...) via Kaleido) so there's one rendering codepath, not two.
+  Matplotlib is dead weight if it only ships PNGs that nobody opens after Telegram is sent.
+  3. For the per-ticker pages (/d/{T}/t/{ticker}), if/when you redo them, use lightweight-charts — it'll look like a Bloomberg/TradingView panel at ~140
+  KB instead of a 700 KB Plotly page.
+  
+  The only case for fully ditching Plotly is if you start hitting mobile perf issues — then ECharts.
+
+✻ Worked for 22s
+
+❯ ok do 1 AND 2                                                                                                                                          
+
+  Searched for 2 patterns, read 1 file (ctrl+o to expand)
+
+⏺ Self-contained. I'll delete build_matplotlib_panels and render the PNG via the existing _fig_combined + Kaleido:
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Bash(sed -n '454,613p' src/quant/correlation_snapshot.py | head -3 && echo '---' && sed -n '454p;613p' src/quant/correlation_snapshot.py)
+  ⎿  def build_matplotlib_panels(snap: dict, corr: np.ndarray, tickers: list[str]) -> bytes:
+         """Render the snapshot as a 2x2 light-theme PNG (returns raw bytes).
+     … +3 lines (ctrl+o to expand)
+
+⏺ Replace lines 454–613 (the whole matplotlib function) with a Plotly+Kaleido equivalent:
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Bash(cp /tmp/cs.py src/quant/correlation_snapshot.py && grep -n "build_matplotlib_panels\|^def main\|png = " src/quant/correlation_snapshot.py)
+  ⎿  929:def main(): 
+     945:    png = build_matplotlib_panels(snapshot, corr, tickers)
+
+⏺ Now add build_combined_png (uses existing _fig_combined) and update main():
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(src/quant/correlation_snapshot.py)
+  ⎿  Added 13 lines, removed 3 lines
+      926  </body></html>"""
+      927  
+      928  
+      929 +def build_combined_png(snap: dict, corr: np.ndarray, tickers: list[str]) -> bytes:                                                     
+      930 +    """Render the same 2x2 layout the web viewer uses, as a static PNG.                                                                
+      931 +                                                                                                                                       
+      932 +    One rendering codepath shared with the HTML viewer (`_fig_combined`).                                                              
+      933 +    Uses Plotly's Kaleido image engine; no matplotlib dependency.                                                                      
+      934 +    """                                                                                                                                
+      935 +    fig = _fig_combined(snap, corr, tickers)                                                                                           
+      936 +    return fig.to_image(format="png", width=1400, height=1100, scale=2,                                                                
+      937 +                        engine="kaleido")                                                                                              
+      938 +                                                                                                                                       
+      939 +                                                                                                                                       
+      940  def main():
+      941      ap = argparse.ArgumentParser()
+      942      ap.add_argument("--window", type=int, default=120)
+     ...
+      952      json_path.parent.mkdir(parents=True, exist_ok=True)
+      953      json_path.write_text(json.dumps(snapshot, indent=2))
+      954  
+      944 -    # PNG (static, Telegram/reports)                                                                                                   
+      945 -    png = build_matplotlib_panels(snapshot, corr, tickers)                                                                             
+      955 +    # PNG (static, Telegram/reports) — same Plotly figure as the web viewer.                                                           
+      956      png_path = Path(args.out_json).parent / "graph.png"
+      947 -    png_path.write_bytes(png)                                                                                                          
+      957 +    png_path.write_bytes(build_combined_png(snapshot, corr, tickers))                                                                  
+      958  
+      959      # HTML (interactive, web viewer) — plotly 2D with linked axes
+      960      html_path = Path(args.out_html)
+
+⏺ Now requirements.txt — drop matplotlib, add kaleido (pin to 0.2.1, the last self-contained version):
+
+⏺ Update(requirements.txt)
+  ⎿  Added 1 line, removed 1 line
+      4  psycopg[binary]>=3.1
+      5  psycopg-pool>=3.1
+      6  feedparser>=6.0
+      7 -matplotlib>=3.10                                                                                                                         
+      7  plotly>=6.0
+      8 +kaleido==0.2.1                                                                                                                           
+      9  numpy>=2.0
+
+⏺ Bash(.venv/bin/pip install -q "kaleido==0.2.1" 2>&1 | tail -5 && .venv/bin/pip uninstall -y -q matplotlib 2>&1 | tail -3)
+  ⎿  (No output)
+  ⎿  (timeout 5m)
+
+⏺ Bash(.venv/bin/python -m src.quant.correlation_snapshot 2>&1 | tail -15)
+  ⎿  2026-05-11 01:49:36,685 snapshot INFO Fetching OHLCV closes (window=120 days)
+     2026-05-11 01:49:40,999 snapshot INFO Wide frame: 74 dates x 510 tickers
+     2026-05-11 01:49:41,006 snapshot INFO After NaN filter: 506 tickers
+     … +12 lines (ctrl+o to expand)
+  ⎿  (timeout 5m)
+
+⏺ Update(src/quant/correlation_snapshot.py)
+  ⎿  Added 1 line, removed 2 lines
+      933      Uses Plotly's Kaleido image engine; no matplotlib dependency.
+      934      """
+      935      fig = _fig_combined(snap, corr, tickers)
+      936 -    return fig.to_image(format="png", width=1400, height=1100, scale=2,                                                                
+      937 -                        engine="kaleido")                                                                                              
+      936 +    return fig.to_image(format="png", width=1400, height=1100, scale=2)                                                                
+      937  
+      938  
+      939  def main():
+
+  Read 1 file, listed 1 directory (ctrl+o to expand)
+
+⏺ Update(docs/wiki/log.md)
+  ⎿  Added 1 line
+      301  
+      302  - 2026-05-10 [chore] repo cleanup — Reclaimed 620 MB local disk (rm -rf .venv data __pycache__). Moved Investment Management/TW_Semi_Al
+           pha_2026-05-10.md → docs/reports/2026-05-10-tw-semi-alpha.md (cleaner location). Removed empty Investment Management/ folder. Ingested 
+           supply_chain_analysis.txt (Gemini's volume-rank scan) → adopted three findings as sql/013: 1815 Fulltech (infrastructure / pcb-material
+           s, NEW node — Low-Dk glass fiber upstream of CCL), 2313 Compeq (infrastructure / high-speed-pcb, HDI for AWS ASICs / Google TPU), 3706 
+           MiTAC (infrastructure / server-odm, Intel DSG takeover + Oracle/OpenAI). Classified universe now 59. Then deleted supply_chain_analysis
+           .txt (its content is now in SQL + this log entry).
+      303  - 2026-05-10 [feature] graph viewer — in-page ticker search + classify — Added a search/classify panel to the Plotly graph page (`build
+           _plotly_2d_html` in `src/quant/correlation_snapshot.py`) plus a `POST /g/{TOKEN}/classify` endpoint (`mcp_server/api/graph_view.classif
+           y_ticker`, route in `mcp_server/api/index.py`). Autocomplete is powered by the full `dim_ticker` directory baked into the page at snaps
+           hot-build time; Save UPSERTs `(ai_pillar, node)` into `dim_ticker`. New classifications appear as coloured nodes only after the next `p
+           ython -m src.quant.correlation_snapshot`. attributed_to: [niko, antigravity-agent] belongs_to: [correlation-graph-3d, taiwan-ai-supply-
+           chain]
+      304 +- 2026-05-11 [decision] graph PNG — drop matplotlib, render via Plotly+Kaleido — Replaced `build_matplotlib_panels` in `src/quant/corre
+          +lation_snapshot.py` with `build_combined_png` that calls `_fig_combined(...).to_image(...)` so the static PNG (Telegram/reports) and th
+          +e interactive HTML viewer share a single rendering codepath. Why: two codepaths for the same figure was dead weight; matplotlib only ev
+          +er shipped PNGs nobody re-opened after Telegram. requirements: -matplotlib, +kaleido==0.2.1 (last self-contained Kaleido; bundles its o
+          +wn Chromium so CI doesn't need a separate Chrome install). attributed_to: [niko, antigravity-agent] belongs_to: [correlation-graph-3d] 
+
+⏺ Bash(git add src/quant/correlation_snapshot.py requirements.txt mcp_server/api/static/graph.html mcp_server/api/static/graph.png
+      mcp_server/api/static/graph_snapshot…)
+  ⎿  M  docs/wiki/log.md
+     M  mcp_server/api/static/graph.png
+     M  mcp_server/api/static/graph_snapshot.json
+     … +6 lines (ctrl+o to expand)
+
+⏺ Pushed 0b4ead8:
+
+  - build_matplotlib_panels → deleted (160 LOC).
+  - build_combined_png → reuses _fig_combined (the same figure the web viewer renders) and exports via Kaleido.
+  - requirements.txt: −matplotlib, +kaleido==0.2.1 (self-contained Chromium, no extra Chrome install needed in CI).
+  - Regenerated graph.png from the new path (~930 KB at 2× scale, layout matches the web view 1:1).
+
+✻ Worked for 2m 24s
+
+❯ how much effor to switch to lightweight-charts                                                                                                         
+
+⏺ Honest answer: don't switch the cluster map — lightweight-charts is a time-series library (candles, lines, areas, histograms). It doesn't do scatter,
+  MDS clusters, or heatmaps. You'd be using the wrong tool. Plotly stays the right pick for /g/.
+
+  The place lightweight-charts does fit is the per-ticker pages (/d/{TOKEN}/t/{ticker}), which are candle + volume + flow.
+
+  Effort, per surface:
+
+  Surface: /g/ cluster map
+  Switch to LWC?: No — wrong shape of data     
+  Effort: —
+  Notes: Stay on Plotly
+  ────────────────────────────────────────
+  Surface: /g/ heatmap
+  Switch to LWC?: No — LWC has no heatmap
+  Effort: —
+  Notes: Stay on Plotly
+  ────────────────────────────────────────
+  Surface: /d/{T}/t/{ticker} candles
+  Switch to LWC?: Yes — high payoff
+  Effort: ~1 day
+  Notes: The hard part is rebuilding build_ticker_pages.py to emit JSON series + a static HTML shell that loads LWC and wires up panes
+  ────────────────────────────────────────
+  Surface: /d/{T}/t/{ticker} flow/RS panels
+  Switch to LWC?: Yes (histograms + lines)
+  Effort: +0.5 day
+  Notes: LWC supports multi-pane in v4+; align time axes
+
+  Concretely, for the per-ticker pages (~1.5 days end-to-end):
+
+  1. Add lightweight-charts from a CDN to the page template (~140 KB, no build step).
+  2. In src/dashboard/build_ticker_pages.py, swap whatever currently renders the chart for: dump [{time, open, high, low, close, volume}, …] as JSON into
+   the page, plus flow series.
+  3. ~80 LOC of vanilla JS in the page template: createChart, addCandlestickSeries, addHistogramSeries for volume, addLineSeries per flow line,
+  setData(...), sync the time scale, theme.
+  4. Test: 5–10 tickers locally, eyeball candles + axes, then run build_ticker_pages for the full set in CI.
+
+  Risks / things that aren't free:
+  - LWC's pane API changed between v4 and v5 — pin a version (v4.2.x is stable and well-documented).
+  - No built-in legend/crosshair-tooltip — you'd write ~30 LOC for the tooltip readout.
+  - Drawing tools (trendlines, fib) aren't in LWC; if you want those, you've stepped into TradingView Charting Library territory, which is licensed and
+  much heavier.
+  
+  If you want, I can scope just step 2+3 for one ticker as a proof-of-concept first (~3–4 hours of work), and only roll it out to all tickers if it looks
+   right. Want me to do that?
