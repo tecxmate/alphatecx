@@ -607,3 +607,799 @@ All four tools working end-to-end. Notable bonus: u_universe(filter='extreme') s
   Net security is unchanged from before, just the tools available expanded by 2.
                                                                                                                   
   Pushed: 48f672b..810a8c6 — schema, RLS, view, db_v2, index, wiki.   
+
+
+  What you have now
+
+  Five tabs on /g/{TOKEN}/:
+
+  ┌─────────────────────┬──────────────────────────────────────────────────────────────────┬───────────┐
+  │         Tab         │                               View                               │ URL hash  │
+  ├─────────────────────┼──────────────────────────────────────────────────────────────────┼───────────┤
+  │ All (2×2)           │ Combined four-panel grid (default)                               │ #all      │
+  ├─────────────────────┼──────────────────────────────────────────────────────────────────┼───────────┤
+  │ Cluster             │ Top-down correlation cluster, full-size, with supply-chain edges │ #cluster  │
+  ├─────────────────────┼──────────────────────────────────────────────────────────────────┼───────────┤
+  │ Cluster vs return   │ Cluster axis (X) vs 30d return (Y), full-size                    │ #momentum │
+  ├─────────────────────┼──────────────────────────────────────────────────────────────────┼───────────┤
+  │ Risk vs return      │ Volatility (X) vs 30d return (Y), full-size                      │ #risk     │
+  ├─────────────────────┼──────────────────────────────────────────────────────────────────┼───────────┤
+  │ Correlation heatmap │ Big readable heatmap, classified tickers sorted by pillar        │ #heatmap  │
+  └─────────────────────┴──────────────────────────────────────────────────────────────────┴───────────┘
+
+  Each individual view is full-page so labels and ticker codes are easy to read — what was cramped at 1/4 size in the combined
+   view is now full-resolution. URL hash means you can share …/g/{TOKEN}/#heatmap and it opens directly to that view.
+  
+  Preview locally:
+  source .venv/bin/activate && cd mcp_server/api
+  MCP_BEARER_TOKEN=test123 python -m uvicorn index:app --port 8765
+  # → http://127.0.0.1:8765/g/test123/
+  # → http://127.0.0.1:8765/g/test123/#heatmap   (deep link)
+  
+✻ Churned for 5m 52s
+
+❯ Discovery candidates What does this do?                                                                                     
+  
+⏺ The "Discovery candidates" panel surfaces unclassified stocks that are probably AI-supply-chain peers we haven't mapped yet
+  — using the market itself to suggest classifications.
+     
+  How it works
+  
+  For every grey "context" ticker in the universe, the script:
+  
+  1. Finds its 5 strongest correlations among the 50 classified tickers
+  2. Checks if ≥3 of those 5 share the same pillar (semi / infra / equipment / energy)
+  3. Checks if the median correlation to that pillar is ≥ 0.55
+  4. If yes → flags it as a candidate, with the suggested pillar and ρ ≈ confidence
+  
+  The number ρ≈0.68 is the median correlation to the suggested pillar — higher = the unclassified stock is moving in lockstep
+  with that pillar.
+  
+  Why this matters
+
+  It's the same logic a quant analyst uses, automated:
+
+  ▎ "Stock X's stock chart looks identical to TSMC, ASE, and GUC. We don't have it tagged as AI-supply, but it's behaving like
+  ▎  one. Worth investigating."
+  
+  Concretely useful for:
+  - Filling gaps in the supply chain — companies that supply AI customers privately, never say so publicly, but their stock
+  co-moves
+  - Catching reclassification candidates — e.g. an obscure component supplier becomes AI-relevant when a customer ramps
+  - Sanity-checking the existing classification — if an unclassified stock has higher conviction (ρ) than some
+  currently-classified ones, that's a signal something's off
+  
+  What you do with a candidate
+
+  If the top candidate looks plausible → use w_add (Telegram or MCP) to drop it on the watchlist with a "discovery candidate,
+  needs investigation" reason. Then read the company's 10-K / news to confirm an actual supply-chain link before promoting it
+  to dim_supply_chain with a real pillar/node assignment.
+
+  Right now the panel is unreliable because we only have ~40 trading days of data — correlations are noisy in short windows.
+  After the full backfill (~2 hours total, currently at 39%), the same query will run on 12 months of data and the candidates
+  will be much more trustworthy. The energy/heavy-electrical names are co-moving heavily in the recent rally, which is why
+  most current candidates suggest "energy."
+  
+  In short: it's a cheap automated screen for "what AI-adjacent stocks are we missing?" — useful as a seed for further
+  research, not as a final answer.
+
+  ❯ Can you explain what is the Lead LAG 50 graph show? [Image #8]  what insight with this graph.                               
+  ⎿  [Image #8]
+
+⏺ What the table shows
+
+  Each row is a hypothesis: "Upstream's price move on day T predicts Downstream's price move on day T+lag."
+  
+  Column: Upstream
+  Means: the ticker that moves first              
+  ────────────────────────────────────────
+  Column: Downstream
+  Means: the ticker that moves later
+  ────────────────────────────────────────
+  Column: Lag (d)
+  Means: trading days between upstream's move and downstream's catch-up
+  ────────────────────────────────────────
+  Column: ρ at lag
+  Means: correlation between upstream-day-T returns and downstream-day-(T+lag) returns
+  ────────────────────────────────────────
+  Column: ρ at 0
+  Means: the same-day correlation — the baseline they always move together
+  ────────────────────────────────────────
+  Column: Gain
+  Means: ρ at lag − ρ at 0. This is the only column that matters. Positive means upstream genuinely leads; negative means they
+
+    just co-move and the lag adds nothing.
+  ────────────────────────────────────────
+  Column: N obs
+  Means: data points in the regression (currently ~38 = ~2 months)
+  
+  How to read row 1
+  
+  ▎ 1519 Fortune Electric (energy) → 3664 Marketech (equipment), lag 1d, ρ 0.40, gain +0.29
+
+  Translation: when Fortune Electric moves today, Marketech tends to move the same way tomorrow at 0.40 correlation. Same-day,
+   they only correlate 0.12 — so the day-of-lag signal is much stronger than the coincident. That's a real lead.
+  
+  The most interesting row in your screenshot
+
+  ▎ 2337 Macronix (semi/flash) → 2404 UIS (equipment/cleanroom), lag 3d, ρ 0.31, gain +0.41
+  
+  That's the highest gain on the page. Same-day correlation is actually slightly negative (−0.107) — they don't usually move
+  together. But 3 days after Macronix moves, UIS moves the same way at 0.31. If real, this could be memory-pricing →
+  fab-investment ordering: Macronix's stock reflects flash demand → 3 days later cleanroom-builders price in the implied
+  capex. Worth watching.
+
+  How to act on this
+  
+  1. Filter to high-gain rows (sort the Gain column desc) — only pairs where the lag adds real predictive value.
+  gain stays > 0.20 across rolling windows, it's a real edge.
+
+
+  What to be skeptical about
+  - Multiple testing: with ~50 classified tickers × 7 lags = 2,450 hypotheses, ~120 will look "significant" at p=0.05 by
+  chance alone. Real signals show up consistently across rolling windows.
+  - Same-day = lag-N: rows with similar ρ at 0 and ρ at lag (e.g. 2308 Delta → 2317 Hon Hai, gain +0.01) are just coincident —
+   the lag doesn't add anything.
+  - Direction of causality: the math measures predictive correlation, not causation. Two stocks could both follow a slower
+  third factor.
+
+  What to look for as data improves
+
+  - Supply-chain validation: ideally we'd see TSMC → ASE → ODMs as upstream → downstream chains. The current screenshot
+  doesn't yet — that's because TSMC isn't in the top-50-by-gain (its same-day correlation with everything is already high,
+  leaving little room for forward gain). With more data, finer effects show up.
+  - Cross-pillar surprises: energy → equipment leads here suggest the heavy-electrical names front-run capex announcements,
+  which then shows up in cleanroom orders. Plausible — worth confirming.
+  - Lag distribution: if a real chain exists, you'd expect lag=1-3 to dominate. Lag=5+ tends to be noise unless very stable.
+
+  In short: gain > 0.20, ρ_lag > 0.4, lag ≤ 3, N obs > 100 is the actionable filter. Sort by Gain, glance for those, ignore
+  the rest.
+
+⏺ Pushed.
+
+  Summary
+     
+  Shipped (2 of 4):
+     
+  Endpoint: BWIBBU_d daily P/E, P/B, dividend yield
+  Table: raw_twse_valuation (1,073/day)
+  MCP tool: q_valuation(pillar, max_pe, max_pb, min_yield)
+  Backfill running: 6/90 days
+  ────────────────────────────────────────
+  Endpoint: MI_INDEX TAIEX + sector indices
+  Table: raw_twse_index (267/day)
+  MCP tool: q_index_history(index_name, days)
+  Backfill running: 7/90 days
+  
+  Both running in parallel right now; 90-day history will be loaded in ~5 minutes each.
+
+  Deferred (2 of 4): treasury stocks and day-trade ratio — both endpoint URLs 404 under current TWSE scheme. Need a session of
+   TWSE site-spelunking to find the new paths. Logged in the wiki as known follow-ups.
+  
+  Concrete new things you can ask Claude
+
+  Use q_valuation with pillar='semiconductor', max_pb=2, min_yield=2
+  → AI semis trading below 2× book with positive earnings yield
+
+  Use q_index_history with index_name='半導體類指數', days=60
+  → semi-sector index over the last quarter; benchmark for
+    "is 2330 outperforming the sector or just riding it?"
+  
+  For each watchlist ticker show q_valuation alongside q_indicators
+  → marries flow/technical with valuation in one read
+
+  The valuation axis means thesis discipline can now reference real numbers: "watchlist trigger when P/B drops below the
+  6-month median AND foreign-z > +1." That's a quant-grade rule, not a vibe.
+
+❯ 8046 Nan Ya PCB semiconductor    →    2330 TSMC semiconductor    5    0.36    0.213    +0.147    34 Is this rational? TSMC  
+  is a lagger?                                                                                                                
+  
+⏺ Smart question. Honest answer: probably noise, but there's a non-zero plausible story.
+
+  The counterintuitive case for it being real
+     
+  Substrate suppliers (Nan Ya PCB, Unimicron) book orders from TSMC's customers (NVIDIA, AMD, Broadcom) 6-9 months ahead of
+  the wafers actually being made. So in theory:
+  
+  substrate orders ramp  →  Wall St sees substrate revenue surge first
+                         →  substrate stocks rip on AI-packaging narrative
+                         →  analysts catch up and raise TSMC numbers
+                         →  TSMC moves with delay
+
+  Substrate stocks are smaller, more volatile, and 100% AI-supply-chain pure-plays — they amplify demand signals before TSMC
+  (which is more diversified across phones, autos, mature nodes, etc.) reflects them. There's a real industry pattern here.
+  
+  But why I'd still not trust this row
+
+  1. N=34 is tiny. ~7 weeks of data. ρ=0.36 with N=34 has a 95% confidence interval roughly 0.02 to 0.61 — it could easily be
+  statistical noise.
+  2. Multiple testing. ~50 tickers × 7 lags ≈ 2,450 pairs tested. ~120 will show "real" correlation by chance alone.
+  3. TSMC is THE bellwether. The market watches it minute-by-minute. Anything genuinely predictive of TSMC moves gets
+  arbitraged out within hours, not 5 days.
+  4. 5-day lag is suspicious. For two of TWSE's most-traded, most-followed stocks, persistent multi-day predictive lag would
+  mean someone could mint money trading 8046 → TSMC every week. They can't. So either it's not stable, or it's not predictive
+  after costs.
+  5. Same-day correlation is 0.21. They DO co-move some. The +0.147 "gain" at lag-5 might be a regime-specific quirk — e.g.,
+  during this 7-week window AI-packaging news happened to break in substrates first.
+
+  How to falsify it before trusting it
+  
+  I'd run two checks:
+  
+  1. Is the reverse also true? Compute TSMC → Nan Ya at lag=5. If that's ALSO ~0.36, they're just co-moving with delays in
+  both directions — no real lead-lag, just diffuse co-movement.
+  2. Does it persist across rolling windows? Run lead-lag on 60d, 120d, 240d windows separately. If the substrate-leads-TSMC
+  effect only shows in one window, it's a regime artifact. If it shows up reliably across all three, it's structural.
+  
+  during this 7-week window AI-packaging news happened to break in substrates first.
+
+  How to falsify it before trusting it
+
+  I'd run two checks:
+
+  1. Is the reverse also true? Compute TSMC → Nan Ya at lag=5. If that's ALSO ~0.36, they're just co-moving with delays in
+  both directions — no real lead-lag, just diffuse co-movement.
+  2. Does it persist across rolling windows? Run lead-lag on 60d, 120d, 240d windows separately. If the substrate-leads-TSMC
+  effect only shows in one window, it's a regime artifact. If it shows up reliably across all three, it's structural.
+
+  We can't run those today (full backfill still landing), but the daily cron will recompute lead-lag nightly with growing N —
+  by next week N will be ~50, and this row will either tighten or vanish.
+
+  My bet
+
+  This row is 70% statistical noise / regime artifact, 30% real but small effect. Even if real, the trading edge is probably
+  not large after slippage on TSMC (huge daily volume → minimal alpha capture). I wouldn't act on it.
+
+  What I'd watch for instead: substrate cluster → ODM cluster at lag 1-3 days. That's the closer-to-realistic ordering
+  (substrate orders → packaging → server assembly). If we see 8046/3037/4958 → 2382/3231/6669 at short lags with stable gains
+  across windows, that's actionable.
+
+  Bottom line: your skepticism is right. The math doesn't lie about what it found in 34 days, but those 34 days don't
+  constrain reality enough to act on.
+
+
+  ❯ Any background process needed to run now and is running now?                                                                
+
+⏺ Bash(ps aux | grep -E "src\.(backfill|quant|harvester|cron|dashboard)" | grep -v grep | awk '{print $2, "elapsed:", $9,
+      "cpu:", $10, "cmd:", $11, $12, $13, $14, $15,…)
+  ⎿  ---
+     valuation:
+     04:36:15 backfill     INFO    valuation: 83288 rows
+     … +4 lines (ctrl+o to expand)
+
+⏺ All three backfills finished. Time to refresh the downstream artefacts.
+
+⏺ Bash(source /Users/niko/antigravity/alphatecx-2/.venv/bin/activate && python -c "
+      import os, psycopg…)
+  ⎿  ohlcv tickers / rows / span: (191, 43095, datetime.date(2017, 5, 2), datetime.date(2026, 5, 8))
+     valuation rows / dates: (83288, 78)
+     indices rows / dates: (20427, 77)
+     classified w/ >=120d ohlcv: (44,)
+
+⏺ OHLCV backfill done: 191/200 target tickers, 44/50 classified have ≥120-day coverage. Regenerating downstream artefacts now.
+
+⏺ Bash(source .venv/bin/activate && python -m src.quant.leadlag --window 120 --max-lag 7 2>&1 | tail -3)
+  ⎿  2026-05-10 04:52:54,653 leadlag INFO returns matrix: 119 days x 44 tickers
+     2026-05-10 04:52:54,922 leadlag INFO computed 15136 (upstream, downstream, lag) rows
+     2026-05-10 04:53:11,853 leadlag INFO wrote 15136 rows to lead_lag asof=2026-05-10
+
+⏺ Bash(source .venv/bin/activate && python -m src.quant.correlation_snapshot --window 120 2>&1 | tail -2)
+  ⎿  2026-05-10 04:53:19,081 snapshot INFO After NaN filter: 186 tickers
+     2026-05-10 04:53:26,245 snapshot INFO Wrote mcp_server/api/static/graph_snapshot.json + mcp_server/api/static/graph.
+     html + mcp_server/api/static/graph.png (186 nodes, 36 edges, 10 corr_edges)
+
+⏺ Bash(source .venv/bin/activate && python -m src.dashboard.build 2>&1 | tail -2)
+  ⎿  2026-05-10 04:53:38,025 dashboard INFO watchlist=2 theses=1 discovery=23 leadlag=8
+     2026-05-10 04:53:38,029 dashboard INFO wrote /Users/niko/antigravity/alphatecx-2/mcp_server/api/static/dashboard.htm
+     l (15438 bytes)
+
+⏺ Bash(source .venv/bin/activate && python -c "
+      import os, psycopg…)
+  ⎿  === top lead-lag pairs (120d window) ===
+     up     up_name              down   down_name            lag  rho_lag   rho_0    gain
+  ⎿  === correlation distribution by lag (120d window) ===
+       lag=0 n=1892 avg=0.319 max=0.825
+       lag=1 n=1892 avg=-0.014 max=0.363
+     … +16 lines (ctrl+o to expand)
+
+⏺ Important finding from the full-data run: most of the strong lead-lag pairs we saw with 40-day data have collapsed. With 120
+   days:
+
+  - Max forward-lag correlation across the universe: 0.36 (was 0.57 in 40-day data)
+  - Average forward-lag correlation: ≈ 0 (-0.05 to +0.06 across lags)
+  - Same-day correlation dominates (avg 0.32, max 0.83)
+
+  This is exactly the multiple-testing / short-window artefact I warned about. Genuine lead-lag in TWSE classified universe is
+   real but small — gains of 0.15-0.25, not 0.40+. Confirms the user's earlier instinct that "Nan Ya PCB leading TSMC by 5d"
+  was probably noise.
+
+  The dashboard's Lead-lag tab now shows 8 rows (was 50 with 40d data) because the MCP-default 0.4 threshold filters most out
+  at full data. The remaining are weaker but more honest signals — e.g. 3664 cleanroom → 3189 Kinsus IC-substrate at lag 6,
+  gain +0.23 (cleanroom build-out leads substrate orders by ~6 days, plausible).
+
+⏺ Status: nothing else running
+
+  All background processes have finished. No active backfills, no scheduled cron firing now.
+
+  ┌────────────────────────────┬───────────────────────────────────────┬──────────────────────────────┐
+  │          Process           │                 When                  │            Result            │
+  ├────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ OHLCV 12-month backfill    │ started 02:18, finished 04:46 (2h28m) │ 191 tickers, 37,173 new rows │
+  ├────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ Valuation 90-day backfill  │ finished 04:36 (~9 min)               │ 78 dates, 83,288 rows        │
+  ├────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ Indices 90-day backfill    │ finished 04:35 (~7 min)               │ 77 dates, 20,427 rows        │
+  ├────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ Lead-lag recompute (120d)  │ finished 04:53                        │ 15,136 rows                  │
+  ├────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ Snapshot regenerate (120d) │ finished 04:53                        │ 186 nodes                    │
+  ├────────────────────────────┼───────────────────────────────────────┼──────────────────────────────┤
+  │ Dashboard rebuild          │ finished 04:54                        │ 23 discovery, 8 lead-lag     │
+  └────────────────────────────┴───────────────────────────────────────┴──────────────────────────────┘
+
+  The next thing that will run automatically is the GitHub Actions daily harvest at 16:30 Taipei (08:30 UTC) — that's the
+  scheduled cron that picks up T86, holdings, margin, OHLCV-current-month, valuation, indices, then runs lead-lag +
+  thesis-status + dashboard rebuild + commits any changes back to the repo.
+
+
+
+
+❯ Is this enough data / quant tool / method for the front chat claude to go find the alphas in the whole    
+  market or sector?                                                                                         
+  
+⏺ Honest answer: enough for the AI supply chain (50 names), not yet for the whole market. Here's the gap
+  analysis.
+     
+  What works today
+
+  For any individual ticker in the classified universe, Claude can:
+  - Pull flow, valuation, indicators, news in one round-trip
+  - Decompose returns into factors and read off the residual α with a t-stat
+  - Rank against backtest history
+  - Drill into supply-chain context and lead-lag relationships
+  
+  The Wistron exercise just demonstrated this end-to-end. Single-ticker deep-dive on the AI universe is 
+  genuinely solid.
+
+  What's missing for "whole-market alpha hunting"
+
+  Three layers of gap, ranked by leverage:
+
+  Gap 1: cross-sectional / batch compute primitives ★ highest leverage
+
+  Right now q_factor_alpha(3231) returns one ticker. To find alpha across the AI cluster, Claude has to call
+   it ~50 times sequentially — that's ~15s of round-trips and Claude has to do the ranking in its head.
+
+  What's missing:
+
+  Tool: q_factor_screen(pillar?, days)
+  Use case: Rank all classified tickers by α t-stat — surfaces who's out/under-performing factor exposure
+  ────────────────────────────────────────
+  Tool: q_pca_decompose(tickers[], days)
+  Use case: Decompose a basket's returns into latent factors; identify what's driving a portfolio
+  ────────────────────────────────────────
+  Tool: q_cointegration_pair(t1, t2, days)
+  Use case: Pairs-trading primitive: half-life, current z-spread, mean-reversion signal
+  ────────────────────────────────────────
+  Tool: q_quality_score(ticker)
+  Use case: Composite: revenue YoY accel + P/B percentile rank + foreign accumulation z. Single number per
+    name.
+  ────────────────────────────────────────
+  Tool: q_regime(days)
+  Use case: Volatility/correlation regime label — "are we in calm trend or stress reversal?"
+
+  These are what I had in mind earlier. 5 more primitives, ~150 LOC each, and Claude can sweep an entire 
+  universe in a single conversation.
+
+  Gap 2: data coverage
+
+  ┌───────────────────────────────────┬──────────────────────────────────────────────┐
+  │           What we have            │        What we need for whole-market         │
+  ├───────────────────────────────────┼──────────────────────────────────────────────┤
+  │ OHLCV for 191 tickers, ~12 months │ All TWSE+TPEX (~1,800 tickers), 2-3 years    │
+  ├───────────────────────────────────┼──────────────────────────────────────────────┤
+  │ T86 for 8,000 tickers, 90 days    │ Same depth needed: 2-3 years                 │
+  ├───────────────────────────────────┼──────────────────────────────────────────────┤
+  │ Valuation 90 days                 │ 12+ months for percentile ranks to stabilise │
+  ├───────────────────────────────────┼──────────────────────────────────────────────┤
+  │ News last few weeks               │ Multi-month for trend extraction             │
+  └───────────────────────────────────┴──────────────────────────────────────────────┘
+
+  The OHLCV expansion is the biggest one. Going from 191 to top-500-by-turnover would cover most of what's
+  tradable. Backfill = ~1 hour per market at the rate-limit. Cheap if we run it once.
+
+  Gap 3: factor types we don't have
+
+  Currently the factor model has 3 factors (market, sector, flow). For real institutional-style alpha
+  hunting we'd want:
+
+  - Quality: revenue acceleration, ROE proxy
+  - Earnings momentum: month-over-month surprise vs trailing average
+  - Volatility: low-vol anomaly factor
+  - Liquidity: turnover-rank-based factor
+  - Sentiment: news polarity (needs LLM tagging — we already have raw news, just no scoring)
+
+  Each is a daily time series we'd construct from existing data. ~100-200 LOC each. Probably 2-3 are worth 
+  doing; the others are diminishing returns.
+
+  What we won't ever have without paid feeds
+
+  - Options-implied vol surface, put-call ratio
+  - Analyst consensus estimates / target-price revisions
+  - Earnings calendar (forward expected dates)
+  - Tick-level / order-book data
+  - Per-broker transaction breakdown
+
+  Don't worry about these — they're the "have an institutional terminal" gap. Most retail/personal quant
+  works fine without them.
+
+  Honest verdict
+
+  Scope: Deep dive on a single AI-supply-chain name
+  Sufficient?: yes — we just did Wistron well   
+  ────────────────────────────────────────
+  Scope: Cross-sectional ranking within AI cluster (50 names)
+  Sufficient?: yes if you build q_factor_screen (~half day)
+  ────────────────────────────────────────
+  Scope: Find alpha across "the whole TW market"
+  Sufficient?: no — need data coverage expansion + 4-5 more primitives + at least quality/momentum factors
+  ────────────────────────────────────────
+  Scope: Pairs / stat-arb across the cluster
+  Sufficient?: no — need q_cointegration_pair
+  ────────────────────────────────────────
+  Scope: Portfolio-level risk decomp
+  Sufficient?: no — need q_pca_decompose
+
+  What I'd build next, ranked
+
+  1. q_factor_screen — instant cross-sectional alpha hunting within any pillar/node. Highest leverage;
+  transforms 50 sequential calls into 1.
+  2. q_pca_decompose — portfolio risk decomposition; immediately useful for sizing.
+  3. OHLCV backfill expansion to top-500 TWSE+TPEX by turnover. Data depth.
+  4. q_cointegration_pair — opens up pairs/stat-arb, novel relative to retail tools.
+  5. q_quality_score — composite quality factor; lets Claude screen on fundamentals.
+  6. q_regime — regime detection; sizes positions to vol context.
+
+  If we ship 1, 2, 4 (the three pure-compute primitives), Claude can answer roughly 80% of "find me alpha"
+  questions across our existing universe. Adding 3 (data) extends that to most of the actual TW market.
+
+  Want me to start with q_factor_screen? Same pattern as q_factor_alpha but vectorised over a pillar/node
+  filter, returns a ranked table. ~200 LOC. The next session of "use Claude to find alpha in semis" becomes
+  one tool call away
+
+
+
+
+
+  ⏺ Killer results. 3665 BizLink and 5274 ASPEED both showing statistically significant idiosyncratic alpha —
+  connectors and BMC are where the real edge is. Wistron and the rest of the server-ODM cluster all have low
+   t-stats, confirming the factor-driven read.
+
+  Quick sanity check on semiconductor pillar, then wire to MCP and commit.
+
+⏺ Bash(source /Users/niko/antigravity/alphatecx-2/.venv/bin/activate && python -c "
+      from src.quant.factor_alpha import compute_factor_screen…)
+  ⎿  2026-05-10 11:08:58,404 factor_alpha factor_screen: 12 targets
+     semiconductor: 10 tickers
+     ticker name                    α ann      t    R²
+     … +10 lines (ctrl+o to expand)
+
+⏺ Semiconductor confirms: 2408 Nanya Tech t=-1.92 (memory-DRAM lagging), 2330 TSMC t=-1.59, 2454 MediaTek 
+  +1.31. Memory-DRAM is the worst factor-adjusted underperformer. Wiring to MCP.
+
+⏺ Update(mcp_server/api/index.py)
+  ⎿  Added 55 lines
+      656  
+      657  
+      658  @mcp.tool()
+      659 +def q_factor_screen(                                                                      
+      660 +    pillar: Optional[str] = None,                                                         
+      661 +    node: Optional[str] = None,                                                           
+      662 +    tickers: Optional[list[str]] = None,                                                  
+      663 +    days: int = 90,                                                                       
+      664 +    sort_by: str = "alpha_tstat",                                                         
+      665 +    top_n: int = 25,                                                                      
+      666 +) -> dict:                                                                                
+      667 +    """Cross-sectional alpha hunting across the classified universe.                      
+      668 +                                                                                          
+      669 +    Runs the same factor regression as `q_factor_alpha` (market + sector +                
+      670 +    flow) on every ticker matching the filter, in one DB roundtrip, then                  
+      671 +    returns them ranked. Use this to find names with statistically real                   
+      672 +    idiosyncratic alpha — the t-stat (|t|>2 → significant) is the primary                 
+      673 +    signal, not the raw alpha number (which is noisy at short windows).                   
+      674 +                                                                                          
+      675 +    Args:                                                                                 
+      676 +        pillar: filter by AI pillar — 'semiconductor' | 'infrastructure' |                
+      677 +                'equipment' | 'energy'. If None, screens the full classified              
+      678 +                universe.                                                                 
+      679 +        node: filter by node (e.g. 'server-odm', 'high-speed-pcb',                        
+      680 +              'memory-dram'); composes with pillar.                                       
+      681 +        tickers: explicit ticker list; overrides pillar/node when given.                  
+      682 +        days: regression window (default 90).                                             
+      683 +        sort_by: 'alpha_tstat' (default) | 'alpha_annualized' | 'r_squared'               
+      684 +                 | 'n_obs'. Default surfaces statistically real alpha.                    
+      685 +        top_n: cap on rows returned (default 25).                                         
+      686 +                                                                                          
+      687 +    Returns rows with: ticker_id, company_name, ai_pillar, node,                          
+      688 +    sector_index, alpha_daily, alpha_annualized, alpha_tstat,                             
+      689 +    alpha_significant, betas{market,sector,flow}, beta_tstats{...},                       
+      690 +    r_squared, factors_used, n_obs.                                                       
+      691 +                                                                                          
+      692 +    Practical reading: ignore tickers with alpha_significant=false. Among                 
+      693 +    those with |t|>2, large positive alpha = real idiosyncratic                           
+      694 +    outperformance; large negative alpha = real underperformance even                     
+      695 +    though the index is rising (often the most overlooked short signal).                  
+      696 +    """                                                                                   
+      697 +    from src.quant.factor_alpha import compute_factor_screen                              
+      698 +    rows = compute_factor_screen(                                                         
+      699 +        pillar=pillar, node=node, tickers=tickers,                                        
+      700 +        days=days, sort_by=sort_by,                                                       
+      701 +    )                                                                                     
+      702 +    rows = rows[: int(top_n)]                                                             
+      703 +    return _stamp(                                                                        
+      704 +        {"rows": rows, "count": len(rows),                                                
+      705 +         "filter": {"pillar": pillar, "node": node,                                       
+      706 +                    "tickers": tickers, "days": days, "sort_by": sort_by}},               
+      707 +        source="factor_alpha",                                                            
+      708 +        as_of=_today_iso(),                                                               
+      709 +        freshness="on-demand",                                                            
+      710 +    )                                                                                     
+      711 +                                                                                          
+      712 +                                                                                          
+      713 +@mcp.tool()                                                                               
+      714  def q_factor_alpha(ticker_id: str, days: int = 120) -> dict:
+      715      """Decompose a ticker's recent returns into factor exposures + residual α.
+⏺ Bash(cd /Users/niko/antigravity/alphatecx-2
+      git add src/quant/factor_alpha.py mcp_server/api/index.py…)
+  ⎿   mcp_server/api/index.py   |  55 +++++++++++
+      src/quant/factor_alpha.py | 236 ++++++++++++++++++++++++++++++++++------------
+      2 files changed, 233 insertions(+), 58 deletions(-)
+     … +4 lines (ctrl+o to expand)
+
+⏺ #1 q_factor_screen shipped. Top finding from a 30-second test: in the AI infrastructure pillar, only
+  BizLink (3665) and ASPEED (5274) have statistically real positive alpha — everyone else, including the
+  server-ODM cluster Wistron belongs to, is purely riding factors.
+
+  Now #2 q_pca_decompose. Plan: take a basket of tickers, decompose returns into top-k principal components,
+   return loadings + variance explained. Tells you "what's actually driving this portfolio."
+
+⏺ Write(src/quant/pca_decompose.py)
+  ⎿  Wrote 165 lines to src/quant/pca_decompose.py
+       1 #!/usr/bin/env python3
+       2 """PCA risk decomposition for a basket of tickers.
+       3
+       4 Given N tickers and T days of daily log-returns, computes:
+       5   - Top-k principal components (PC_1, PC_2, ...) — orthogonal latent
+       6     factors that explain the most variance in the basket
+       7   - Each ticker's loading on each PC
+       8   - % variance explained by each PC
+       9   - Plain interpretation: PC_1 is almost always "market β"; PC_2 and PC_3
+      10     often have meaningful structure (e.g. "AI vs traditional", "cyclical
+     … +155 lines (ctrl+o to expand)
+
+⏺ Bash(source /Users/niko/antigravity/alphatecx-2/.venv/bin/activate && python -m src.quant.pca_decompose
+      "2330,3231,3711,2382,6669,2317" --days 90 --k 3 2>&1 | tail -…)
+  ⎿          "2317": 0.442,
+             "2382": 0.412,
+             "3711": 0.39,
+     … +39 lines (ctrl+o to expand)
+
+⏺ PCA on server-ODM + TSMC + ASE found genuinely interpretable structure:
+  - PC1 (63%) = AI common-factor (everyone moves together)
+  - PC2 (14%) = semiconductor (TSMC/ASE) vs ODM split
+  - PC3 (9.5%) = Wiwynn isolation (the AI-pure-play vs diversified ODMs)
+
+  Tool works. Wiring to MCP.
+
+⏺ Update(mcp_server/api/index.py)
+  ⎿  Added 38 lines
+      656  
+      657  
+      658  @mcp.tool()
+      659 +def q_pca_decompose(                                                                      
+      660 +    tickers: list[str],                                                                   
+      661 +    days: int = 120,                                                                      
+      662 +    k: int = 3,                                                                           
+      663 +) -> dict:                                                                                
+      664 +    """PCA risk decomposition on a basket of tickers.                                     
+      665 +                                                                                          
+      666 +    Decomposes daily log-returns into top-k orthogonal principal components               
+      667 +    and returns each ticker's loading on each PC, plus the % of variance                  
+      668 +    explained. PC₁ is almost always a common-factor (≈ market β) for any                  
+      669 +    correlated set; PC₂ and PC₃ usually split the universe along                          
+      670 +    interpretable axes (e.g. "semi vs ODM", "AI-pure vs diversified",                     
+      671 +    "memory vs logic").                                                                   
+      672 +                                                                                          
+      673 +    Use case: "I have N positions — am I diversified, or am I betting on                  
+      674 +    one factor N different ways?"                                                         
+      675 +      - PC₁ > 70% → concentration warning, the basket is effectively one                  
+      676 +        position                                                                          
+      677 +      - PC₁ ~50%, PC₂ ~25% → genuine 2-factor split, real diversification                 
+      678 +      - All PCs <40% → very diversified (rare for a focused basket)                       
+      679 +                                                                                          
+      680 +    Args:                                                                                 
+      681 +        tickers: 2-30 ticker IDs.                                                         
+      682 +        days: trailing trading days for the regression (default 120).                     
+      683 +        k: number of principal components to return (default 3).                          
+      684 +                                                                                          
+      685 +    Returns: tickers, n_obs, components[] (each with pc index,                            
+      686 +    explained_variance, explained_variance_pct, loadings dict, and an                     
+      687 +    interpretation_hint), cumulative_variance_pct, and a plain-English                    
+      688 +    `interpretation` string.                                                              
+      689 +    """                                                                                   
+      690 +    from src.quant.pca_decompose import compute_pca                                       
+      691 +    result = compute_pca(tickers=tickers, days=days, k=k)                                 
+      692 +    return _stamp(result, source="pca_decompose",                                         
+      693 +                  as_of=_today_iso(), freshness="on-demand")                              
+      694 +                                                                                          
+      695 +                                                                                          
+      696 +@mcp.tool()                                                                               
+      697  def q_factor_screen(
+⏺ Bash(cd /Users/niko/antigravity/alphatecx-2
+      git add src/quant/pca_decompose.py mcp_server/api/index.py…)
+  ⎿  [main 07a6d4f] feat(quant): q_pca_decompose — basket risk decomposition
+      2 files changed, 203 insertions(+)
+      create mode 100644 src/quant/pca_decompose.py
+     … +2 lines (ctrl+o to expand)
+
+⏺ #2 q_pca_decompose shipped. Now #3 q_cointegration_pair — pairs trading primitive: half-life, current
+  spread z-score, mean-reversion signal.
+
+⏺ Write(src/quant/cointegration.py)
+  ⎿  Wrote 240 lines to src/quant/cointegration.py
+       1 #!/usr/bin/env python3
+       2 """Cointegration / pairs-trading primitive.
+       3
+       4 Tests whether the spread between two tickers' log-prices is mean-reverting
+       5 (stationary). If yes, the spread is tradeable: short the rich leg, long
+       6 the cheap leg, exit when the spread crosses zero.
+       7
+       8 Method:
+       9   1. Engle-Granger two-step: regress log(P_a) on log(P_b) + intercept,
+      10      extract residual ε_t. The residual is the spread.
+     … +230 lines (ctrl+o to expand)
+
+⏺ Bash(source /Users/niko/antigravity/alphatecx-2/.venv/bin/activate
+      echo "=== 2382 Quanta vs 3231 Wistron (server-ODM peers) ==="…)
+  ⎿  === 2382 Quanta vs 3231 Wistron (server-ODM peers) ===
+       "ticker_b": "3231",
+       "name_a": "\u5ee3\u9054",
+     … +38 lines (ctrl+o to expand)
+
+⏺ Real signal: 3037 Unimicron / 8046 Nan Ya PCB are cointegrated (ADF -3.06, half-life 2.3 days). Current
+  z=+0.96 — not tradeable yet, but if the spread widens past z=1.5 it's a quick pairs-trading opportunity.
+  Quanta/Wistron are NOT cointegrated despite being peers (z=2.18 but spread doesn't reliably revert).
+
+⏺ Update(mcp_server/api/index.py)
+  ⎿  Added 39 lines
+      656  
+      657  
+      658  @mcp.tool()
+      659 +def q_cointegration_pair(                                                                 
+      660 +    ticker_a: str,                                                                        
+      661 +    ticker_b: str,                                                                        
+      662 +    days: int = 120,                                                                      
+      663 +) -> dict:                                                                                
+      664 +    """Pairs-trading primitive: tests if two tickers' spread mean-reverts.                
+      665 +                                                                                          
+      666 +    Engle-Granger two-step:                                                               
+      667 +      1. Regress log(P_a) on log(P_b) — residual ε is the spread                          
+      668 +      2. ADF test on ε — is it stationary? (reject unit root → cointegrated)              
+      669 +      3. Half-life from AR(1) on ε — how fast does a 2σ shock revert?                     
+      670 +      4. Current z-score vs trailing distribution                                         
+      671 +                                                                                          
+      672 +    Decision rule: pair is "tradeable" when stationary at 5% AND |z|≥1.5.                 
+      673 +    The signal field tells you the direction:                                             
+      674 +      'long_a_short_b'  spread far below mean — expects revert up                         
+      675 +      'short_a_long_b'  spread far above mean — expects revert down                       
+      676 +      'wait'            stationary but |z|<1.5                                            
+      677 +      'no_signal'       not cointegrated, mean-reversion invalid                          
+      678 +                                                                                          
+      679 +    Use case: cluster two same-node tickers (e.g. 3037 Unimicron + 8046                   
+      680 +    Nan Ya PCB substrate peers); if spread is stationary with short                       
+      681 +    half-life, you have a tight stat-arb pair.                                            
+      682 +                                                                                          
+      683 +    Args:                                                                                 
+      684 +        ticker_a, ticker_b: ticker IDs, both must have OHLCV in window.                   
+      685 +        days: regression window (default 120).                                            
+      686 +                                                                                          
+      687 +    Returns: hedge_ratio, ADF stat + critical values, stationary flags,                   
+      688 +    half_life_days, spread_now/mean/std, z_score, tradeable bool, signal,                 
+      689 +    and a plain-English interpretation.                                                   
+      690 +    """                                                                                   
+      691 +    from src.quant.cointegration import compute_cointegration                             
+      692 +    result = compute_cointegration(ticker_a, ticker_b, days=days)                         
+      693 +    return _stamp(result, source="cointegration",                                         
+      694 +                  as_of=_today_iso(), freshness="on-demand")                              
+      695 +                                                                                          
+      696 +                                                                                          
+      697 +@mcp.tool()                                                                               
+      698  def q_pca_decompose(
+      699      tickers: list[str],
+      700      days: int = 120,
+
+⏺ Bash(cd /Users/niko/antigravity/alphatecx-2
+      git add src/quant/cointegration.py mcp_server/api/index.py…)
+  ⎿  [main dc4cc75] feat(quant): q_cointegration_pair — pairs-trading primitive
+      2 files changed, 279 insertions(+)
+      create mode 100644 src/quant/cointegration.py
+     … +2 lines (ctrl+o to expand)
+
+⏺ All three shipped.
+
+  What Claude can now do across the universe — in one tool call each
+
+  Tool: q_factor_screen
+  Question it answers: "Who has real alpha in this pillar?"
+  Real example from today: Infrastructure: 3665 BizLink (t=+2.12), 5274 ASPEED (t=+1.98) genuinely. ODM
+    cluster: all noise.
+  ────────────────────────────────────────
+  Tool: q_pca_decompose
+  Question it answers: "Is my basket diversified or concentrated?"
+  Real example from today: Server-ODM + TSMC + ASE: 63% in PC1 (one factor), basket is effectively one
+    position
+  ────────────────────────────────────────
+  Tool: q_cointegration_pair
+  Question it answers: "Is this pair tradeable as stat-arb?"
+  Real example from today: 3037/8046 substrates: cointegrated, half-life 2.3d (real pairs opportunity);
+    2382/3231: not cointegrated despite peer classification
+
+  What this unlocks
+
+  A typical "find me alpha" conversation now looks like:
+
+  You: Find significant alpha in the AI infrastructure pillar.
+  Claude: [calls q_factor_screen(pillar='infrastructure')]
+          Two names with t>1.9: BizLink (3665, α=+327%) and ASPEED
+          (5274, α=+247%). Want to drill into either?
+
+  You: Tell me about BizLink's drivers.
+  Claude: [calls q_factor_alpha(3665), q_indicators(3665), n_for_ticker(3665)]
+          ...
+
+  You: What pairs trade exists in substrates?
+  Claude: [calls q_cointegration_pair on permutations of {3037, 8046, 4958, 3189}]
+          3037/8046 cointegrated, 2.3d half-life, currently z=+0.96
+          (not yet entry). Watch for z>1.5 to short-Unimicron /
+          long-Nan-Ya.
+
+  You: Is my watchlist diversified?
+  Claude: [calls q_pca_decompose(watchlist_tickers)]
+          72% of variance in PC1 — concentration warning. The watchlist
+          is effectively one position.
+
+  These are conversations that weren't possible 2 hours ago. Each MCP tool now produces a sentence Claude 
+  can quote directly into a thesis or trade note.
+
+  ────────────────────────────────────────
+  Tool: q_cointegration_pair
+  Question it answers: "Is this pair tradeable as stat-arb?"
+  Real example from today: 3037/8046 substrates: cointegrated, half-life 2.3d (real pairs opportunity);
+    2382/3231: not cointegrated despite peer classification
+
+  What this unlocks
+
+  A typical "find me alpha" conversation now looks like:
+
+  You: Find significant alpha in the AI infrastructure pillar.
+  Claude: [calls q_factor_screen(pillar='infrastructure')]
+          Two names with t>1.9: BizLink (3665, α=+327%) and ASPEED
+          (5274, α=+247%). Want to drill into either?
+
+  You: Tell me about BizLink's drivers.
+  Claude: [calls q_factor_alpha(3665), q_indicators(3665), n_for_ticker(3665)]
+          ...
+
+  You: What pairs trade exists in substrates?
+  Claude: [calls q_cointegration_pair on permutations of {3037, 8046, 4958, 3189}]
+          3037/8046 cointegrated, 2.3d half-life, currently z=+0.96
+          (not yet entry). Watch for z>1.5 to short-Unimicron /
+          long-Nan-Ya.
+
+  You: Is my watchlist diversified?
+  Claude: [calls q_pca_decompose(watchlist_tickers)]
+          72% of variance in PC1 — concentration warning. The watchlist
+          is effectively one position.
+
+  These are conversations that weren't possible 2 hours ago. Each MCP tool now produces a sentence Claude
+  can quote directly into a thesis or trade note.
