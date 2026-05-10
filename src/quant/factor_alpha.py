@@ -187,6 +187,61 @@ def build_flow_factor(conn, days: int, z_window: int = 20):
     return factor_dates, np.array(factor_returns)
 
 
+def _regress(target_dates_returns, factor_dicts, factor_names, days):
+    """Shared OLS engine. Returns the dict of regression outputs.
+
+    target_dates_returns: (list[date], np.ndarray) — target log returns aligned
+                         to dates.
+    factor_dicts: list of dict[date -> return] for each factor.
+    factor_names: list of factor names corresponding to factor_dicts.
+    days: window cap (filters to the last `days` calendar days).
+    """
+    target_dates, target_returns = target_dates_returns
+    by_date_target = dict(zip(target_dates, target_returns))
+
+    common = set(by_date_target)
+    for fd in factor_dicts:
+        common &= set(fd)
+    common = sorted(common)
+    cutoff = date.today() - timedelta(days=days)
+    common = [d for d in common if d >= cutoff]
+
+    if len(common) < 30:
+        return {"error": f"insufficient overlap (n={len(common)})", "n_obs": len(common)}
+
+    y = np.array([by_date_target[d] for d in common])
+    X_cols = [np.array([fd[d] for d in common]) for fd in factor_dicts]
+    X = np.column_stack([np.ones_like(y), *X_cols])
+
+    beta, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+    eps = y - X @ beta
+    n, k = X.shape
+    sigma2 = float(np.sum(eps ** 2) / max(1, n - k))
+    cov_beta = sigma2 * np.linalg.inv(X.T @ X)
+    se = np.sqrt(np.diag(cov_beta))
+
+    alpha_daily = float(beta[0])
+    alpha_se = float(se[0])
+    alpha_tstat = alpha_daily / alpha_se if alpha_se > 1e-12 else float("inf")
+    ss_tot = float(np.sum((y - y.mean()) ** 2))
+    ss_res = float(np.sum(eps ** 2))
+    r_squared = 1 - ss_res / ss_tot if ss_tot > 1e-12 else float("nan")
+
+    return {
+        "n_obs": n,
+        "alpha_daily": round(alpha_daily, 6),
+        "alpha_annualized": round(alpha_daily * 252, 4),
+        "alpha_tstat": round(alpha_tstat, 2),
+        "alpha_significant": bool(abs(alpha_tstat) > 2.0),
+        "betas": {factor_names[i]: round(float(beta[i + 1]), 3)
+                  for i in range(len(factor_names))},
+        "beta_tstats": {factor_names[i]: round(float(beta[i + 1] / se[i + 1]), 2)
+                        for i in range(len(factor_names))},
+        "r_squared": round(r_squared, 3),
+        "factors_used": factor_names,
+    }
+
+
 def compute_factor_alpha(ticker_id: str, days: int = 120) -> dict:
     with psycopg.connect(DATABASE_URL) as conn:
         meta = fetch_ticker_meta(conn, ticker_id)
@@ -217,53 +272,19 @@ def compute_factor_alpha(ticker_id: str, days: int = 120) -> dict:
         # Flow factor
         f_dates, f_ret = build_flow_factor(conn, days)
 
-    # Align all factors and target on common dates
-    by_date_target = dict(zip(t_dates_r, t_ret))
-    by_date_mkt    = dict(zip(m_dates_r, m_ret))
-    by_date_sector = dict(zip(s_dates_r, s_ret)) if len(s_ret) else {}
-    by_date_flow   = dict(zip(f_dates,   f_ret)) if len(f_ret) else {}
+    # Build factor dicts and run regression via shared engine
+    factor_dicts = [dict(zip(m_dates_r, m_ret))]
+    factor_names = ["market"]
+    if len(s_ret) > 0:
+        factor_dicts.append(dict(zip(s_dates_r, s_ret)))
+        factor_names.append("sector")
+    if len(f_ret) > 0:
+        factor_dicts.append(dict(zip(f_dates, f_ret)))
+        factor_names.append("flow")
 
-    have_sector = len(by_date_sector) > 0
-    have_flow   = len(by_date_flow) > 0
-
-    common = set(by_date_target) & set(by_date_mkt)
-    if have_sector: common &= set(by_date_sector)
-    if have_flow:   common &= set(by_date_flow)
-    common = sorted(common)
-    # Restrict to most-recent `days` calendar window
-    common = [d for d in common if d >= date.today() - timedelta(days=days)]
-
-    if len(common) < 30:
-        return {"error": f"insufficient overlap (n={len(common)})",
-                "ticker_id": ticker_id, "n_obs": len(common)}
-
-    y = np.array([by_date_target[d] for d in common])
-    cols = [np.array([by_date_mkt[d] for d in common])]
-    names = ["market"]
-    if have_sector:
-        cols.append(np.array([by_date_sector[d] for d in common]))
-        names.append("sector")
-    if have_flow:
-        cols.append(np.array([by_date_flow[d] for d in common]))
-        names.append("flow")
-    X = np.column_stack([np.ones_like(y), *cols])  # add intercept
-
-    # OLS via lstsq
-    beta, residuals, rank, _ = np.linalg.lstsq(X, y, rcond=None)
-    y_hat = X @ beta
-    eps = y - y_hat
-    n, k = X.shape
-    sigma2 = float(np.sum(eps ** 2) / max(1, n - k))
-    cov_beta = sigma2 * np.linalg.inv(X.T @ X)
-    se = np.sqrt(np.diag(cov_beta))
-
-    alpha_daily = float(beta[0])
-    alpha_se = float(se[0])
-    alpha_tstat = alpha_daily / alpha_se if alpha_se > 1e-12 else float("inf")
-
-    ss_tot = float(np.sum((y - y.mean()) ** 2))
-    ss_res = float(np.sum(eps ** 2))
-    r_squared = 1 - ss_res / ss_tot if ss_tot > 1e-12 else float("nan")
+    res = _regress((t_dates_r, t_ret), factor_dicts, factor_names, days)
+    if "error" in res:
+        return {"ticker_id": ticker_id, **res}
 
     return {
         "ticker_id": ticker_id,
@@ -271,20 +292,119 @@ def compute_factor_alpha(ticker_id: str, days: int = 120) -> dict:
         "ai_pillar": pillar,
         "node": meta["node"],
         "window_days": days,
-        "n_obs": n,
-        "alpha_daily": round(alpha_daily, 6),
-        "alpha_annualized": round(alpha_daily * 252, 4),
-        "alpha_tstat": round(alpha_tstat, 2),
-        "alpha_significant": bool(abs(alpha_tstat) > 2.0),
-        "betas": {names[i]: round(float(beta[i + 1]), 3) for i in range(len(names))},
-        "beta_tstats": {names[i]: round(float(beta[i + 1] / se[i + 1]), 2)
-                        for i in range(len(names))},
-        "r_squared": round(r_squared, 3),
-        "factors_used": names,
         "sector_index": sector_name,
-        "interpretation": _interpret(alpha_daily, alpha_tstat, r_squared,
-                                     dict(zip(names, beta[1:]))),
+        **res,
+        "interpretation": _interpret(
+            res["alpha_daily"], res["alpha_tstat"], res["r_squared"],
+            res["betas"]),
     }
+
+
+# ── Cross-sectional version ────────────────────────────────────────────────
+
+def compute_factor_screen(
+    pillar: Optional[str] = None,
+    node: Optional[str] = None,
+    tickers: Optional[list[str]] = None,
+    days: int = 90,
+    min_obs: int = 30,
+    sort_by: str = "alpha_tstat",
+    ascending: bool = False,
+) -> list[dict]:
+    """Run q_factor_alpha across a set of tickers in one DB roundtrip.
+
+    Cross-sectional alpha hunting. Builds factor returns (market, flow)
+    once, builds each pillar's sector returns once, then iterates tickers
+    and regresses each against its own pillar-appropriate factor stack.
+
+    Args:
+        pillar: filter classified set by AI pillar (e.g. 'semiconductor')
+        node: filter by node (e.g. 'server-odm'); composes with pillar
+        tickers: explicit ticker list — overrides pillar/node if given
+        days: regression window
+        min_obs: drop tickers whose regression had fewer obs
+        sort_by: 'alpha_tstat', 'alpha_annualized', 'r_squared', or 'n_obs'
+        ascending: sort direction (default desc — best alpha first)
+
+    Returns: list of dicts (one per ticker), each like compute_factor_alpha
+    minus the interpretation string (which is per-ticker expensive to build).
+    """
+    with psycopg.connect(DATABASE_URL) as conn:
+        c = conn.cursor()
+
+        # Resolve target ticker set
+        if tickers:
+            placeholders = ",".join(["%s"] * len(tickers))
+            c.execute(f"""SELECT ticker_id, company_name, ai_pillar, node
+                          FROM dim_ticker WHERE ticker_id IN ({placeholders})""",
+                      tuple(tickers))
+        else:
+            wh = ["ai_pillar IS NOT NULL"]
+            params: list = []
+            if pillar: wh.append("ai_pillar = %s"); params.append(pillar)
+            if node:   wh.append("node = %s");      params.append(node)
+            c.execute(f"""SELECT ticker_id, company_name, ai_pillar, node
+                          FROM dim_ticker WHERE {' AND '.join(wh)}
+                          ORDER BY ticker_id""", tuple(params))
+        targets = c.fetchall()
+        log.info("factor_screen: %d targets", len(targets))
+
+        # Build market factor (0050) once
+        m_dates, m_close = fetch_close_series(conn, "0050", days)
+        m_dates_r = m_dates[1:]
+        m_ret = np.diff(np.log(np.array(m_close, dtype=float)))
+        market_dict = dict(zip(m_dates_r, m_ret))
+
+        # Build flow factor once
+        f_dates, f_ret = build_flow_factor(conn, days)
+        flow_dict = dict(zip(f_dates, f_ret)) if len(f_ret) else {}
+
+        # Per-pillar sector factor (cache to avoid refetching)
+        sector_cache: dict[str, dict] = {}
+        for pillar_key, idx_name in PILLAR_INDEX.items():
+            s_dates, s_close = fetch_index_series(conn, idx_name, days)
+            if len(s_close) >= 5:
+                s_dates_r = s_dates[1:]
+                s_ret = np.diff(np.log(np.array(s_close, dtype=float)))
+                sector_cache[pillar_key] = dict(zip(s_dates_r, s_ret))
+
+        # Iterate targets
+        results = []
+        for tid, name, t_pillar, t_node in targets:
+            t_dates, t_close = fetch_close_series(conn, tid, days)
+            if len(t_close) < 30:
+                continue
+            t_dates_r = t_dates[1:]
+            t_ret = np.diff(np.log(np.array(t_close, dtype=float)))
+
+            factor_dicts = [market_dict]
+            factor_names = ["market"]
+            if t_pillar in sector_cache:
+                factor_dicts.append(sector_cache[t_pillar])
+                factor_names.append("sector")
+            if flow_dict:
+                factor_dicts.append(flow_dict)
+                factor_names.append("flow")
+
+            res = _regress((t_dates_r, t_ret), factor_dicts, factor_names, days)
+            if "error" in res or res["n_obs"] < min_obs:
+                continue
+            results.append({
+                "ticker_id": tid,
+                "company_name": name,
+                "ai_pillar": t_pillar,
+                "node": t_node,
+                "sector_index": PILLAR_INDEX.get(t_pillar),
+                **res,
+            })
+
+    # Sort by requested key
+    valid_keys = {"alpha_tstat", "alpha_annualized", "alpha_daily",
+                  "r_squared", "n_obs"}
+    if sort_by not in valid_keys:
+        sort_by = "alpha_tstat"
+    results.sort(key=lambda r: r.get(sort_by) or 0, reverse=not ascending)
+    return results
 
 
 def _interpret(alpha_d, alpha_t, r2, betas):

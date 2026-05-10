@@ -656,6 +656,61 @@ def q_index_history(
 
 
 @mcp.tool()
+def q_factor_screen(
+    pillar: Optional[str] = None,
+    node: Optional[str] = None,
+    tickers: Optional[list[str]] = None,
+    days: int = 90,
+    sort_by: str = "alpha_tstat",
+    top_n: int = 25,
+) -> dict:
+    """Cross-sectional alpha hunting across the classified universe.
+
+    Runs the same factor regression as `q_factor_alpha` (market + sector +
+    flow) on every ticker matching the filter, in one DB roundtrip, then
+    returns them ranked. Use this to find names with statistically real
+    idiosyncratic alpha — the t-stat (|t|>2 → significant) is the primary
+    signal, not the raw alpha number (which is noisy at short windows).
+
+    Args:
+        pillar: filter by AI pillar — 'semiconductor' | 'infrastructure' |
+                'equipment' | 'energy'. If None, screens the full classified
+                universe.
+        node: filter by node (e.g. 'server-odm', 'high-speed-pcb',
+              'memory-dram'); composes with pillar.
+        tickers: explicit ticker list; overrides pillar/node when given.
+        days: regression window (default 90).
+        sort_by: 'alpha_tstat' (default) | 'alpha_annualized' | 'r_squared'
+                 | 'n_obs'. Default surfaces statistically real alpha.
+        top_n: cap on rows returned (default 25).
+
+    Returns rows with: ticker_id, company_name, ai_pillar, node,
+    sector_index, alpha_daily, alpha_annualized, alpha_tstat,
+    alpha_significant, betas{market,sector,flow}, beta_tstats{...},
+    r_squared, factors_used, n_obs.
+
+    Practical reading: ignore tickers with alpha_significant=false. Among
+    those with |t|>2, large positive alpha = real idiosyncratic
+    outperformance; large negative alpha = real underperformance even
+    though the index is rising (often the most overlooked short signal).
+    """
+    from src.quant.factor_alpha import compute_factor_screen
+    rows = compute_factor_screen(
+        pillar=pillar, node=node, tickers=tickers,
+        days=days, sort_by=sort_by,
+    )
+    rows = rows[: int(top_n)]
+    return _stamp(
+        {"rows": rows, "count": len(rows),
+         "filter": {"pillar": pillar, "node": node,
+                    "tickers": tickers, "days": days, "sort_by": sort_by}},
+        source="factor_alpha",
+        as_of=_today_iso(),
+        freshness="on-demand",
+    )
+
+
+@mcp.tool()
 def q_factor_alpha(ticker_id: str, days: int = 120) -> dict:
     """Decompose a ticker's recent returns into factor exposures + residual α.
 
