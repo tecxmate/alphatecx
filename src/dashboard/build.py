@@ -87,6 +87,16 @@ def _ticker_link(ticker: str, label: str | None = None) -> str:
             f'{escape(label or ticker)}</a>')
 
 
+def _leadlag_name_cell(ticker: str, name: str | None, pill: str) -> str:
+    return (
+        '<span class="ll-cell">'
+        f'<span class="ll-ticker">{_ticker_link(ticker)}</span>'
+        f'<span class="ll-name">{escape(name or "")}</span>'
+        f'<span class="ll-pill">{pill}</span>'
+        '</span>'
+    )
+
+
 def _row_html(cells, classes=""):
     cls = f' class="{classes}"' if classes else ""
     tds = "".join(f"<td>{c}</td>" for c in cells)
@@ -355,9 +365,9 @@ def render_leadlag(rows: list[dict]) -> str:
         dn_pill = _pill(r["down_pillar"], PILLAR_COLOR.get(r["down_pillar"], "#94a3b8")) if r["down_pillar"] else ""
         gain_cls = "pos" if r["gain"] > 0 else ("neg" if r["gain"] < 0 else "")
         body.append([
-            f'{_ticker_link(r["up"])} {escape(r["up_name"] or "")} {up_pill}',
+            _leadlag_name_cell(r["up"], r["up_name"], up_pill),
             "→",
-            f'{_ticker_link(r["down"])} {escape(r["down_name"] or "")} {dn_pill}',
+            _leadlag_name_cell(r["down"], r["down_name"], dn_pill),
             r["lag"],
             r["rho_lag"],
             r["rho_0"],

@@ -79,6 +79,14 @@ table.dt td { padding:5px 8px; border-bottom:1px solid var(--line-soft);
   border-right:1px solid var(--line-soft); vertical-align:top; }
 table.dt tbody tr:hover { background:var(--surface-2); }
 
+#leadlag .ll-cell { display:grid; grid-template-columns:76px minmax(92px, 1fr) 150px;
+  align-items:center; column-gap:8px; min-width:330px; }
+#leadlag .ll-ticker { font-variant-numeric:tabular-nums; }
+#leadlag .ll-name { color:var(--text); white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis; }
+#leadlag .ll-pill { justify-self:start; }
+#leadlag td:nth-child(2), #leadlag th:nth-child(2) { text-align:center; width:38px; }
+
 .pos { color:var(--pos); font-weight:650; }
 .neg { color:var(--neg); font-weight:650; }
 .empty { padding:22px; color:var(--muted); text-align:center;
@@ -116,6 +124,8 @@ table.dt tbody tr:hover { background:var(--surface-2); }
   .toolbar .meta { display:none; }
   table.dt th, table.dt td { padding:5px 7px; font-size:11px; }
   .scroll-x table.dt { min-width:680px; }
+  #leadlag .ll-cell { grid-template-columns:68px minmax(78px, 1fr) 132px;
+    min-width:292px; column-gap:6px; }
   .ticker-header h1 { font-size:15px; }
   .js-plotly-plot, .plot-container, .svg-container { max-width:100%; }
   .wrap > .js-plotly-plot { min-width:720px; }
