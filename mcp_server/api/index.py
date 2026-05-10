@@ -656,6 +656,65 @@ def q_index_history(
 
 
 @mcp.tool()
+def q_quality_score(
+    ticker_id: Optional[str] = None,
+    pillar: Optional[str] = None,
+    node: Optional[str] = None,
+    tickers: Optional[list[str]] = None,
+    top_n: int = 30,
+) -> dict:
+    """Composite TW-specific quality score per ticker.
+
+    Single 0-100 number per ticker, equal-weighted average of five subscores
+    each mapped to [0, 100]:
+
+      growth                latest monthly revenue YoY %
+      growth_acceleration   latest YoY minus prior 3-month average
+      valuation             P/B percentile vs own 90-day history
+                            (low percentile = cheap = high score)
+      flow                  foreign_net_z20 from view_latest_signals
+      trend                 % above SMA-200
+
+    Real "quality" in factor literature means high ROE / stable earnings,
+    which we don't have. This composite reads as "growth-at-a-price + flow +
+    trend" — TW-tailored. Higher score = better on this composite.
+
+    Two modes:
+      - Single ticker: pass ticker_id alone
+      - Cross-section: pass pillar/node/tickers (omit ticker_id)
+
+    Args:
+        ticker_id: single-ticker mode
+        pillar:    'semiconductor' | 'infrastructure' | 'equipment' | 'energy'
+        node:      narrows pillar (e.g. 'server-odm', 'memory-dram')
+        tickers:   explicit list (overrides pillar/node)
+        top_n:     limit on cross-section returns (default 30)
+
+    Single-ticker returns: ticker_id, name, pillar, node, quality_score,
+    subscores{...}, raw{revenue YoY, P/B, foreign_z, ...}, missing[],
+    interpretation string.
+
+    Cross-section returns rows[] sorted by quality_score desc.
+    """
+    if ticker_id and not (pillar or node or tickers):
+        from src.quant.quality_score import compute_quality_score
+        result = compute_quality_score(ticker_id)
+        return _stamp(result, source="quality_score",
+                      as_of=_today_iso(), freshness="on-demand")
+    from src.quant.quality_score import compute_quality_screen
+    rows = compute_quality_screen(
+        pillar=pillar, node=node, tickers=tickers, top_n=int(top_n),
+    )
+    return _stamp(
+        {"rows": rows, "count": len(rows),
+         "filter": {"pillar": pillar, "node": node, "tickers": tickers}},
+        source="quality_score",
+        as_of=_today_iso(),
+        freshness="on-demand",
+    )
+
+
+@mcp.tool()
 def q_cointegration_pair(
     ticker_a: str,
     ticker_b: str,
