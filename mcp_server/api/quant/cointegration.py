@@ -32,7 +32,7 @@ import psycopg
 from dotenv import load_dotenv
 
 load_dotenv()
-DATABASE_URL = os.environ["DATABASE_URL"]
+DATABASE_URL = os.getenv("MCP_DATABASE_URL") or os.environ["DATABASE_URL"]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 log = logging.getLogger("coint")
