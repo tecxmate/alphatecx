@@ -656,6 +656,44 @@ def q_index_history(
 
 
 @mcp.tool()
+def q_pca_decompose(
+    tickers: list[str],
+    days: int = 120,
+    k: int = 3,
+) -> dict:
+    """PCA risk decomposition on a basket of tickers.
+
+    Decomposes daily log-returns into top-k orthogonal principal components
+    and returns each ticker's loading on each PC, plus the % of variance
+    explained. PC₁ is almost always a common-factor (≈ market β) for any
+    correlated set; PC₂ and PC₃ usually split the universe along
+    interpretable axes (e.g. "semi vs ODM", "AI-pure vs diversified",
+    "memory vs logic").
+
+    Use case: "I have N positions — am I diversified, or am I betting on
+    one factor N different ways?"
+      - PC₁ > 70% → concentration warning, the basket is effectively one
+        position
+      - PC₁ ~50%, PC₂ ~25% → genuine 2-factor split, real diversification
+      - All PCs <40% → very diversified (rare for a focused basket)
+
+    Args:
+        tickers: 2-30 ticker IDs.
+        days: trailing trading days for the regression (default 120).
+        k: number of principal components to return (default 3).
+
+    Returns: tickers, n_obs, components[] (each with pc index,
+    explained_variance, explained_variance_pct, loadings dict, and an
+    interpretation_hint), cumulative_variance_pct, and a plain-English
+    `interpretation` string.
+    """
+    from src.quant.pca_decompose import compute_pca
+    result = compute_pca(tickers=tickers, days=days, k=k)
+    return _stamp(result, source="pca_decompose",
+                  as_of=_today_iso(), freshness="on-demand")
+
+
+@mcp.tool()
 def q_factor_screen(
     pillar: Optional[str] = None,
     node: Optional[str] = None,
