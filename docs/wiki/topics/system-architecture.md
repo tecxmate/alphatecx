@@ -78,3 +78,4 @@ The `alphatecx-v2` server exposes 7 tools:
 - 2026-05-07: Upgraded architecture to Neon Postgres & FastMCP. Documented 5-tier data scope and relative accumulation insight. [antigravity-agent]
 - 2026-05-07: Architecture ingested from Gemini chat. Proposed by [gemini-agent], requirements from [niko].
 - 2026-05-11: Removed the unused tracked `supabase/` CLI config directory after confirming runtime code uses Neon/Postgres directly. [niko, antigravity-agent]
+- 2026-05-11: Local smoke testing verified `/health`, dashboard, ticker pages, graph rendering, and invalid-token rejection. Environment quirk: avoid `source .env` in zsh unless values are shell-quoted; Python entrypoints already load `.env` via `python-dotenv`. [antigravity-agent]

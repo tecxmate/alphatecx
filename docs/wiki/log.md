@@ -346,3 +346,9 @@ attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
 - User confirmed `supabase/` is not used.
 - Deleted tracked `supabase/config.toml` and `supabase/.temp/cli-latest`; runtime code already uses Neon/Postgres directly.
 - Updated [System Architecture](topics/system-architecture.md).
+
+## [2026-05-11] chat | Local system smoke test
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Installed local server dependencies and ran FastAPI/MCP server on `127.0.0.1:8000`.
+- Rebuilt dashboard artifacts from Neon; smoke-tested `/health`, dashboard, ticker page, graph, and invalid-token 404s.
+- Noted local env quirk: Python entrypoints load `.env` correctly, but direct zsh `source .env` can fail if DB URLs contain unquoted `&`.
