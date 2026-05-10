@@ -58,10 +58,12 @@ PILLAR_INDEX = {
 _FM_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 def parse_frontmatter(text: str) -> dict:
     m = _FM_RE.match(text)
-    if not m: return {}
+    if not m:
+        return {}
     out = {}
     for line in m.group(1).splitlines():
-        if ":" not in line: continue
+        if ":" not in line:
+            continue
         k, _, v = line.partition(":")
         out[k.strip()] = v.strip()
     return out
@@ -89,9 +91,11 @@ def get_target_tickers(conn) -> list[dict]:
                             "ai_pillar": pillar, "node": node, "source": "watchlist"}
     if THESES_DIR.exists():
         for p in THESES_DIR.glob("*.md"):
-            if p.name == "README.md": continue
+            if p.name == "README.md":
+                continue
             fm = parse_frontmatter(p.read_text())
-            if fm.get("status", "").lower() != "active": continue
+            if fm.get("status", "").lower() != "active":
+                continue
             tid = fm.get("ticker", "")
             if tid and tid not in out:
                 out[tid] = {"ticker_id": tid, "company_name": fm.get("company", ""),
@@ -155,11 +159,12 @@ def load_signals(conn, ticker: str):
               FROM view_latest_signals WHERE ticker_id = %s
         """, (ticker,))
         row = c.fetchone()
-    if not row: return None
+    if not row:
+        return None
     keys = ["as_of", "rsi_14", "macd_line", "macd_signal_line", "macd_histogram",
             "bb_pct_b", "atr_14", "sma_50", "sma_200", "rs_vs_market_60",
             "pct_below_52w_high", "foreign_net_z20", "foreign_net_5d_sum"]
-    return dict(zip(keys, row))
+    return dict(zip(keys, row, strict=True))
 
 
 def load_news(conn, ticker: str, company_name: str, days: int = 30):
@@ -178,22 +183,28 @@ def load_news(conn, ticker: str, company_name: str, days: int = 30):
         return c.fetchall()
 
 
-def load_thesis(ticker: str) -> dict | None:
+def load_active_theses_by_ticker() -> dict[str, dict]:
+    """Load active thesis frontmatter once per build."""
+    out: dict[str, dict] = {}
     if not THESES_DIR.exists():
-        return None
+        return out
     for p in THESES_DIR.glob("*.md"):
-        if p.name == "README.md": continue
+        if p.name == "README.md":
+            continue
         fm = parse_frontmatter(p.read_text())
-        if fm.get("ticker") == ticker and fm.get("status", "").lower() == "active":
-            return fm
-    return None
+        if fm.get("status", "").lower() != "active":
+            continue
+        ticker = fm.get("ticker", "")
+        if ticker:
+            out[ticker] = fm
+    return out
 
 
 def render_page(meta, ohlcv, flow, valuation, sector_idx, signals, news, thesis):
     """Compose the plotly figure + HTML wrapper."""
+    import numpy as np
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
-    import numpy as np
 
     ticker = meta["ticker_id"]
     name = meta["company_name"] or ticker
@@ -299,8 +310,8 @@ def render_page(meta, ohlcv, flow, valuation, sector_idx, signals, news, thesis)
         oh_close = np.array([r[4] for r in ohlcv], dtype=float)
 
         # Align by intersect of dates
-        ix_map = {d: c for d, c in zip(ix_dates, ix_close)}
-        oh_map = {d: c for d, c in zip(oh_dates, oh_close)}
+        ix_map = {d: c for d, c in zip(ix_dates, ix_close, strict=True)}
+        oh_map = {d: c for d, c in zip(oh_dates, oh_close, strict=True)}
         common = sorted(set(ix_dates) & set(oh_dates))
         if len(common) > 5:
             ic = np.array([ix_map[d] for d in common])
@@ -340,9 +351,12 @@ def render_page(meta, ohlcv, flow, valuation, sector_idx, signals, news, thesis)
         latest = valuation[-1]
         d_, c_, pe, pb, dy = latest
         parts = []
-        if pe is not None: parts.append(f"P/E <b>{pe:.1f}</b>")
-        if pb is not None: parts.append(f"P/B <b>{pb:.2f}</b>")
-        if dy is not None: parts.append(f"yield <b>{dy:.2f}%</b>")
+        if pe is not None:
+            parts.append(f"P/E <b>{pe:.1f}</b>")
+        if pb is not None:
+            parts.append(f"P/B <b>{pb:.2f}</b>")
+        if dy is not None:
+            parts.append(f"yield <b>{dy:.2f}%</b>")
         if parts:
             val_pill = f'<span class="valpill">{" · ".join(parts)}</span>'
 
@@ -354,9 +368,12 @@ def render_page(meta, ohlcv, flow, valuation, sector_idx, signals, news, thesis)
         fz  = s.get("foreign_net_z20")
         below52 = s.get("pct_below_52w_high")
         parts = []
-        if rsi is not None: parts.append(f"RSI <b>{rsi:.0f}</b>")
-        if fz is not None:  parts.append(f"foreign-z <b>{fz:+.2f}</b>")
-        if below52 is not None: parts.append(f"{below52*100:+.1f}% vs 52wH")
+        if rsi is not None:
+            parts.append(f"RSI <b>{rsi:.0f}</b>")
+        if fz is not None:
+            parts.append(f"foreign-z <b>{fz:+.2f}</b>")
+        if below52 is not None:
+            parts.append(f"{below52 * 100:+.1f}% vs 52wH")
         if parts:
             sig_pill = f'<span class="sigpill">{" · ".join(parts)}</span>'
 
@@ -446,6 +463,8 @@ def main():
 
     with psycopg.connect(DATABASE_URL) as conn:
         targets = get_target_tickers(conn)
+        theses_by_ticker = load_active_theses_by_ticker()
+        sector_index_cache: dict[str, list] = {}
         log.info("targets: %d tickers", len(targets))
 
         for meta in targets:
@@ -459,10 +478,15 @@ def main():
             valuation = load_valuation(conn, ticker)
             signals   = load_signals(conn, ticker)
             news      = load_news(conn, ticker, meta["company_name"])
-            thesis    = load_thesis(ticker)
+            thesis    = theses_by_ticker.get(ticker)
             pillar    = meta.get("ai_pillar")
-            sector    = (load_sector_index(conn, PILLAR_INDEX[pillar])
-                         if pillar in PILLAR_INDEX else [])
+            if pillar in PILLAR_INDEX:
+                index_name = PILLAR_INDEX[pillar]
+                if index_name not in sector_index_cache:
+                    sector_index_cache[index_name] = load_sector_index(conn, index_name)
+                sector = sector_index_cache[index_name]
+            else:
+                sector = []
             html = render_page(meta, ohlcv, flow, valuation, sector,
                                signals, news, thesis)
             (out_dir / f"{ticker}.html").write_text(html)

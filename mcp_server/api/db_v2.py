@@ -10,21 +10,16 @@ from typing import Optional
 
 from psycopg_pool import ConnectionPool
 
+try:
+    from query_safety import safe_flow_col
+except ModuleNotFoundError:  # package import path used by local tests
+    from .query_safety import safe_flow_col
+
 DATABASE_URL = os.getenv("MCP_DATABASE_URL") or os.getenv("DATABASE_URL", "")
 _pool: ConnectionPool | None = None
 
-# Whitelisted column identifiers that may be interpolated into SQL.
-# Anything outside this set gets rejected — no f-string identifier ever reaches
-# the database without passing through here.
-_ALLOWED_FLOW_COLS = frozenset({
-    "foreign_1d", "foreign_3d", "foreign_5d", "foreign_10d", "foreign_20d",
-    "total_1d", "total_3d", "total_5d", "total_10d", "total_20d",
-    "consecutive_foreign_buy_days",
-})
-
-
 def _safe_col(col: str, default: str) -> str:
-    return col if col in _ALLOWED_FLOW_COLS else default
+    return safe_flow_col(col, default)
 
 
 def _configure(conn):

@@ -305,3 +305,26 @@ attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
 - 2026-05-11 [feature] graph viewer — one-click "Rebuild graph" button — Added `↻ Rebuild graph` button next to the meta header in `build_plotly_2d_html` and a `POST /g/{TOKEN}/rebuild` endpoint backed by `graph_view.rebuild_graph()`. Server-side it calls `build_snapshot` + `build_plotly_2d_html` in-process (~15-25s) and returns the fresh HTML; the JS swaps the page via `document.write`. Best-effort writes `graph.html` + `graph_snapshot.json` to disk so local reloads survive; on Vercel's read-only fs the write is swallowed and only the in-session swap takes effect. PNG regen intentionally skipped (Kaleido boot is slow and the static PNG isn't on the viewer's critical path). Decision: Option A from the chat menu — A=in-process regen, B=GitHub Actions dispatch, C=hybrid; user picked A for tight feedback loop, accepting that the committed snapshot still needs a CI run for everyone-else updates. attributed_to: [niko, antigravity-agent] belongs_to: [correlation-graph-3d]
 - 2026-05-11 [feature] graph viewer — rebuild window selector — Added a 60d/90d/120d/180d dropdown next to the ↻ Rebuild button; selected value is sent as `?window=N` to `POST /g/{TOKEN}/rebuild` and forwarded to `build_snapshot(window_days=...)`. Server clamps to [30, 365]. Why: Vercel hobby has a 60s function timeout; the default 120d rebuild is ~22s locally but Neon cold-start could push it over on hobby — 60d is the escape hatch. attributed_to: [niko, antigravity-agent] belongs_to: [correlation-graph-3d]
 - 2026-05-11 [decision] graph viewer — drop rebuild button, regen on GET with 60s TTL cache — Reverted yesterday's `↻ Rebuild graph` button + `POST /g/{TOKEN}/rebuild` endpoint. `GET /g/{TOKEN}/` now calls `build_snapshot` + `build_plotly_2d_html` in-process on each visit, with a 60-second in-memory TTL cache so pan/zoom/tab swaps don't pay the recompute cost. `classify_ticker` invalidates the cache on save so a refresh after Save shows the new node immediately. Why: the Save+Rebuild two-step was a layered architecture for what's mentally one thing — "the graph is the DB rendered". Net deletion: ~70 LOC removed (rebuild_graph(), rebuild route, button, window selector, JS IIFE, post-save hint) vs ~25 LOC added (TTL cache + render helper). Caveats: (1) committed `graph.html` becomes a cold-start fallback only — CI nightly still regenerates it for static consumers / Telegram; (2) Vercel hobby's 60s function timeout still applies on first hit per cold instance; if it bites we'll add back a window override or move regen to a cron-warmed cache. attributed_to: [niko, antigravity-agent] belongs_to: [correlation-graph-3d]
+## [2026-05-11] chat | Architecture review
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Reviewed repo structure, MCP/API modules, harvester orchestration, schema scripts, workflows, and dashboard generation.
+- Recommended incremental modularization over a platform rewrite, with major rewrite deferred until scheduling, multi-user, or scale constraints appear.
+- Updated [Architecture Review 2026-05-11](topics/architecture-review-2026-05-11.md).
+
+## [2026-05-11] decision | codex/optimize branch started
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- Created branch `codex/optimize` for incremental architecture cleanup.
+- Started with low-risk extraction: `mcp_server/api/security.py` for URL-secret auth checks and `mcp_server/api/query_safety.py` for SQL column allowlisting.
+- Added `pyproject.toml` and a no-install `unittest` baseline covering auth path checks, query safety, and TWSE helper parsing.
+
+## [2026-05-11] chat | Optimization pass
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Checked repo hot paths for low-risk optimization opportunities.
+- Added HTTP session reuse in TWSE/TPEX fetches and cached repeated ticker-page build inputs.
+- Updated [Architecture Review 2026-05-11](topics/architecture-review-2026-05-11.md).
+
+## [2026-05-11] chat | Local check tooling
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Created local `.venv`, installed project dependencies plus `pytest` and `ruff`.
+- `pytest -q` passes; focused Ruff checks on changed/new files pass.
+- Full-repo `ruff check .` still fails on broad pre-existing lint debt, so full Ruff should be a separate cleanup.
