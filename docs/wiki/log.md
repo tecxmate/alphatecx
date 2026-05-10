@@ -328,3 +328,9 @@ attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
 - Created local `.venv`, installed project dependencies plus `pytest` and `ruff`.
 - `pytest -q` passes; focused Ruff checks on changed/new files pass.
 - Full-repo `ruff check .` still fails on broad pre-existing lint debt, so full Ruff should be a separate cleanup.
+
+## [2026-05-11] chat | Batched ticker page queries
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Optimized `src/dashboard/build_ticker_pages.py` so OHLCV, T86 flow, valuation, and latest signals load once per build for all target tickers.
+- Kept news matching per ticker for now because matching depends on ticker/company text and needs a separate indexing design.
+- Verified with focused Ruff and `pytest -q`.
