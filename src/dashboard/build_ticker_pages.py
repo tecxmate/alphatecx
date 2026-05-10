@@ -178,20 +178,34 @@ def load_signals_by_ticker(conn, tickers: list[str]) -> dict[str, dict]:
     return {ticker_id: dict(zip(keys, row, strict=True)) for ticker_id, *row in rows}
 
 
-def load_news(conn, ticker: str, company_name: str, days: int = 30):
+def load_news_by_ticker(conn, metas: list[dict], days: int = 30) -> dict[str, list]:
+    """Load recent news once and apply the existing title substring match per ticker."""
     cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
-    if not company_name:
-        return []
     with conn.cursor() as c:
         c.execute("""
             SELECT title, url, source, published_at
               FROM raw_news
              WHERE published_at >= %s
-               AND (title ILIKE '%%' || %s || '%%'
-                    OR title ILIKE '%%' || %s || '%%')
-             ORDER BY published_at DESC LIMIT 15
-        """, (cutoff, ticker, company_name))
-        return c.fetchall()
+             ORDER BY published_at DESC
+        """, (cutoff,))
+        articles = c.fetchall()
+
+    out: dict[str, list] = {}
+    matchers = []
+    for meta in metas:
+        ticker = meta["ticker_id"]
+        company_name = meta["company_name"]
+        if company_name:
+            matchers.append((ticker, ticker.lower(), company_name.lower()))
+
+    for title, url, source, published_at in articles:
+        title_l = (title or "").lower()
+        for ticker, ticker_l, company_l in matchers:
+            if ticker_l in title_l or company_l in title_l:
+                ticker_news = out.setdefault(ticker, [])
+                if len(ticker_news) < 15:
+                    ticker_news.append((title, url, source, published_at))
+    return out
 
 
 def load_active_theses_by_ticker() -> dict[str, dict]:
@@ -479,6 +493,7 @@ def main():
         flow_by_ticker = load_t86_flow_by_ticker(conn, target_ids)
         valuation_by_ticker = load_valuation_by_ticker(conn, target_ids)
         signals_by_ticker = load_signals_by_ticker(conn, target_ids)
+        news_by_ticker = load_news_by_ticker(conn, targets)
         theses_by_ticker = load_active_theses_by_ticker()
         sector_index_cache: dict[str, list] = {}
         log.info("targets: %d tickers", len(targets))
@@ -493,7 +508,7 @@ def main():
             flow      = flow_by_ticker.get(ticker, [])
             valuation = valuation_by_ticker.get(ticker, [])
             signals   = signals_by_ticker.get(ticker)
-            news      = load_news(conn, ticker, meta["company_name"])
+            news      = news_by_ticker.get(ticker, [])
             thesis    = theses_by_ticker.get(ticker)
             pillar    = meta.get("ai_pillar")
             if pillar in PILLAR_INDEX:

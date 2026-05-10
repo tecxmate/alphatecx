@@ -334,3 +334,9 @@ attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
 - Optimized `src/dashboard/build_ticker_pages.py` so OHLCV, T86 flow, valuation, and latest signals load once per build for all target tickers.
 - Kept news matching per ticker for now because matching depends on ticker/company text and needs a separate indexing design.
 - Verified with focused Ruff and `pytest -q`.
+
+## [2026-05-11] chat | Batched ticker page news
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Replaced per-ticker news SQL calls in `src/dashboard/build_ticker_pages.py` with one recent-news query and in-memory ticker/company title matching.
+- Preserved the original 30-day window and 15-item per-ticker cap.
+- Verified with focused Ruff, compileall, and `pytest -q`.
