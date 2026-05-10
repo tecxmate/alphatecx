@@ -11,11 +11,17 @@ Endpoints (mounted under /g/{TOKEN}/):
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
+import psycopg
 from fastapi import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response
+
+_VALID_PILLARS = {"semiconductor", "equipment", "infrastructure", "energy"}
+_TICKER_ID_RE  = re.compile(r"^[0-9A-Za-z]{1,8}$")
+_NODE_RE       = re.compile(r"^[0-9A-Za-z][0-9A-Za-z\- _/]{0,63}$")
 
 _STATIC = Path(__file__).parent / "static"
 _HTML_PATH        = _STATIC / "graph.html"
@@ -66,13 +72,52 @@ def get_dashboard_js() -> Response:
 
 
 _TICKER_DIR = _STATIC / "ticker"
-_TICKER_RE  = re.compile(r"^[0-9A-Za-z]{1,8}$")
 
 
 def get_ticker_page(ticker: str) -> HTMLResponse:
-    if not _TICKER_RE.match(ticker):
+    if not _TICKER_ID_RE.match(ticker):
         raise HTTPException(404, "invalid ticker")
     path = _TICKER_DIR / f"{ticker}.html"
     if not path.exists():
         raise HTTPException(404, f"no page for {ticker}")
     return HTMLResponse(content=path.read_text())
+
+
+def _database_url() -> str:
+    url = os.getenv("DATABASE_URL") or os.getenv("MCP_DATABASE_URL")
+    if not url:
+        raise HTTPException(500, "DATABASE_URL not configured")
+    return url
+
+
+def classify_ticker(payload: dict) -> JSONResponse:
+    """Persist (pillar, node) for a ticker. Insert if missing, else update.
+
+    Visible in the rendered graph only after correlation_snapshot is re-run —
+    the Plotly HTML bakes data in at build time.
+    """
+    ticker_id = (payload.get("ticker_id") or "").strip()
+    pillar    = payload.get("pillar")
+    node      = payload.get("node")
+    if not _TICKER_ID_RE.match(ticker_id):
+        return JSONResponse(status_code=400, content={"ok": False, "error": "invalid ticker_id"})
+    if pillar not in _VALID_PILLARS:
+        return JSONResponse(status_code=400, content={"ok": False, "error": "invalid pillar"})
+    if node is not None:
+        node = node.strip() or None
+    if node is not None and not _NODE_RE.match(node):
+        return JSONResponse(status_code=400, content={"ok": False, "error": "invalid node"})
+
+    sql = """
+        INSERT INTO dim_ticker (ticker_id, ai_pillar, node, updated_at)
+        VALUES (%s, %s, %s, now())
+        ON CONFLICT (ticker_id) DO UPDATE
+          SET ai_pillar  = EXCLUDED.ai_pillar,
+              node       = EXCLUDED.node,
+              updated_at = now()
+    """
+    with psycopg.connect(_database_url()) as conn, conn.cursor() as cur:
+        cur.execute(sql, (ticker_id, pillar, node))
+        conn.commit()
+    return JSONResponse(content={"ok": True, "ticker_id": ticker_id,
+                                 "pillar": pillar, "node": node})

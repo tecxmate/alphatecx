@@ -89,6 +89,21 @@ def fetch_meta() -> dict[str, dict]:
     return out
 
 
+def fetch_all_tickers() -> list[dict]:
+    """Every dim_ticker row — used to power the in-page search/classify UI."""
+    sql = """
+        SELECT ticker_id, company_name, ai_pillar, node
+          FROM dim_ticker
+         ORDER BY ticker_id
+    """
+    with psycopg.connect(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        return [
+            {"id": tid, "name": name or tid, "pillar": pillar, "node": node}
+            for tid, name, pillar, node in cur.fetchall()
+        ]
+
+
 def fetch_edges() -> list[dict]:
     sql = """
         SELECT upstream_id, downstream_id, relationship, confidence
@@ -830,9 +845,15 @@ def _fig_combined(snap, corr, tickers):
     return fig
 
 
-def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str]) -> str:
-    """Tabbed HTML page: combined 2x2 plus 4 individual full-size views."""
+def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
+                         directory: list[dict] | None = None) -> str:
+    """Tabbed HTML page: combined 2x2 plus 4 individual full-size views.
+
+    `directory` is the full dim_ticker list (id/name/pillar/node) embedded
+    into the page for client-side ticker search + classify.
+    """
     PILLAR_COLOR = PLOTLY_PILLAR_COLOR
+    directory_json = json.dumps(directory or [], separators=(",", ":"))
 
     PLOT_CFG = {
         "displayModeBar": True, "displaylogo": False, "responsive": True,
@@ -895,6 +916,27 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str]) -> st
     border:1px solid #e2e8f0; border-radius:8px; max-width:640px; }}
   .disc h2 {{ font-size:14px; margin:0 0 8px; color:#0f172a; }}
   .disc ol {{ margin:0; padding-left:20px; font-size:13px; line-height:1.7; }}
+  .classify {{ margin:6px 0 14px; padding:10px 12px; background:#f8fafc;
+    border:1px solid #e2e8f0; border-radius:8px; display:flex; gap:8px;
+    align-items:center; flex-wrap:wrap; font-size:13px; position:relative; }}
+  .classify input[type=text], .classify select {{ font:inherit; padding:5px 8px;
+    border:1px solid #cbd5e0; border-radius:5px; background:#fff; color:#0f172a; }}
+  .classify input#cls-search {{ width:280px; }}
+  .classify input#cls-node {{ width:180px; }}
+  .classify button {{ font:inherit; padding:5px 12px; background:#0f172a;
+    color:#fff; border:none; border-radius:5px; cursor:pointer; }}
+  .classify button:disabled {{ background:#94a3b8; cursor:not-allowed; }}
+  .classify .meta {{ color:#64748b; font-size:12px; }}
+  .classify .msg.ok {{ color:#16a34a; }}
+  .classify .msg.err {{ color:#dc2626; }}
+  .cls-suggest {{ position:absolute; top:42px; left:42px; width:280px;
+    background:#fff; border:1px solid #e2e8f0; border-radius:6px;
+    box-shadow:0 6px 20px rgba(15,23,42,0.08); max-height:240px;
+    overflow-y:auto; z-index:50; display:none; }}
+  .cls-suggest div {{ padding:6px 10px; cursor:pointer; font-size:13px;
+    border-bottom:1px solid #f1f5f9; }}
+  .cls-suggest div:hover, .cls-suggest div.active {{ background:#f1f5f9; }}
+  .cls-suggest .pill {{ float:right; font-size:11px; color:#64748b; }}
 </style></head><body>
 <div class="wrap">
   <div class="header">
@@ -909,6 +951,22 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str]) -> st
     <button class="tab" data-tab="heatmap">Correlation heatmap</button>
   </div>
   <p class="hint">Drag to pan \u00b7 scroll to zoom \u00b7 double-click to reset \u00b7 click a pillar in the legend to toggle.</p>
+  <div class="classify">
+    <span>\U0001f50d</span>
+    <input id="cls-search" type="text" placeholder="Search ticker (e.g. 3583, ChipMOS)\u2026" autocomplete="off">
+    <div id="cls-suggest" class="cls-suggest"></div>
+    <select id="cls-pillar">
+      <option value="">\u2014 pillar \u2014</option>
+      <option value="semiconductor">semiconductor</option>
+      <option value="equipment">equipment</option>
+      <option value="infrastructure">infrastructure</option>
+      <option value="energy">energy</option>
+    </select>
+    <input id="cls-node" type="text" placeholder="node (e.g. testing-probing)" autocomplete="off">
+    <button id="cls-save" disabled>Save</button>
+    <span id="cls-meta" class="meta"></span>
+    <span id="cls-msg"  class="msg"></span>
+  </div>
   <div class="panel active" data-panel="all">{div_combined}</div>
   <div class="panel" data-panel="cluster">{div_cluster}</div>
   <div class="panel" data-panel="momentum">{div_momentum}</div>
@@ -930,6 +988,99 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str]) -> st
   tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.tab)));
   const hash = (location.hash || '').replace(/^#/, '');
   if (hash && document.querySelector(`.panel[data-panel="${{hash}}"]`)) show(hash);
+}})();
+(function() {{
+  const DIRECTORY = {directory_json};
+  const TOKEN     = location.pathname.split('/')[2] || '';
+  const $search   = document.getElementById('cls-search');
+  const $sugg     = document.getElementById('cls-suggest');
+  const $pillar   = document.getElementById('cls-pillar');
+  const $node     = document.getElementById('cls-node');
+  const $save     = document.getElementById('cls-save');
+  const $meta     = document.getElementById('cls-meta');
+  const $msg      = document.getElementById('cls-msg');
+  let selected = null;
+  let active   = -1;
+
+  function match(q) {{
+    q = q.trim().toLowerCase();
+    if (!q) return [];
+    const out = [];
+    for (const t of DIRECTORY) {{
+      if (t.id.toLowerCase().includes(q) || t.name.toLowerCase().includes(q)) {{
+        out.push(t);
+        if (out.length >= 25) break;
+      }}
+    }}
+    return out;
+  }}
+  function render(list) {{
+    if (!list.length) {{ $sugg.style.display = 'none'; $sugg.innerHTML = ''; return; }}
+    $sugg.innerHTML = list.map((t, i) =>
+      `<div data-idx="${{i}}"><b>${{t.id}}</b> ${{t.name}}` +
+      (t.pillar ? `<span class="pill">${{t.pillar}}${{t.node ? ' / ' + t.node : ''}}</span>` : `<span class="pill">unclassified</span>`) +
+      `</div>`
+    ).join('');
+    $sugg.style.display = 'block';
+    active = -1;
+    $sugg.querySelectorAll('div').forEach(d => {{
+      d.addEventListener('mousedown', e => {{ e.preventDefault(); choose(list[+d.dataset.idx]); }});
+    }});
+    window._suggList = list;
+  }}
+  function choose(t) {{
+    selected = t;
+    $search.value = t.id + ' ' + t.name;
+    $pillar.value = t.pillar || '';
+    $node.value   = t.node   || '';
+    $meta.textContent = t.pillar ? `currently: ${{t.pillar}}${{t.node ? ' / ' + t.node : ''}}` : 'currently: unclassified';
+    $msg.textContent = '';
+    $sugg.style.display = 'none';
+    $save.disabled = false;
+  }}
+  $search.addEventListener('input', () => {{
+    selected = null; $save.disabled = true; $meta.textContent = '';
+    render(match($search.value));
+  }});
+  $search.addEventListener('keydown', e => {{
+    const list = window._suggList || [];
+    if (e.key === 'ArrowDown') {{ active = Math.min(active + 1, list.length - 1); paintActive(); e.preventDefault(); }}
+    else if (e.key === 'ArrowUp') {{ active = Math.max(active - 1, 0); paintActive(); e.preventDefault(); }}
+    else if (e.key === 'Enter' && active >= 0) {{ choose(list[active]); e.preventDefault(); }}
+    else if (e.key === 'Escape') {{ $sugg.style.display = 'none'; }}
+  }});
+  function paintActive() {{
+    $sugg.querySelectorAll('div').forEach((d, i) => d.classList.toggle('active', i === active));
+  }}
+  document.addEventListener('click', e => {{
+    if (!e.target.closest('.classify')) $sugg.style.display = 'none';
+  }});
+
+  $save.addEventListener('click', async () => {{
+    if (!selected) return;
+    const pillar = $pillar.value || null;
+    const node   = $node.value.trim() || null;
+    if (!pillar) {{ $msg.textContent = 'pick a pillar'; $msg.className = 'msg err'; return; }}
+    $save.disabled = true; $msg.textContent = 'saving…'; $msg.className = 'msg';
+    try {{
+      const r = await fetch(`/g/${{TOKEN}}/classify`, {{
+        method: 'POST', headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{ ticker_id: selected.id, pillar, node }}),
+      }});
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.error || 'save failed');
+      $msg.textContent = 'saved · re-run correlation_snapshot to refresh the graph';
+      $msg.className = 'msg ok';
+      const idx = DIRECTORY.findIndex(t => t.id === selected.id);
+      if (idx >= 0) {{ DIRECTORY[idx].pillar = pillar; DIRECTORY[idx].node = node; }}
+      $meta.textContent = `currently: ${{pillar}}${{node ? ' / ' + node : ''}}`;
+    }} catch (err) {{
+      $msg.textContent = 'error: ' + err.message;
+      $msg.className = 'msg err';
+    }} finally {{
+      $save.disabled = false;
+    }}
+  }});
 }})();
 </script>
 </body></html>"""
@@ -958,7 +1109,8 @@ def main():
     # HTML (interactive, web viewer) — plotly 2D with linked axes
     html_path = Path(args.out_html)
     html_path.parent.mkdir(parents=True, exist_ok=True)
-    html_path.write_text(build_plotly_2d_html(snapshot, corr, tickers))
+    directory = fetch_all_tickers()
+    html_path.write_text(build_plotly_2d_html(snapshot, corr, tickers, directory))
 
     log.info("Wrote %s + %s + %s (%d nodes, %d edges, %d corr_edges)",
              json_path, html_path, png_path,

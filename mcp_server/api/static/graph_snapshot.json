@@ -1,5 +1,5 @@
 {
-  "asof": "2026-05-10",
+  "asof": "2026-05-11",
   "window_days": 120,
   "n_tickers": 506,
   "axes": {
@@ -734,16 +734,20 @@
     },
     {
       "id": "1815",
-      "name": "\u5bcc\u55ac",
-      "pillar": null,
-      "node": null,
+      "name": "Fulltech Fiber Glass",
+      "pillar": "infrastructure",
+      "node": "pcb-materials",
       "x": 0.018262486997570396,
       "y": -0.23234426053682447,
       "z": 0.24898785425101,
       "vol": 0.8002,
       "ret_30d": 0.083,
-      "color": "#3a3a3a",
-      "partners": []
+      "color": "#ff7a59",
+      "partners": [
+        "AWS",
+        "Google",
+        "Meta"
+      ]
     },
     {
       "id": "1904",
@@ -1090,16 +1094,20 @@
     },
     {
       "id": "2313",
-      "name": "\u83ef\u901a",
-      "pillar": null,
-      "node": null,
+      "name": "Compeq Manufacturing",
+      "pillar": "infrastructure",
+      "node": "high-speed-pcb",
       "x": 0.06172774162288312,
       "y": -0.1521194003722374,
       "z": 0.6300715990453485,
       "vol": 0.8365,
       "ret_30d": 0.21,
-      "color": "#3a3a3a",
-      "partners": []
+      "color": "#ff7a59",
+      "partners": [
+        "AWS",
+        "Google",
+        "Meta"
+      ]
     },
     {
       "id": "2316",
@@ -4027,16 +4035,21 @@
     },
     {
       "id": "3706",
-      "name": "\u795e\u9054",
-      "pillar": null,
-      "node": null,
+      "name": "MiTAC Holdings",
+      "pillar": "infrastructure",
+      "node": "server-odm",
       "x": -0.31484230467476776,
       "y": 0.001654867381709603,
       "z": 0.25692695214105865,
       "vol": 0.3353,
       "ret_30d": 0.0856,
-      "color": "#3a3a3a",
-      "partners": []
+      "color": "#ff7a59",
+      "partners": [
+        "Intel",
+        "Oracle",
+        "OpenAI",
+        "AWS"
+      ]
     },
     {
       "id": "3707",
@@ -6958,16 +6971,6 @@
   ],
   "corr_edges": [
     {
-      "from": "2317",
-      "to": "3231",
-      "rho": 0.716
-    },
-    {
-      "from": "2382",
-      "to": "3231",
-      "rho": 0.797
-    },
-    {
       "from": "2337",
       "to": "2344",
       "rho": 0.711
@@ -6988,14 +6991,24 @@
       "rho": 0.731
     },
     {
+      "from": "2317",
+      "to": "3231",
+      "rho": 0.716
+    },
+    {
       "from": "2344",
       "to": "2408",
       "rho": 0.839
     },
     {
-      "from": "3037",
-      "to": "8046",
-      "rho": 0.804
+      "from": "2382",
+      "to": "3231",
+      "rho": 0.797
+    },
+    {
+      "from": "3017",
+      "to": "3324",
+      "rho": 0.75
     },
     {
       "from": "3037",
@@ -7003,9 +7016,9 @@
       "rho": 0.812
     },
     {
-      "from": "3017",
-      "to": "3324",
-      "rho": 0.75
+      "from": "3037",
+      "to": "8046",
+      "rho": 0.804
     }
   ],
   "discovery": [
@@ -7082,18 +7095,18 @@
           "rho": 0.723
         },
         {
+          "id": "3706",
+          "name": "MiTAC Holdings",
+          "pillar": "infrastructure",
+          "node": "server-odm",
+          "rho": 0.53
+        },
+        {
           "id": "2317",
           "name": "\u9d3b\u6d77",
           "pillar": "infrastructure",
           "node": "server-odm",
           "rho": 0.526
-        },
-        {
-          "id": "2308",
-          "name": "\u53f0\u9054\u96fb",
-          "pillar": "energy",
-          "node": "server-power-supply",
-          "rho": 0.518
         }
       ]
     },
@@ -7353,11 +7366,11 @@
           "rho": 0.487
         },
         {
-          "id": "5274",
-          "name": "\u4fe1\u9a4a",
+          "id": "3706",
+          "name": "MiTAC Holdings",
           "pillar": "infrastructure",
-          "node": "bmc-management",
-          "rho": 0.462
+          "node": "server-odm",
+          "rho": 0.478
         }
       ]
     },
@@ -7390,18 +7403,18 @@
           "rho": 0.68
         },
         {
-          "id": "6125",
-          "name": "\u5ee3\u904b",
-          "pillar": "equipment",
-          "node": "equipment-materials",
-          "rho": 0.496
+          "id": "1815",
+          "name": "Fulltech Fiber Glass",
+          "pillar": "infrastructure",
+          "node": "pcb-materials",
+          "rho": 0.515
         },
         {
-          "id": "5274",
-          "name": "\u4fe1\u9a4a",
+          "id": "3706",
+          "name": "MiTAC Holdings",
           "pillar": "infrastructure",
-          "node": "bmc-management",
-          "rho": 0.482
+          "node": "server-odm",
+          "rho": 0.502
         }
       ]
     },
@@ -7573,11 +7586,11 @@
           "rho": 0.47
         },
         {
-          "id": "2317",
-          "name": "\u9d3b\u6d77",
+          "id": "3706",
+          "name": "MiTAC Holdings",
           "pillar": "infrastructure",
           "node": "server-odm",
-          "rho": 0.453
+          "rho": 0.469
         }
       ]
     },
@@ -7661,11 +7674,11 @@
           "rho": 0.495
         },
         {
-          "id": "6125",
-          "name": "\u5ee3\u904b",
-          "pillar": "equipment",
-          "node": "equipment-materials",
-          "rho": 0.433
+          "id": "3706",
+          "name": "MiTAC Holdings",
+          "pillar": "infrastructure",
+          "node": "server-odm",
+          "rho": 0.453
         }
       ]
     },
@@ -7742,18 +7755,18 @@
           "rho": 0.595
         },
         {
+          "id": "3706",
+          "name": "MiTAC Holdings",
+          "pillar": "infrastructure",
+          "node": "server-odm",
+          "rho": 0.399
+        },
+        {
           "id": "3037",
           "name": "\u6b23\u8208",
           "pillar": "infrastructure",
           "node": "high-speed-pcb",
           "rho": 0.392
-        },
-        {
-          "id": "3189",
-          "name": "\u666f\u78a9",
-          "pillar": "infrastructure",
-          "node": "high-speed-pcb",
-          "rho": 0.385
         }
       ]
     },
@@ -7890,50 +7903,6 @@
       ]
     },
     {
-      "ticker": "3048",
-      "name": "\u76ca\u767b",
-      "suggested_pillar": "semiconductor",
-      "suggested_node": null,
-      "conviction": 0.623,
-      "neighbours": [
-        {
-          "id": "2344",
-          "name": "\u83ef\u90a6\u96fb",
-          "pillar": "semiconductor",
-          "node": "memory-dram",
-          "rho": 0.635
-        },
-        {
-          "id": "6155",
-          "name": "\u921e\u5bf6",
-          "pillar": "equipment",
-          "node": "testing-probing",
-          "rho": 0.625
-        },
-        {
-          "id": "2408",
-          "name": "\u5357\u4e9e\u79d1",
-          "pillar": "semiconductor",
-          "node": "dram-memory",
-          "rho": 0.623
-        },
-        {
-          "id": "1503",
-          "name": "\u58eb\u96fb",
-          "pillar": "energy",
-          "node": "heavy-electrical",
-          "rho": 0.589
-        },
-        {
-          "id": "2337",
-          "name": "\u65fa\u5b8f",
-          "pillar": "semiconductor",
-          "node": "memory-flash",
-          "rho": 0.54
-        }
-      ]
-    },
-    {
       "ticker": "6188",
       "name": "\u5ee3\u660e",
       "suggested_pillar": "equipment",
@@ -7969,11 +7938,11 @@
           "rho": 0.562
         },
         {
-          "id": "2308",
-          "name": "\u53f0\u9054\u96fb",
-          "pillar": "energy",
-          "node": "server-power-supply",
-          "rho": 0.54
+          "id": "3706",
+          "name": "MiTAC Holdings",
+          "pillar": "infrastructure",
+          "node": "server-odm",
+          "rho": 0.545
         }
       ]
     },
@@ -8418,6 +8387,50 @@
       ]
     },
     {
+      "ticker": "2421",
+      "name": "\u5efa\u6e96",
+      "suggested_pillar": "infrastructure",
+      "suggested_node": null,
+      "conviction": 0.607,
+      "neighbours": [
+        {
+          "id": "2308",
+          "name": "\u53f0\u9054\u96fb",
+          "pillar": "energy",
+          "node": "server-power-supply",
+          "rho": 0.713
+        },
+        {
+          "id": "3324",
+          "name": "\u96d9\u9d3b",
+          "pillar": "infrastructure",
+          "node": "thermal-cooling",
+          "rho": 0.656
+        },
+        {
+          "id": "2356",
+          "name": "\u82f1\u696d\u9054",
+          "pillar": "infrastructure",
+          "node": "server-odm",
+          "rho": 0.607
+        },
+        {
+          "id": "3706",
+          "name": "MiTAC Holdings",
+          "pillar": "infrastructure",
+          "node": "server-odm",
+          "rho": 0.584
+        },
+        {
+          "id": "1519",
+          "name": "\u83ef\u57ce",
+          "pillar": "energy",
+          "node": "heavy-electrical",
+          "rho": 0.584
+        }
+      ]
+    },
+    {
       "ticker": "2328",
       "name": "\u5ee3\u5b87",
       "suggested_pillar": "equipment",
@@ -8821,6 +8834,13 @@
       "conviction": 0.595,
       "neighbours": [
         {
+          "id": "1815",
+          "name": "Fulltech Fiber Glass",
+          "pillar": "infrastructure",
+          "node": "pcb-materials",
+          "rho": 0.646
+        },
+        {
           "id": "2408",
           "name": "\u5357\u4e9e\u79d1",
           "pillar": "semiconductor",
@@ -8847,13 +8867,6 @@
           "pillar": "infrastructure",
           "node": "high-speed-pcb",
           "rho": 0.578
-        },
-        {
-          "id": "2317",
-          "name": "\u9d3b\u6d77",
-          "pillar": "infrastructure",
-          "node": "server-odm",
-          "rho": 0.552
         }
       ]
     },
@@ -9078,6 +9091,50 @@
       ]
     },
     {
+      "ticker": "2357",
+      "name": "\u83ef\u78a9",
+      "suggested_pillar": "infrastructure",
+      "suggested_node": "server-odm",
+      "conviction": 0.581,
+      "neighbours": [
+        {
+          "id": "3706",
+          "name": "MiTAC Holdings",
+          "pillar": "infrastructure",
+          "node": "server-odm",
+          "rho": 0.598
+        },
+        {
+          "id": "3231",
+          "name": "\u7def\u5275",
+          "pillar": "infrastructure",
+          "node": "server-odm",
+          "rho": 0.586
+        },
+        {
+          "id": "2317",
+          "name": "\u9d3b\u6d77",
+          "pillar": "infrastructure",
+          "node": "server-odm",
+          "rho": 0.576
+        },
+        {
+          "id": "2356",
+          "name": "\u82f1\u696d\u9054",
+          "pillar": "infrastructure",
+          "node": "server-odm",
+          "rho": 0.542
+        },
+        {
+          "id": "3661",
+          "name": "\u4e16\u82af-KY",
+          "pillar": "semiconductor",
+          "node": "asic-custom-ip",
+          "rho": 0.522
+        }
+      ]
+    },
+    {
       "ticker": "8096",
       "name": "\u64ce\u4e9e",
       "suggested_pillar": "semiconductor",
@@ -9157,8 +9214,8 @@
           "rho": 0.568
         },
         {
-          "id": "3231",
-          "name": "\u7def\u5275",
+          "id": "3706",
+          "name": "MiTAC Holdings",
           "pillar": "infrastructure",
           "node": "server-odm",
           "rho": 0.568
@@ -9342,6 +9399,50 @@
       ]
     },
     {
+      "ticker": "2476",
+      "name": "\u9245\u7965",
+      "suggested_pillar": "infrastructure",
+      "suggested_node": null,
+      "conviction": 0.562,
+      "neighbours": [
+        {
+          "id": "3035",
+          "name": "\u667a\u539f",
+          "pillar": "semiconductor",
+          "node": "asic-custom-ip",
+          "rho": 0.631
+        },
+        {
+          "id": "6213",
+          "name": "\u806f\u8302",
+          "pillar": "infrastructure",
+          "node": "ccl-laminate",
+          "rho": 0.566
+        },
+        {
+          "id": "6274",
+          "name": "\u53f0\u71ff",
+          "pillar": "infrastructure",
+          "node": "ccl-laminate",
+          "rho": 0.562
+        },
+        {
+          "id": "1815",
+          "name": "Fulltech Fiber Glass",
+          "pillar": "infrastructure",
+          "node": "pcb-materials",
+          "rho": 0.543
+        },
+        {
+          "id": "8261",
+          "name": "\u5bcc\u9f0e",
+          "pillar": "semiconductor",
+          "node": "asic-custom-ip",
+          "rho": 0.54
+        }
+      ]
+    },
+    {
       "ticker": "2457",
       "name": "\u98db\u5b8f",
       "suggested_pillar": "energy",
@@ -9382,50 +9483,6 @@
           "pillar": "equipment",
           "node": "equipment-materials",
           "rho": 0.497
-        }
-      ]
-    },
-    {
-      "ticker": "2357",
-      "name": "\u83ef\u78a9",
-      "suggested_pillar": "infrastructure",
-      "suggested_node": "server-odm",
-      "conviction": 0.559,
-      "neighbours": [
-        {
-          "id": "3231",
-          "name": "\u7def\u5275",
-          "pillar": "infrastructure",
-          "node": "server-odm",
-          "rho": 0.586
-        },
-        {
-          "id": "2317",
-          "name": "\u9d3b\u6d77",
-          "pillar": "infrastructure",
-          "node": "server-odm",
-          "rho": 0.576
-        },
-        {
-          "id": "2356",
-          "name": "\u82f1\u696d\u9054",
-          "pillar": "infrastructure",
-          "node": "server-odm",
-          "rho": 0.542
-        },
-        {
-          "id": "3661",
-          "name": "\u4e16\u82af-KY",
-          "pillar": "semiconductor",
-          "node": "asic-custom-ip",
-          "rho": 0.522
-        },
-        {
-          "id": "2382",
-          "name": "\u5ee3\u9054",
-          "pillar": "infrastructure",
-          "node": "server-odm",
-          "rho": 0.515
         }
       ]
     },

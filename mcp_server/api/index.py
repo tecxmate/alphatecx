@@ -1144,6 +1144,17 @@ def graph_png(token: str):
     return graph_view.get_graph_png()
 
 
+@app.post(f"/g/{{token}}/classify")
+async def graph_classify(token: str, request: Request):
+    if token != MCP_BEARER_TOKEN:
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"ok": False, "error": "invalid json"})
+    return graph_view.classify_ticker(payload)
+
+
 @app.get(f"/d/{{token}}/")
 def dashboard(token: str):
     if token != MCP_BEARER_TOKEN:
