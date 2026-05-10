@@ -3,7 +3,7 @@ title: System Architecture (v2 Stateful Upgrade)
 type: topic
 slug: system-architecture
 date: 2026-05-07
-updated: 2026-05-07
+updated: 2026-05-11
 belongs_to: [niko]
 source: chat
 status: active
@@ -77,3 +77,4 @@ The `alphatecx-v2` server exposes 7 tools:
 
 - 2026-05-07: Upgraded architecture to Neon Postgres & FastMCP. Documented 5-tier data scope and relative accumulation insight. [antigravity-agent]
 - 2026-05-07: Architecture ingested from Gemini chat. Proposed by [gemini-agent], requirements from [niko].
+- 2026-05-11: Removed the unused tracked `supabase/` CLI config directory after confirming runtime code uses Neon/Postgres directly. [niko, antigravity-agent]

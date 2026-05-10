@@ -340,3 +340,9 @@ attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
 - Replaced per-ticker news SQL calls in `src/dashboard/build_ticker_pages.py` with one recent-news query and in-memory ticker/company title matching.
 - Preserved the original 30-day window and 15-item per-ticker cap.
 - Verified with focused Ruff, compileall, and `pytest -q`.
+
+## [2026-05-11] chat | Removed Supabase CLI config
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User confirmed `supabase/` is not used.
+- Deleted tracked `supabase/config.toml` and `supabase/.temp/cli-latest`; runtime code already uses Neon/Postgres directly.
+- Updated [System Architecture](topics/system-architecture.md).
