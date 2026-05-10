@@ -439,31 +439,9 @@ def render_page(meta, ohlcv, flow, valuation, sector_idx, signals, news, thesis)
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{escape(ticker)} {escape(name)} · alphatecx</title>
 <link rel="stylesheet" href="../dashboard.css">
-<style>
-  .ticker-header {{ display:flex; flex-wrap:wrap; align-items:center; gap:10px;
-    margin-bottom:10px; }}
-  .ticker-header h1 {{ font-size:20px; margin:0; }}
-  .pillpill {{ display:inline-block; padding:2px 9px; border-radius:12px;
-    background:#94a3b8; color:white; font-size:11px; font-weight:600; }}
-  .valpill, .sigpill {{ display:inline-block; padding:2px 9px; border-radius:12px;
-    background:#f1f5f9; color:#334155; font-size:12px; font-weight:500; }}
-  .valpill b, .sigpill b {{ color:#0f172a; }}
-  .thesis-box {{ margin:10px 0; padding:12px 16px; background:#fffbeb;
-    border:1px solid #fcd34d; border-radius:8px; font-size:13px; line-height:1.6; }}
-  .thesis-head {{ font-weight:600; margin-bottom:4px; }}
-  .thesis-line {{ font-size:12px; color:#475569; margin-top:3px; }}
-  .news {{ margin-top:14px; padding:10px 16px; background:#f8fafc;
-    border:1px solid #e2e8f0; border-radius:8px; font-size:12px; }}
-  .news h3 {{ font-size:13px; margin:0 0 6px; }}
-  .news ul {{ margin:0; padding-left:20px; line-height:1.7; }}
-  .news a {{ color:#2563eb; text-decoration:none; }}
-  .news a:hover {{ text-decoration:underline; }}
-  .news .meta {{ color:#94a3b8; font-size:11px; }}
-  .nav-back {{ font-size:12px; color:#64748b; }}
-  .nav-back a {{ color:#2563eb; text-decoration:none; }}
-</style></head><body>
+</head><body>
 <div class="wrap">
-  <div class="nav-back"><a href="../home">Home</a> · <a href="../">Dashboard</a></div>
+  <div class="nav-back"><a href="../home">Home</a><a href="../">Dashboard</a><button id="theme-toggle" class="terminal-btn" type="button">Dark</button></div>
   <div class="ticker-header">
     <h1>{escape(ticker)} <span style="color:#64748b; font-weight:500">{escape(name)}</span></h1>
     {pillar_pill} {val_pill} {sig_pill}
@@ -472,6 +450,7 @@ def render_page(meta, ohlcv, flow, valuation, sector_idx, signals, news, thesis)
   {plot_html}
   {news_html}
 </div>
+<script src="../dashboard.js"></script>
 </body></html>"""
 
 

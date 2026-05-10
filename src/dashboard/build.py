@@ -390,7 +390,10 @@ def build_html(watchlist, theses, discovery, leadlag) -> str:
       <div class="meta"><a href="home">Home</a></div>
       <h1>Taiwan AI universe — data dashboard</h1>
     </div>
-    <div class="meta">{counts} · as of {today}</div>
+    <div class="header-actions">
+      <button id="theme-toggle" class="terminal-btn" type="button">Dark</button>
+      <div class="meta">{counts} · as of {today}</div>
+    </div>
   </div>
   <div class="tabs">
     <button class="tab active" data-tab="watchlist">Watchlist · {len(watchlist)}</button>

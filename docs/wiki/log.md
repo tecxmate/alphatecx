@@ -358,3 +358,9 @@ attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
 - User asked for one main page because dashboard, graph, and ticker pages were scattered.
 - Added token-protected hub routes `/h/{token}/` and `/d/{token}/home`.
 - Hub links dashboard, graph, graph PNG/JSON, health, MCP endpoint, and all generated ticker pages.
+
+## [2026-05-11] chat | Bloomberg-lite frontend redesign
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User requested a systematic Bloomberg Terminal-lite frontend, not dark-only and mobile friendly.
+- Added shared dense light/dark theme styling, theme persistence, hub/dashboard/ticker theme toggles, and mobile scrolling for dense tables/graphs.
+- Graph page keeps Plotly panels readable on mobile through horizontal plot regions instead of compressing charts to phone width.

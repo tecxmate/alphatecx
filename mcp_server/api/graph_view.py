@@ -104,40 +104,35 @@ def get_home_html(token: str) -> HTMLResponse:
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>alphatecx · home</title>
+<link rel="stylesheet" href="/d/{escape(token)}/dashboard.css">
 <style>
-html,body {{ margin:0; padding:0; background:#fff; color:#0f172a;
-  font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
-  font-size:14px; line-height:1.5; }}
-.wrap {{ max-width:1120px; margin:0 auto; padding:18px 20px 34px; }}
-header {{ display:flex; align-items:flex-end; justify-content:space-between;
-  gap:14px; flex-wrap:wrap; border-bottom:1px solid #e2e8f0; padding-bottom:12px; }}
-h1 {{ font-size:22px; line-height:1.2; margin:0; font-weight:650; }}
-.meta,.muted {{ color:#64748b; font-size:12px; }}
-.grid {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-top:16px; }}
-.link {{ display:block; border:1px solid #dbe3ee; border-radius:8px; padding:14px 16px;
-  text-decoration:none; color:#0f172a; background:#fff; min-height:86px; }}
-.link:hover {{ border-color:#2563eb; background:#f8fbff; }}
-.link strong {{ display:block; font-size:15px; margin-bottom:5px; }}
-.link span {{ display:block; color:#64748b; font-size:12px; }}
-.section {{ margin-top:22px; }}
-.section h2 {{ font-size:14px; margin:0 0 8px; font-weight:650; }}
-.ticker-list {{ display:flex; flex-wrap:wrap; gap:6px; }}
-.ticker {{ display:inline-block; padding:4px 8px; border:1px solid #dbe3ee; border-radius:6px;
-  color:#2563eb; text-decoration:none; font-size:12px; background:#fff; }}
-.ticker:hover {{ border-color:#2563eb; background:#f8fbff; }}
+.grid {{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:10px; }}
+.link {{ display:block; border:1px solid var(--line); padding:12px 13px;
+  text-decoration:none; color:var(--text); background:var(--surface); min-height:76px;
+  box-shadow:var(--shadow); }}
+.link:hover {{ border-color:var(--link); background:var(--surface-2); text-decoration:none; }}
+.link strong {{ display:block; font-size:13px; margin-bottom:5px; }}
+.link span {{ display:block; color:var(--muted); font-size:11px; }}
+.section {{ margin-top:18px; }}
+.section h2 {{ font-size:12px; margin:0 0 7px; font-weight:650; text-transform:uppercase; color:var(--muted); }}
+.ticker-list {{ display:flex; flex-wrap:wrap; gap:5px; }}
+.ticker {{ display:inline-block; padding:3px 7px; border:1px solid var(--line);
+  color:var(--link); text-decoration:none; font-size:11px; background:var(--surface); }}
+.ticker:hover {{ border-color:var(--link); background:var(--surface-2); }}
 @media (max-width: 820px) {{
-  .wrap {{ padding:14px 12px 28px; }}
   .grid {{ grid-template-columns:1fr; }}
-  h1 {{ font-size:19px; }}
 }}
 </style></head><body>
 <div class="wrap">
-  <header>
+  <header class="header">
     <div>
       <h1>alphatecx</h1>
       <div class="meta">Taiwan AI supply-chain intelligence</div>
     </div>
-    <div class="meta">{len(ticker_pages)} ticker pages available</div>
+    <div class="header-actions">
+      <button id="theme-toggle" class="terminal-btn" type="button">Dark</button>
+      <div class="meta">{len(ticker_pages)} ticker pages available</div>
+    </div>
   </header>
 
   <div class="grid">
@@ -172,6 +167,7 @@ h1 {{ font-size:22px; line-height:1.2; margin:0; font-weight:650; }}
     <div class="ticker-list">{ticker_links}</div>
   </div>
 </div>
+<script src="/d/{escape(token)}/dashboard.js"></script>
 </body></html>"""
     return HTMLResponse(content=html)
 

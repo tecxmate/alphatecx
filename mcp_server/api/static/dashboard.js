@@ -1,4 +1,24 @@
 (function () {
+  const root = document.documentElement;
+  const savedTheme = localStorage.getItem('alphatecx-theme');
+  if (savedTheme === 'dark' || savedTheme === 'light') {
+    root.dataset.theme = savedTheme;
+  }
+  const themeBtn = document.getElementById('theme-toggle');
+  function syncThemeButton() {
+    if (!themeBtn) return;
+    themeBtn.textContent = (root.dataset.theme || 'light') === 'dark' ? 'Light' : 'Dark';
+  }
+  if (themeBtn) {
+    themeBtn.addEventListener('click', () => {
+      const next = (root.dataset.theme || 'light') === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = next;
+      localStorage.setItem('alphatecx-theme', next);
+      syncThemeButton();
+    });
+    syncThemeButton();
+  }
+
   const tabs = document.querySelectorAll('.tab');
   const panels = document.querySelectorAll('.panel');
   const search = document.getElementById('q');
@@ -38,6 +58,7 @@
 
   // Search across the active panel only
   function applyFilter() {
+    if (!search) return;
     const q = (search.value || '').toLowerCase();
     const tbl = document.querySelector('.panel.active table.dt');
     if (!tbl) return;
@@ -46,7 +67,7 @@
         q && !tr.textContent.toLowerCase().includes(q) ? 'none' : '';
     }
   }
-  search.addEventListener('input', applyFilter);
+  if (search) search.addEventListener('input', applyFilter);
 
   // Open from URL hash (#theses, #leadlag, etc.)
   const hash = (location.hash || '').replace(/^#/, '');
