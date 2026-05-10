@@ -451,166 +451,6 @@ def build_plotly_html(snap: dict) -> str:
 </body></html>"""
 
 
-def build_matplotlib_panels(snap: dict, corr: np.ndarray, tickers: list[str]) -> bytes:
-    """Render the snapshot as a 2x2 light-theme PNG (returns raw bytes).
-
-    Panels:
-        TL: cluster map (correlation MDS X vs Y) — color = pillar
-        TR: cluster axis vs 30d return (X vs ret_30d)
-        BL: risk/return scatter (annualised vol vs ret_30d)
-        BR: correlation heatmap, sorted by pillar
-    """
-    import io
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as mpatches
-
-    PILLAR_COLOR = {
-        "semiconductor":  "#2563eb",
-        "infrastructure": "#ea580c",
-        "equipment":      "#7c3aed",
-        "energy":         "#16a34a",
-        None:             "#cbd5e0",
-    }
-    PILLAR_ORDER = ["semiconductor", "equipment", "infrastructure", "energy", None]
-
-    nodes = snap["nodes"]
-    by_id = {n["id"]: n for n in nodes}
-    ids        = [n["id"]      for n in nodes]
-    names      = [n["name"]    for n in nodes]
-    pillars    = [n["pillar"]  for n in nodes]
-    xs         = np.array([n["x"]       for n in nodes])
-    ys         = np.array([n["y"]       for n in nodes])
-    ret30      = np.array([n["ret_30d"] for n in nodes])
-    vols       = np.array([n["vol"]     for n in nodes])
-    colors     = [PILLAR_COLOR[p] for p in pillars]
-    is_ctx     = np.array([p is None for p in pillars])
-    sizes      = np.where(is_ctx, 12, np.clip(vols * 60, 18, 90))
-
-    plt.rcParams.update({
-        "font.family": "DejaVu Sans",
-        "axes.facecolor": "white",
-        "figure.facecolor": "white",
-        "axes.edgecolor": "#94a3b8",
-        "axes.labelcolor": "#475569",
-        "xtick.color": "#64748b",
-        "ytick.color": "#64748b",
-        "axes.titlecolor": "#0f172a",
-        "axes.titlesize": 12,
-        "axes.titleweight": "600",
-        "axes.labelsize": 10,
-        "xtick.labelsize": 9,
-        "ytick.labelsize": 9,
-    })
-
-    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
-    fig.suptitle(
-        f"Taiwan AI universe — {snap['n_tickers']} tickers · window {snap['window_days']}d · as of {snap['asof']}",
-        fontsize=14, fontweight="600", color="#0f172a", y=0.995,
-    )
-
-    # ── TL: cluster map ──
-    ax = axes[0, 0]
-    # Draw context first (under)
-    ax.scatter(xs[is_ctx],  ys[is_ctx],  c="#cbd5e0", s=8, alpha=0.5, linewidths=0)
-    # Then classified
-    ax.scatter(xs[~is_ctx], ys[~is_ctx], c=[colors[i] for i in range(len(nodes)) if not is_ctx[i]],
-               s=sizes[~is_ctx], alpha=0.85, linewidths=0.4, edgecolors="white")
-    # Label only classified
-    for i, n in enumerate(nodes):
-        if pillars[i] is None: continue
-        ax.annotate(ids[i], (xs[i], ys[i]), fontsize=7, color="#334155",
-                    xytext=(3, 3), textcoords="offset points")
-    ax.set_title("Correlation cluster (top-down)")
-    ax.set_xlabel("MDS axis 1")
-    ax.set_ylabel("MDS axis 2")
-    ax.grid(True, linestyle="--", linewidth=0.5, color="#e2e8f0")
-    ax.axhline(0, color="#cbd5e0", linewidth=0.7)
-    ax.axvline(0, color="#cbd5e0", linewidth=0.7)
-
-    # Overlay supply-chain edges as faint grey lines (cluster panel only)
-    for e in snap["edges"]:
-        a, b = by_id.get(e["from"]), by_id.get(e["to"])
-        if not a or not b: continue
-        ax.plot([a["x"], b["x"]], [a["y"], b["y"]],
-                color="#fbbf24", linewidth=0.6, alpha=0.45, zorder=1)
-
-    # ── TR: cluster axis vs 30d return ──
-    ax = axes[0, 1]
-    ax.axhline(0, color="#94a3b8", linewidth=0.8, zorder=1)
-    ax.scatter(xs[is_ctx],  ret30[is_ctx],  c="#cbd5e0", s=8, alpha=0.5, linewidths=0)
-    ax.scatter(xs[~is_ctx], ret30[~is_ctx],
-               c=[colors[i] for i in range(len(nodes)) if not is_ctx[i]],
-               s=sizes[~is_ctx], alpha=0.85, linewidths=0.4, edgecolors="white")
-    for i, n in enumerate(nodes):
-        if pillars[i] is None: continue
-        if abs(ret30[i]) > 0.15:  # only label movers
-            ax.annotate(ids[i], (xs[i], ret30[i]), fontsize=7, color="#334155",
-                        xytext=(3, 3), textcoords="offset points")
-    ax.set_title("Cluster position vs 30d return")
-    ax.set_xlabel("MDS axis 1 (cluster)")
-    ax.set_ylabel("30-day return")
-    ax.yaxis.set_major_formatter(plt.matplotlib.ticker.PercentFormatter(1.0))
-    ax.grid(True, linestyle="--", linewidth=0.5, color="#e2e8f0")
-
-    # ── BL: risk/return scatter ──
-    ax = axes[1, 0]
-    ax.axhline(0, color="#94a3b8", linewidth=0.8, zorder=1)
-    ax.scatter(vols[is_ctx],  ret30[is_ctx],  c="#cbd5e0", s=8, alpha=0.5, linewidths=0)
-    ax.scatter(vols[~is_ctx], ret30[~is_ctx],
-               c=[colors[i] for i in range(len(nodes)) if not is_ctx[i]],
-               s=sizes[~is_ctx], alpha=0.85, linewidths=0.4, edgecolors="white")
-    for i, n in enumerate(nodes):
-        if pillars[i] is None: continue
-        if vols[i] > 0.6 or abs(ret30[i]) > 0.3:  # label outliers
-            ax.annotate(ids[i], (vols[i], ret30[i]), fontsize=7, color="#334155",
-                        xytext=(3, 3), textcoords="offset points")
-    ax.set_title("Risk vs return")
-    ax.set_xlabel("Annualised volatility")
-    ax.set_ylabel("30-day return")
-    ax.xaxis.set_major_formatter(plt.matplotlib.ticker.PercentFormatter(1.0))
-    ax.yaxis.set_major_formatter(plt.matplotlib.ticker.PercentFormatter(1.0))
-    ax.grid(True, linestyle="--", linewidth=0.5, color="#e2e8f0")
-
-    # ── BR: correlation heatmap, sorted by pillar then ticker (classified only) ──
-    ax = axes[1, 1]
-    ticker_to_idx = {t: i for i, t in enumerate(tickers)}
-    classified_in_corr = [n for n in nodes if n["pillar"] and n["id"] in ticker_to_idx]
-    classified_in_corr.sort(key=lambda n: (PILLAR_ORDER.index(n["pillar"]), n["id"]))
-    if len(classified_in_corr) >= 4:
-        order = [ticker_to_idx[n["id"]] for n in classified_in_corr]
-        sub = corr[np.ix_(order, order)]
-        im = ax.imshow(sub, cmap="RdYlBu_r", vmin=-1, vmax=1, aspect="auto")
-        labels = [n["id"] for n in classified_in_corr]
-        ax.set_xticks(range(len(labels)))
-        ax.set_yticks(range(len(labels)))
-        ax.set_xticklabels(labels, rotation=90, fontsize=6)
-        ax.set_yticklabels(labels, fontsize=6)
-        for tick, n in zip(ax.get_yticklabels(), classified_in_corr):
-            tick.set_color(PILLAR_COLOR[n["pillar"]])
-        for tick, n in zip(ax.get_xticklabels(), classified_in_corr):
-            tick.set_color(PILLAR_COLOR[n["pillar"]])
-        ax.set_title("Correlation heatmap (classified, sorted by pillar)")
-        cbar = plt.colorbar(im, ax=ax, fraction=0.04, pad=0.02)
-        cbar.ax.tick_params(labelsize=8)
-    else:
-        ax.text(0.5, 0.5, "not enough classified data", ha="center", va="center",
-                transform=ax.transAxes, color="#94a3b8")
-        ax.set_axis_off()
-
-    # Pillar legend (single, on the figure)
-    handles = [mpatches.Patch(color=PILLAR_COLOR[p],
-               label=p if p else "context (unclassified)")
-               for p in PILLAR_ORDER]
-    fig.legend(handles=handles, loc="lower center",
-               bbox_to_anchor=(0.5, -0.005), ncol=5,
-               frameon=False, fontsize=10)
-
-    plt.tight_layout(rect=[0, 0.03, 1, 0.97])
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=140, bbox_inches="tight",
-                facecolor="white")
-    plt.close(fig)
-    return buf.getvalue()
 
 
 PLOTLY_PILLAR_COLOR = {
@@ -1086,6 +926,16 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
 </body></html>"""
 
 
+def build_combined_png(snap: dict, corr: np.ndarray, tickers: list[str]) -> bytes:
+    """Render the same 2x2 layout the web viewer uses, as a static PNG.
+
+    One rendering codepath shared with the HTML viewer (`_fig_combined`).
+    Uses Plotly's Kaleido image engine; no matplotlib dependency.
+    """
+    fig = _fig_combined(snap, corr, tickers)
+    return fig.to_image(format="png", width=1400, height=1100, scale=2)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--window", type=int, default=120)
@@ -1101,10 +951,9 @@ def main():
     json_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.write_text(json.dumps(snapshot, indent=2))
 
-    # PNG (static, Telegram/reports)
-    png = build_matplotlib_panels(snapshot, corr, tickers)
+    # PNG (static, Telegram/reports) — same Plotly figure as the web viewer.
     png_path = Path(args.out_json).parent / "graph.png"
-    png_path.write_bytes(png)
+    png_path.write_bytes(build_combined_png(snapshot, corr, tickers))
 
     # HTML (interactive, web viewer) — plotly 2D with linked axes
     html_path = Path(args.out_html)
