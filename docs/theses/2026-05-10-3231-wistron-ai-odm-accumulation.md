@@ -12,8 +12,12 @@ inputs: [sc_supply_chain_map, q_indicators, raw_flow_history, q_valuation, q_ind
 sources_naive: [q_*, sc_*, raw_flow_history, q_valuation]
 sources_aware: [n_for_ticker, q_indicators, q_valuation, raw_flow_history, q_lead_lag]
 naive_conviction: 3
-aware_conviction: 4
-disagreement: aware-stronger
+aware_conviction: 3
+disagreement: agree
+factor_alpha_t_stat: 0.17
+factor_alpha_annualised: 0.114
+factor_r_squared: 0.44
+factor_disclosure: Idiosyncratic alpha is statistically indistinguishable from zero (q_factor_alpha 2026-05-10, n=51, window=90d). The trade rides market β=0.55 + sector β=0.37, not a special-name alpha. Conviction reduced from 4 → 3.
 ---
 
 # Wistron (3231) — AI server-ODM cluster, foreign accumulation confirmed
@@ -45,10 +49,23 @@ Bear / risk case (acknowledged but secondary):
 - Margin balance creeping up (54.7K → 55.6K shares this week) — early
   retail crowding signal, not yet acute.
 
-Verdict: **bullish, conviction 4/5** (naive 3/5 → aware 4/5 = aware-stronger
-by one notch). Capped below 5 because the 52w-high (161) magnet has been
-unbroken twice and the cluster is correlated tightly enough that one of
-{2317, 2382, 6669, 2356} turning would drag 3231 with it.
+Verdict: **bullish, conviction 3/5** (naive 3 / aware 3 = agree). Initially
+opened at aware_conviction 4 but `q_factor_alpha` (2026-05-10, 90d window,
+n=51) decomposed the +20.9pt sector-alpha into:
+
+  market β = 0.55 (t=3.52)
+  sector β = 0.37 (t=1.58)
+  flow   β = 0.03 (t=0.20)
+  residual α = +11.4% annualised, t=+0.17 (NOT significant)
+  R² = 44%
+
+Translation: the +20.9pt outperformance is **factor-driven, not
+idiosyncratic**. The trade is a coherent factor-rotation play (long market
+β + long AI-sector β) and the fundamentals/flow narrative supports it,
+but there's no statistically distinguishable special-name alpha here.
+Drop conviction one notch and treat the position as a beta trade, not
+an alpha trade. Position management unchanged — invalidation levels
+still binding.
 
 ## Position management
 
@@ -102,6 +119,33 @@ sustained moves outside the 134-149 channel count.
   Marginal.
 - Practical implication: **3231 doesn't have a reliable upstream signal
   ticker**. Watch the cluster (2382/2317/6669/2356) as a unit.
+
+## Factor decomposition (q_factor_alpha)
+
+Run on 2026-05-10 against the last 90 calendar days (n=51 trading days
+after intersection with sector-index, flow-factor and market-factor
+date sets).
+
+| Quantity | Value | Reading |
+|---|---|---|
+| α (daily)              | +0.045%       | tiny |
+| α annualised           | +11.4%        | apparent outperformance |
+| α t-stat               | +0.17         | **noise — not significant** |
+| R² (factor explained)  | 44%           | moderate |
+| β market (0050)        | +0.55, t=3.52 | significant moderate exposure |
+| β sector (數位雲端)     | +0.37, t=1.58 | marginal moderate exposure |
+| β flow (foreign-z LS)  | +0.03, t=0.20 | ≈ zero, not a flow trade |
+
+The flow β being ~zero is interesting given how much I leaned on
+"foreign +169M shares 20d" in the bull case. It means Wistron's daily
+returns are NOT correlated with the flow-factor portfolio after market
+and sector are already in. The foreign-buying narrative is real in
+absolute terms, but the daily price action isn't clocked off the
+foreign-flow rhythm — it's clocked off TAIEX and the AI-sector index.
+
+**This narrows the trade thesis. We're long beta. The fundamental
+narrative gives conviction in the regime; the factor model says we
+shouldn't expect Wistron to outperform peers within the regime.**
 
 ## What the news says (aware pass)
 
