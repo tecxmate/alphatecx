@@ -742,10 +742,12 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
 
     tracked_table = (
         '<div class="table-tools"><input class="table-filter" data-target="tracked-table" '
-        'type="search" placeholder="Filter tracked tickers"></div>'
+        'type="search" placeholder="Search tracked tickers to show results"></div>'
+        '<div id="tracked-state" class="empty">Search by ticker, company, pillar, or node to load up to 20 matches.</div>'
         '<div class="table-scroll"><table id="tracked-table" class="terminal-table">'
         '<thead><tr><th>Ticker</th><th>Name</th><th>Pillar</th><th>Node</th><th>Action</th></tr></thead>'
         '<tbody></tbody></table></div>'
+        '<div id="tracked-pager" class="pager"></div>'
     )
 
     return f"""<!doctype html>
@@ -784,6 +786,7 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
   .panel.active {{ display:block; }}
   .panel .js-plotly-plot {{ background:var(--surface); border:1px solid var(--line); }}
   .hint {{ color:var(--muted); font-size:11px; margin:0 0 6px; }}
+  .hint.hidden {{ display:none; }}
   .disc {{ margin-top:12px; padding:10px 12px; background:var(--surface);
     border:1px solid var(--line); max-width:640px; }}
   .disc h2 {{ font-size:12px; margin:0 0 7px; color:var(--muted); text-transform:uppercase; }}
@@ -835,6 +838,11 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
     font-weight:650; border-radius:999px; white-space:nowrap; }}
   .empty {{ padding:18px; border:1px dashed var(--line); color:var(--muted);
     background:var(--surface); }}
+  .pager {{ display:flex; align-items:center; gap:8px; margin-top:8px; color:var(--muted);
+    font-size:11px; }}
+  .pager button {{ border:1px solid var(--line); background:var(--surface);
+    color:var(--text); padding:4px 8px; font:inherit; font-size:11px; cursor:pointer; }}
+  .pager button:disabled {{ opacity:0.4; cursor:not-allowed; }}
   @media (max-width: 820px) {{
     .wrap {{ padding:8px; }}
     .header-actions {{ width:100%; justify-content:space-between; }}
@@ -865,7 +873,7 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
     <button class="tab" data-tab="discovery">Discovery candidates</button>
     <button class="tab" data-tab="tracked">Tracked tickers</button>
   </div>
-  <p class="hint">Drag to pan \u00b7 scroll to zoom \u00b7 double-click to reset \u00b7 click a pillar in the legend to toggle.</p>
+  <p id="graph-hint" class="hint">Drag to pan \u00b7 scroll to zoom \u00b7 double-click to reset \u00b7 click a pillar in the legend to toggle.</p>
   <div class="classify">
     <span>\U0001f50d</span>
     <input id="cls-search" type="text" placeholder="Search ticker (e.g. 3583, ChipMOS)\u2026" autocomplete="off">
@@ -910,9 +918,12 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
 (function() {{
   const tabs   = document.querySelectorAll('.tab');
   const panels = document.querySelectorAll('.panel');
+  const graphTabs = new Set(['all', 'cluster', 'momentum', 'risk', 'heatmap']);
+  const graphHint = document.getElementById('graph-hint');
   function show(name) {{
     tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
     panels.forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+    if (graphHint) graphHint.classList.toggle('hidden', !graphTabs.has(name));
     const active = document.querySelector('.panel.active .js-plotly-plot');
     if (active && window.Plotly) window.Plotly.Plots.resize(active);
     if (history.replaceState) history.replaceState(null, '', '#' + name);
@@ -1069,10 +1080,24 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
       }}
     }});
   }}
-  function renderTracked() {{
+  const TRACKED_PAGE_SIZE = 20;
+  let trackedMatches = [];
+  let trackedPage = 0;
+
+  function trackedQuery(t) {{
+    return `${{t.id}} ${{t.name}} ${{t.pillar || ''}} ${{t.node || ''}}`.toLowerCase();
+  }}
+  function setTrackedState(text) {{
+    const state = document.getElementById('tracked-state');
+    if (state) state.textContent = text;
+  }}
+  function renderTrackedPage() {{
     const body = document.querySelector('#tracked-table tbody');
-    if (!body || body.dataset.rendered) return;
-    body.innerHTML = DIRECTORY.map(t => `
+    const pager = document.getElementById('tracked-pager');
+    if (!body || !pager) return;
+    const start = trackedPage * TRACKED_PAGE_SIZE;
+    const pageRows = trackedMatches.slice(start, start + TRACKED_PAGE_SIZE);
+    body.innerHTML = pageRows.map(t => `
       <tr data-ticker="${{esc(t.id)}}" data-q="${{esc(`${{t.id}} ${{t.name}} ${{t.pillar || ''}} ${{t.node || ''}}`)}}">
         <td><b>${{esc(t.id)}}</b></td>
         <td>${{esc(t.name)}}</td>
@@ -1081,11 +1106,41 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
         <td><button class="row-save">Save</button><span class="row-msg"></span></td>
       </tr>
     `).join('');
-    body.dataset.rendered = '1';
     body.querySelectorAll('.row-save').forEach(bindRowSave);
+    if (!trackedMatches.length) {{
+      pager.innerHTML = '';
+      return;
+    }}
+    const totalPages = Math.ceil(trackedMatches.length / TRACKED_PAGE_SIZE);
+    pager.innerHTML = `
+      <button id="tracked-prev" ${{trackedPage <= 0 ? 'disabled' : ''}}>Prev</button>
+      <span>${{start + 1}}-${{Math.min(start + TRACKED_PAGE_SIZE, trackedMatches.length)}} of ${{trackedMatches.length}}</span>
+      <button id="tracked-next" ${{trackedPage >= totalPages - 1 ? 'disabled' : ''}}>Next</button>
+    `;
+    document.getElementById('tracked-prev')?.addEventListener('click', () => {{
+      trackedPage = Math.max(0, trackedPage - 1);
+      renderTrackedPage();
+    }});
+    document.getElementById('tracked-next')?.addEventListener('click', () => {{
+      trackedPage = Math.min(totalPages - 1, trackedPage + 1);
+      renderTrackedPage();
+    }});
   }}
-  document.querySelector('[data-tab="tracked"]')?.addEventListener('click', renderTracked);
-  if (location.hash === '#tracked') renderTracked();
+  function runTrackedSearch(raw) {{
+    const q = raw.trim().toLowerCase();
+    trackedPage = 0;
+    if (!q) {{
+      trackedMatches = [];
+      document.querySelector('#tracked-table tbody').innerHTML = '';
+      document.getElementById('tracked-pager').innerHTML = '';
+      setTrackedState('Search by ticker, company, pillar, or node to load up to 20 matches.');
+      return;
+    }}
+    trackedMatches = DIRECTORY.filter(t => trackedQuery(t).includes(q));
+    setTrackedState(trackedMatches.length ? '' : 'No tracked tickers matched that search.');
+    renderTrackedPage();
+  }}
+  document.querySelector('input[data-target="tracked-table"]')?.addEventListener('input', e => runTrackedSearch(e.target.value));
 }})();
 </script>
 </body></html>"""

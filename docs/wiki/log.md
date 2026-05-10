@@ -370,3 +370,9 @@ attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
 - User requested Discovery candidates as a top-level graph tab next to All/Cluster/Risk/Heatmap.
 - Added a Tracked tickers tab with filterable inline pillar/node editing using the existing classify endpoint.
 - Kept the tracked table client-rendered from the existing directory JSON so initial graph HTML stays performant.
+
+## [2026-05-11] chat | Tracked tab lazy paging
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User requested lazy loading for the Tracked tickers tab: do not render all rows, show searched results only, 20 per page.
+- Added search-only rendering with Prev/Next paging and preserved inline category/node editing.
+- Moved the graph pan/zoom hint so it only appears on Plotly graph tabs, not table tabs.
