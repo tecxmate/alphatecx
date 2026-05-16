@@ -16,6 +16,7 @@ import {
   ToolGroupRoot,
   ToolGroupTrigger,
 } from "@/components/assistant-ui/tool-group";
+import { ModelSelector } from "@/components/assistant-ui/model-selector";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
@@ -142,7 +143,7 @@ const ThreadWelcome: FC = () => {
       <div className="aui-thread-welcome-center flex w-full grow flex-col items-center justify-center">
         <div className="aui-thread-welcome-message flex size-full flex-col justify-center px-4">
           <h1 className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both font-semibold text-2xl duration-200">
-            TaiStock Terminal
+            TecxStock Terminal
           </h1>
           <p className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-muted-foreground text-xl delay-75 duration-200">
             Ask anything about Taiwan equities — chip flow, screens, supply chain, news.
@@ -201,12 +202,38 @@ const Composer: FC = () => {
   );
 };
 
+const MODEL_OPTIONS = [
+  {
+    id: "gemini-2.5-flash",
+    name: "Gemini 2.5 Flash",
+    description: "Free · fast · ~15 RPM",
+  },
+  {
+    id: "gemini-2.5-flash-lite",
+    name: "Gemini 2.5 Flash Lite",
+    description: "Free · fastest",
+  },
+  {
+    id: "gemini-2.5-pro",
+    name: "Gemini 2.5 Pro",
+    description: "Requires paid billing — unavailable",
+    disabled: true,
+  },
+];
+
 const ComposerAction: FC = () => {
   return (
-    <div className="aui-composer-action-wrapper relative flex items-center justify-between">
+    <div className="aui-composer-action-wrapper relative flex items-center justify-between gap-2">
       <ComposerAddAttachment />
-      <AuiIf condition={(s) => !s.thread.isRunning}>
-        <ComposerPrimitive.Send asChild>
+      <div className="ml-auto flex items-center gap-2">
+        <ModelSelector
+          models={MODEL_OPTIONS}
+          defaultValue="gemini-2.5-flash"
+          size="sm"
+          variant="ghost"
+        />
+        <AuiIf condition={(s) => !s.thread.isRunning}>
+          <ComposerPrimitive.Send asChild>
           <TooltipIconButton
             tooltip="Send message"
             side="bottom"
@@ -233,6 +260,7 @@ const ComposerAction: FC = () => {
           </Button>
         </ComposerPrimitive.Cancel>
       </AuiIf>
+      </div>
     </div>
   );
 };

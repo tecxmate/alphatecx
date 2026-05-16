@@ -29,11 +29,11 @@ export function ThreadListSidebar({
                     <TrendingUp className="aui-sidebar-header-icon size-4" />
                   </div>
                   <div className="aui-sidebar-header-heading me-6 flex flex-col gap-0.5 leading-none">
-                    <span className="aui-sidebar-header-title font-semibold">
-                      TaiStock
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      Terminal
+                    <span
+                      className="aui-sidebar-header-title text-[28px] italic leading-none text-primary"
+                      style={{ fontFamily: "var(--font-brand-script)" }}
+                    >
+                      tecxstock
                     </span>
                   </div>
                 </a>

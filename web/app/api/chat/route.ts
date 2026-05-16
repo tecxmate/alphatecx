@@ -27,26 +27,40 @@ Rules:
 // the request errors. Track this so we strip MCP tools on reasoner turns.
 const NO_TOOL_MODELS = new Set(["deepseek-reasoner"]);
 
-function selectModel(): { model: LanguageModel; supportsTools: boolean } {
-  const provider = (process.env.LLM_PROVIDER ?? "anthropic").toLowerCase();
-  const id = process.env.LLM_MODEL;
+// Infer provider from the model id prefix so the client only has to send a
+// single string (the assistant-ui ModelSelector ships `config.modelName`).
+function providerFor(modelId: string): "google" | "deepseek" | "anthropic" {
+  if (modelId.startsWith("gemini")) return "google";
+  if (modelId.startsWith("deepseek")) return "deepseek";
+  return "anthropic";
+}
+
+function selectModel(requested?: string): {
+  model: LanguageModel;
+  supportsTools: boolean;
+} {
+  // Priority: explicit request from client → env default → anthropic fallback.
+  const envProvider = (process.env.LLM_PROVIDER ?? "anthropic").toLowerCase();
+  const envModel = process.env.LLM_MODEL;
+  const modelId =
+    requested ??
+    envModel ??
+    (envProvider === "google"
+      ? "gemini-2.5-flash"
+      : envProvider === "deepseek"
+        ? "deepseek-reasoner"
+        : "claude-sonnet-4-5");
+  const provider = providerFor(modelId);
+  if (provider === "google") {
+    return { model: google(modelId), supportsTools: true };
+  }
   if (provider === "deepseek") {
-    const modelId = id ?? "deepseek-reasoner";
     return {
       model: deepseek(modelId),
       supportsTools: !NO_TOOL_MODELS.has(modelId),
     };
   }
-  if (provider === "google") {
-    return {
-      model: google(id ?? "gemini-2.5-flash"),
-      supportsTools: true,
-    };
-  }
-  return {
-    model: anthropic(id ?? "claude-sonnet-4-5"),
-    supportsTools: true,
-  };
+  return { model: anthropic(modelId), supportsTools: true };
 }
 
 async function loadMcpTools(): Promise<ToolSet> {
@@ -63,13 +77,15 @@ export async function POST(req: Request) {
     messages,
     system,
     tools,
+    config,
   }: {
     messages: UIMessage[];
     system?: string;
     tools?: Record<string, { description?: string; parameters: JSONSchema7 }>;
+    config?: { modelName?: string };
   } = await req.json();
 
-  const { model, supportsTools } = selectModel();
+  const { model, supportsTools } = selectModel(config?.modelName);
   const mcpTools = supportsTools ? await loadMcpTools() : {};
   const frontend = supportsTools ? frontendTools(tools ?? {}) : {};
 
