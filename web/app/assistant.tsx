@@ -1,12 +1,14 @@
 "use client";
 
 import {
+  AssistantCloud,
   AssistantRuntimeProvider,
   McpAppRenderer,
   McpAppsRemoteHost,
   Tools,
   useAui,
 } from "@assistant-ui/react";
+import { useMemo } from "react";
 import {
   useChatRuntime,
   AssistantChatTransport,
@@ -32,11 +34,21 @@ import { ThreadListSidebar } from "@/components/assistant-ui/threadlist-sidebar"
 import { Separator } from "@/components/ui/separator";
 
 export const Assistant = () => {
+  // Anonymous Cloud persists thread list, messages, and AI-generated titles
+  // per browser session. Falls back to in-memory only when the env var is
+  // unset, so the app still runs without a Cloud account.
+  const cloud = useMemo(() => {
+    const baseUrl = process.env.NEXT_PUBLIC_ASSISTANT_BASE_URL;
+    if (!baseUrl) return undefined;
+    return new AssistantCloud({ baseUrl, anonymous: true });
+  }, []);
+
   const runtime = useChatRuntime({
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
     transport: new AssistantChatTransport({
       api: "/api/chat",
     }),
+    cloud,
   });
 
   const aui = useAui({
