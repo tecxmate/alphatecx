@@ -1,5 +1,5 @@
 import type * as React from "react";
-import { MessagesSquare } from "lucide-react";
+import { TrendingUp } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -26,7 +26,7 @@ export function ThreadListSidebar({
               <SidebarMenuButton size="lg" asChild>
                 <a href="/" rel="noopener noreferrer">
                   <div className="aui-sidebar-header-icon-wrapper flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                    <MessagesSquare className="aui-sidebar-header-icon size-4" />
+                    <TrendingUp className="aui-sidebar-header-icon size-4" />
                   </div>
                   <div className="aui-sidebar-header-heading me-6 flex flex-col gap-0.5 leading-none">
                     <span className="aui-sidebar-header-title font-semibold">
