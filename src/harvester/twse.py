@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import date, timedelta
-from typing import Any, Optional
+from typing import Any
 
 import requests
 
@@ -30,6 +30,8 @@ from src.config import HTTP_TIMEOUT, TWSE_REQUEST_DELAY, USER_AGENT
 log = logging.getLogger("twse")
 
 UA = {"User-Agent": USER_AGENT}
+_SESSION = requests.Session()
+_SESSION.headers.update(UA)
 
 # ── URLs ────────────────────────────────────────────────────────────────────
 
@@ -70,7 +72,7 @@ def _to_int(v: Any) -> int:
         return 0
 
 
-def _to_float(v: Any) -> Optional[float]:
+def _to_float(v: Any) -> float | None:
     if v in (None, "", "--"):
         return None
     try:
@@ -93,10 +95,10 @@ def _rate_limit():
     time.sleep(TWSE_REQUEST_DELAY)
 
 
-def _get_json(url: str, params: dict) -> Optional[dict]:
+def _get_json(url: str, params: dict) -> dict | None:
     """HTTP GET with timeout and error handling."""
     try:
-        r = requests.get(url, params=params, headers=UA, timeout=HTTP_TIMEOUT)
+        r = _SESSION.get(url, params=params, timeout=HTTP_TIMEOUT)
         r.raise_for_status()
         return r.json()
     except Exception as e:
@@ -104,7 +106,7 @@ def _get_json(url: str, params: dict) -> Optional[dict]:
         return None
 
 
-def trading_day_candidates(n: int = 7, from_date: Optional[date] = None) -> list[str]:
+def trading_day_candidates(n: int = 7, from_date: date | None = None) -> list[str]:
     """Return up to n recent weekday dates as YYYYMMDD strings."""
     out: list[str] = []
     d = from_date or date.today()
@@ -115,7 +117,7 @@ def trading_day_candidates(n: int = 7, from_date: Optional[date] = None) -> list
     return out
 
 
-def trading_days_range(days: int, from_date: Optional[date] = None) -> list[str]:
+def trading_days_range(days: int, from_date: date | None = None) -> list[str]:
     """Return `days` weekday dates going backwards from `from_date`, oldest first."""
     candidates = trading_day_candidates(days, from_date)
     candidates.reverse()  # oldest first

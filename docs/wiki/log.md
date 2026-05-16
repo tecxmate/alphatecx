@@ -305,3 +305,114 @@ attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
 - 2026-05-11 [feature] graph viewer — one-click "Rebuild graph" button — Added `↻ Rebuild graph` button next to the meta header in `build_plotly_2d_html` and a `POST /g/{TOKEN}/rebuild` endpoint backed by `graph_view.rebuild_graph()`. Server-side it calls `build_snapshot` + `build_plotly_2d_html` in-process (~15-25s) and returns the fresh HTML; the JS swaps the page via `document.write`. Best-effort writes `graph.html` + `graph_snapshot.json` to disk so local reloads survive; on Vercel's read-only fs the write is swallowed and only the in-session swap takes effect. PNG regen intentionally skipped (Kaleido boot is slow and the static PNG isn't on the viewer's critical path). Decision: Option A from the chat menu — A=in-process regen, B=GitHub Actions dispatch, C=hybrid; user picked A for tight feedback loop, accepting that the committed snapshot still needs a CI run for everyone-else updates. attributed_to: [niko, antigravity-agent] belongs_to: [correlation-graph-3d]
 - 2026-05-11 [feature] graph viewer — rebuild window selector — Added a 60d/90d/120d/180d dropdown next to the ↻ Rebuild button; selected value is sent as `?window=N` to `POST /g/{TOKEN}/rebuild` and forwarded to `build_snapshot(window_days=...)`. Server clamps to [30, 365]. Why: Vercel hobby has a 60s function timeout; the default 120d rebuild is ~22s locally but Neon cold-start could push it over on hobby — 60d is the escape hatch. attributed_to: [niko, antigravity-agent] belongs_to: [correlation-graph-3d]
 - 2026-05-11 [decision] graph viewer — drop rebuild button, regen on GET with 60s TTL cache — Reverted yesterday's `↻ Rebuild graph` button + `POST /g/{TOKEN}/rebuild` endpoint. `GET /g/{TOKEN}/` now calls `build_snapshot` + `build_plotly_2d_html` in-process on each visit, with a 60-second in-memory TTL cache so pan/zoom/tab swaps don't pay the recompute cost. `classify_ticker` invalidates the cache on save so a refresh after Save shows the new node immediately. Why: the Save+Rebuild two-step was a layered architecture for what's mentally one thing — "the graph is the DB rendered". Net deletion: ~70 LOC removed (rebuild_graph(), rebuild route, button, window selector, JS IIFE, post-save hint) vs ~25 LOC added (TTL cache + render helper). Caveats: (1) committed `graph.html` becomes a cold-start fallback only — CI nightly still regenerates it for static consumers / Telegram; (2) Vercel hobby's 60s function timeout still applies on first hit per cold instance; if it bites we'll add back a window override or move regen to a cron-warmed cache. attributed_to: [niko, antigravity-agent] belongs_to: [correlation-graph-3d]
+## [2026-05-11] chat | Architecture review
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Reviewed repo structure, MCP/API modules, harvester orchestration, schema scripts, workflows, and dashboard generation.
+- Recommended incremental modularization over a platform rewrite, with major rewrite deferred until scheduling, multi-user, or scale constraints appear.
+- Updated [Architecture Review 2026-05-11](topics/architecture-review-2026-05-11.md).
+
+## [2026-05-11] decision | codex/optimize branch started
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- Created branch `codex/optimize` for incremental architecture cleanup.
+- Started with low-risk extraction: `mcp_server/api/security.py` for URL-secret auth checks and `mcp_server/api/query_safety.py` for SQL column allowlisting.
+- Added `pyproject.toml` and a no-install `unittest` baseline covering auth path checks, query safety, and TWSE helper parsing.
+
+## [2026-05-11] chat | Optimization pass
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Checked repo hot paths for low-risk optimization opportunities.
+- Added HTTP session reuse in TWSE/TPEX fetches and cached repeated ticker-page build inputs.
+- Updated [Architecture Review 2026-05-11](topics/architecture-review-2026-05-11.md).
+
+## [2026-05-11] chat | Local check tooling
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Created local `.venv`, installed project dependencies plus `pytest` and `ruff`.
+- `pytest -q` passes; focused Ruff checks on changed/new files pass.
+- Full-repo `ruff check .` still fails on broad pre-existing lint debt, so full Ruff should be a separate cleanup.
+
+## [2026-05-11] chat | Batched ticker page queries
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Optimized `src/dashboard/build_ticker_pages.py` so OHLCV, T86 flow, valuation, and latest signals load once per build for all target tickers.
+- Kept news matching per ticker for now because matching depends on ticker/company text and needs a separate indexing design.
+- Verified with focused Ruff and `pytest -q`.
+
+## [2026-05-11] chat | Batched ticker page news
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Replaced per-ticker news SQL calls in `src/dashboard/build_ticker_pages.py` with one recent-news query and in-memory ticker/company title matching.
+- Preserved the original 30-day window and 15-item per-ticker cap.
+- Verified with focused Ruff, compileall, and `pytest -q`.
+
+## [2026-05-11] chat | Removed Supabase CLI config
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User confirmed `supabase/` is not used.
+- Deleted tracked `supabase/config.toml` and `supabase/.temp/cli-latest`; runtime code already uses Neon/Postgres directly.
+- Updated [System Architecture](topics/system-architecture.md).
+
+## [2026-05-11] chat | Local system smoke test
+attributed_to: [antigravity-agent]   belongs_to: [system-architecture]
+- Installed local server dependencies and ran FastAPI/MCP server on `127.0.0.1:8000`.
+- Rebuilt dashboard artifacts from Neon; smoke-tested `/health`, dashboard, ticker page, graph, and invalid-token 404s.
+- Noted local env quirk: Python entrypoints load `.env` correctly, but direct zsh `source .env` can fail if DB URLs contain unquoted `&`.
+
+## [2026-05-11] chat | Web hub page
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User asked for one main page because dashboard, graph, and ticker pages were scattered.
+- Added token-protected hub routes `/h/{token}/` and `/d/{token}/home`.
+- Hub links dashboard, graph, graph PNG/JSON, health, MCP endpoint, and all generated ticker pages.
+
+## [2026-05-11] chat | Bloomberg-lite frontend redesign
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User requested a systematic Bloomberg Terminal-lite frontend, not dark-only and mobile friendly.
+- Added shared dense light/dark theme styling, theme persistence, hub/dashboard/ticker theme toggles, and mobile scrolling for dense tables/graphs.
+- Graph page keeps Plotly panels readable on mobile through horizontal plot regions instead of compressing charts to phone width.
+
+## [2026-05-11] chat | Graph discovery + tracked editor tabs
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User requested Discovery candidates as a top-level graph tab next to All/Cluster/Risk/Heatmap.
+- Added a Tracked tickers tab with filterable inline pillar/node editing using the existing classify endpoint.
+- Kept the tracked table client-rendered from the existing directory JSON so initial graph HTML stays performant.
+
+## [2026-05-11] chat | Tracked tab lazy paging
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User requested lazy loading for the Tracked tickers tab: do not render all rows, show searched results only, 20 per page.
+- Added search-only rendering with Prev/Next paging and preserved inline category/node editing.
+- Moved the graph pan/zoom hint so it only appears on Plotly graph tabs, not table tabs.
+
+## [2026-05-11] chat | Dedicated ticker directory
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User requested renaming tracked tickers to Tickers and giving them a Home-linked page.
+- Added `/t/{token}/` as a dedicated ticker directory with default 20-row rendering, search, paging, inline pillar/node editing, and folder/list grouping stored in `dim_ticker.tags`.
+- Removed the old Tracked tickers graph tab so graph navigation stays focused on charts and Discovery candidates.
+
+## [2026-05-13] chat | ChatGPT MCP go-to-market constraint
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- User is evaluating selling the MCP tool and noted Claude Desktop/iOS has a simpler customer connection path than ChatGPT.
+- ChatGPT requires a remote MCP/app deployment path with workspace/admin/developer-mode constraints, not a local desktop config flow.
+- Product packaging should treat Claude as the lowest-friction initial channel and ChatGPT as an enterprise/API distribution path.
+
+## [2026-05-17] decision | assistant-ui chat frontend in web/
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture, web-frontend]
+- Scaffolded `web/` with `npx assistant-ui@latest create web --template mcp` on branch `feat/frontend`.
+- Wired `/api/chat` to Anthropic (Sonnet, model overridable via `ANTHROPIC_MODEL`) and pointed the MCP client at the existing Python FastMCP via `MCP_SERVER_URL` (URL-as-secret, streamable HTTP — no Authorization header needed).
+- Added generative UI for three MCP tools: `raw_flow_history` (Recharts), `sc_accumulation_screen` (TanStack Table), `sc_supply_chain_map` (grouped chips). Each renders `_source` / `_as_of` / `_freshness` provenance footer.
+- Deferred from Gemini's spec: Clerk auth, Stripe metered billing, 20-prompt gatekeeper, PWA manifest, React Flow supply chain graph, chat persistence.
+- Created [2026-05-17-assistant-ui-frontend](decisions/2026-05-17-assistant-ui-frontend.md) and topic [web-frontend](topics/web-frontend.md).
+
+## [2026-05-17] decision | Add DeepSeek provider; env-driven model selection
+attributed_to: [niko, antigravity-agent]   belongs_to: [web-frontend]
+- User added a DeepSeek API key and asked for a DeepSeek "thinking" model.
+- Refactored `web/app/api/chat/route.ts` to pick provider via `LLM_PROVIDER` (anthropic | deepseek) and `LLM_MODEL`.
+- DeepSeek default is `deepseek-reasoner` (R1). Reasoner does NOT support tool/function calling — route strips MCP tools on reasoner turns to avoid request errors. For tool-using DeepSeek, use `deepseek-chat` (V3.2).
+- Updated `.env.example` to document the trade-off and both API key slots.
+
+## [2026-05-17] decision | Add Google Gemini provider
+attributed_to: [niko, antigravity-agent]   belongs_to: [web-frontend]
+- Added `@ai-sdk/google` as a third option in `web/app/api/chat/route.ts`. `LLM_PROVIDER=google` defaults to `gemini-2.5-flash`.
+- All Gemini 2.5 models support tool calling, including the `-thinking` variant — unlike DeepSeek-R1. Free tier (Google AI Studio key, `GOOGLE_GENERATIVE_AI_API_KEY`) is rate-limited but usable for dev/POC.
+
+## [2026-05-17] chat | Expanded chat frontend — starter prompts, 5 more tool UIs, clickable tickers, live watchlist
+attributed_to: [niko, antigravity-agent]   belongs_to: [web-frontend]
+- Added 6 TWSE-specific starter prompts on the empty thread state (chip flow 2330, accumulation screen, supply chain, q_indicators 6488, news 2454, regime).
+- Added generative UI for 5 more MCP tools in `web/components/tools/`: `q_indicators` (KPI cards with RSI tinting), `sc_ticker_momentum` (streak chips + flow bars), `n_recent`/`n_for_ticker` (clickable news cards), `w_watchlist` (table), `q_regime` (label badge + vol/corr tiles with trend arrows).
+- Cross-tool interactivity: `<TickerChip>` wraps any ticker_id in a `ThreadPrimitive.Suggestion` that sends a chip-flow follow-up prompt. Wired into screener-table, ticker-momentum, supply-chain-list, watchlist-table.
+- Live watchlist sidebar: new `/api/watchlist` route calls `w_watchlist` server-side via the cached MCP client and returns `{watchlist, count}`. `<WatchlistPanel>` fetches on mount and renders ticker chips above the chat thread list. Verified 200 with real Neon data (3231/6488/3324).
+- MCP server's watchlist row uses `company_name`, not `name` — defensive rendering in both panel and tool UI.

@@ -38,6 +38,10 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 import db_v2
 import graph_view
+try:
+    from security import is_authorized_path, token_matches
+except ModuleNotFoundError:  # package import path used by local tests
+    from .security import is_authorized_path, token_matches
 
 MCP_BEARER_TOKEN = os.getenv("MCP_BEARER_TOKEN", "")
 
@@ -1111,42 +1115,49 @@ def health():
 
 @app.middleware("http")
 async def auth_gate(request: Request, call_next):
-    path = request.url.path
-    if path in ("/", "/health"):
-        return await call_next(request)
-    if MCP_BEARER_TOKEN and path.startswith(f"/mcp/{MCP_BEARER_TOKEN}"):
-        return await call_next(request)
-    if MCP_BEARER_TOKEN and path.startswith(f"/g/{MCP_BEARER_TOKEN}"):
-        return await call_next(request)
-    if MCP_BEARER_TOKEN and path.startswith(f"/d/{MCP_BEARER_TOKEN}"):
+    if is_authorized_path(request.url.path, MCP_BEARER_TOKEN):
         return await call_next(request)
     return JSONResponse(status_code=404, content={"error": "not_found"})
 
 
 @app.get(f"/g/{{token}}/")
 def graph_index(token: str):
-    if token != MCP_BEARER_TOKEN:
+    if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_viewer_html()
 
 
+@app.get(f"/h/{{token}}/")
+def home(token: str):
+    if not token_matches(token, MCP_BEARER_TOKEN):
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_home_html(token)
+
+
+@app.get(f"/t/{{token}}/")
+def tickers(token: str):
+    if not token_matches(token, MCP_BEARER_TOKEN):
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_tickers_html(token)
+
+
 @app.get(f"/g/{{token}}/data.json")
 def graph_data(token: str):
-    if token != MCP_BEARER_TOKEN:
+    if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_snapshot_json()
 
 
 @app.get(f"/g/{{token}}/graph.png")
 def graph_png(token: str):
-    if token != MCP_BEARER_TOKEN:
+    if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_graph_png()
 
 
 @app.post(f"/g/{{token}}/classify")
 async def graph_classify(token: str, request: Request):
-    if token != MCP_BEARER_TOKEN:
+    if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     try:
         payload = await request.json()
@@ -1155,23 +1166,41 @@ async def graph_classify(token: str, request: Request):
     return graph_view.classify_ticker(payload)
 
 
+@app.post(f"/t/{{token}}/folders")
+async def ticker_folders(token: str, request: Request):
+    if not token_matches(token, MCP_BEARER_TOKEN):
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"ok": False, "error": "invalid json"})
+    return graph_view.update_ticker_folders(payload)
+
+
 @app.get(f"/d/{{token}}/")
 def dashboard(token: str):
-    if token != MCP_BEARER_TOKEN:
+    if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_dashboard_html()
 
 
+@app.get(f"/d/{{token}}/home")
+def dashboard_home(token: str):
+    if not token_matches(token, MCP_BEARER_TOKEN):
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_home_html(token)
+
+
 @app.get(f"/d/{{token}}/dashboard.css")
 def dashboard_css(token: str):
-    if token != MCP_BEARER_TOKEN:
+    if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_dashboard_css()
 
 
 @app.get(f"/d/{{token}}/dashboard.js")
 def dashboard_js(token: str):
-    if token != MCP_BEARER_TOKEN:
+    if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_dashboard_js()
 
@@ -1183,7 +1212,7 @@ def ticker_page(token: str, ticker: str):
     Pages are pre-rendered nightly by `python -m src.dashboard.build_ticker_pages`
     and read from mcp_server/api/static/ticker/{ticker}.html. Same auth as /d/.
     """
-    if token != MCP_BEARER_TOKEN:
+    if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_ticker_page(ticker)
 
@@ -1196,4 +1225,3 @@ if not MCP_BEARER_TOKEN:
     )
 
 app.mount(f"/mcp/{MCP_BEARER_TOKEN}", mcp_app)
-

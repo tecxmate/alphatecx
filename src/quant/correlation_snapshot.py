@@ -719,69 +719,140 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
                               "fig-heatmap", include_js=False)
 
     disc = snap.get("discovery", [])
-    rows = "".join(
-        f'<li><b>{c["ticker"]}</b> {c["name"]} \u2192 '
-        f'<span style="color:{PILLAR_COLOR.get(c["suggested_pillar"], "#64748b")}">'
-        f'{c["suggested_pillar"]}</span> '
-        f'<span style="color:#64748b">(\u03c1\u2248{c["conviction"]})</span></li>'
-        for c in disc[:10]
+    disc_rows = "".join(
+        f'<tr data-q="{c["ticker"]} {c["name"]} {c["suggested_pillar"]} {c.get("suggested_node") or ""}">'
+        f'<td><b>{c["ticker"]}</b></td>'
+        f'<td>{c["name"]}</td>'
+        f'<td><span class="pill" style="--pill:{PILLAR_COLOR.get(c["suggested_pillar"], "#64748b")}">{c["suggested_pillar"]}</span></td>'
+        f'<td>{c.get("suggested_node") or ""}</td>'
+        f'<td>{c["conviction"]}</td>'
+        f'<td>{"; ".join(f"{n["id"]} {n["rho"]}" for n in (c.get("neighbours") or [])[:4])}</td>'
+        f'</tr>'
+        for c in disc
     )
-    disc_block = (f'<div class="disc"><h2>Discovery candidates</h2>'
-                  f'<ol>{rows}</ol></div>' if rows else "")
+    disc_table = (
+        '<div class="table-tools"><input class="table-filter" data-target="discovery-table" '
+        'type="search" placeholder="Filter discovery candidates"></div>'
+        '<div class="table-scroll"><table id="discovery-table" class="terminal-table">'
+        '<thead><tr><th>Ticker</th><th>Name</th><th>Suggested pillar</th>'
+        '<th>Suggested node</th><th>Conviction</th><th>Top neighbours</th></tr></thead>'
+        f'<tbody>{disc_rows}</tbody></table></div>'
+        if disc_rows else '<div class="empty">No discovery candidates above threshold.</div>'
+    )
 
     return f"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>alphatecx \u00b7 TW correlation map</title>
 <style>
-  html,body {{ margin:0; padding:0; background:#ffffff; color:#0f172a;
-    font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif; }}
-  .wrap {{ max-width:1500px; margin:0 auto; padding:14px 18px 28px; }}
+  :root {{ color-scheme: light dark; --bg:#f4f6f8; --surface:#ffffff;
+    --surface-2:#eef2f6; --line:#cbd5e1; --line-soft:#e2e8f0;
+    --text:#0f172a; --muted:#64748b; --link:#0f66d0; --accent:#f59e0b; }}
+  :root[data-theme="dark"] {{ color-scheme: dark; --bg:#080b10; --surface:#0f141b;
+    --surface-2:#151c25; --line:#2b3746; --line-soft:#1d2733;
+    --text:#d8dee9; --muted:#8b98a8; --link:#61a5ff; --accent:#f6b73c; }}
+  html,body {{ margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+    font-size:13px; line-height:1.42; }}
+  .wrap {{ max-width:1560px; margin:0 auto; padding:10px 14px 22px; }}
   .header {{ display:flex; justify-content:space-between; align-items:flex-end;
-            margin-bottom:10px; gap:12px; flex-wrap:wrap; }}
-  .header h1 {{ font-size:16px; font-weight:600; margin:0; color:#0f172a; }}
-  .meta {{ color:#64748b; font-size:12px; }}
-  .tabs {{ display:flex; gap:4px; margin:6px 0 10px; flex-wrap:wrap;
-          border-bottom:1px solid #e2e8f0; }}
-  .tab {{ padding:8px 14px; border:1px solid transparent; border-bottom:none;
-        background:transparent; color:#64748b; font-size:13px; cursor:pointer;
-        font-family:inherit; border-radius:6px 6px 0 0; margin-bottom:-1px; }}
-  .tab:hover {{ color:#0f172a; background:#f8fafc; }}
-  .tab.active {{ background:#ffffff; color:#0f172a; font-weight:600;
-                border:1px solid #e2e8f0; border-bottom:1px solid #ffffff; }}
+    margin-bottom:8px; gap:12px; flex-wrap:wrap; border-bottom:1px solid var(--line);
+    padding-bottom:8px; }}
+  .header h1 {{ font-size:17px; font-weight:650; margin:0; color:var(--text); }}
+  .meta {{ color:var(--muted); font-size:11px; }}
+  .header-actions {{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }}
+  .terminal-btn {{ border:1px solid var(--line); background:var(--surface);
+    color:var(--text); border-radius:4px; padding:4px 8px; font:inherit;
+    font-size:11px; cursor:pointer; }}
+  .tabs {{ display:flex; gap:0; margin:8px 0; flex-wrap:wrap;
+    border:1px solid var(--line); background:var(--surface); }}
+  .tab {{ padding:7px 11px; border:0; border-right:1px solid var(--line);
+    background:transparent; color:var(--muted); font-size:12px; cursor:pointer;
+    font-family:inherit; white-space:nowrap; }}
+  .tab:hover {{ color:var(--text); background:var(--surface-2); }}
+  .tab.active {{ background:var(--text); color:var(--surface); font-weight:650; }}
+  :root[data-theme="dark"] .tab.active {{ background:#d8dee9; color:#080b10; }}
   .panel {{ display:none; }}
   .panel.active {{ display:block; }}
-  .hint {{ color:#94a3b8; font-size:12px; margin:0 0 6px; }}
-  .disc {{ margin-top:14px; padding:14px 18px; background:#f8fafc;
-    border:1px solid #e2e8f0; border-radius:8px; max-width:640px; }}
-  .disc h2 {{ font-size:14px; margin:0 0 8px; color:#0f172a; }}
-  .disc ol {{ margin:0; padding-left:20px; font-size:13px; line-height:1.7; }}
-  .classify {{ margin:6px 0 14px; padding:10px 12px; background:#f8fafc;
-    border:1px solid #e2e8f0; border-radius:8px; display:flex; gap:8px;
-    align-items:center; flex-wrap:wrap; font-size:13px; position:relative; }}
+  .panel .js-plotly-plot {{ background:var(--surface); border:1px solid var(--line); }}
+  .hint {{ color:var(--muted); font-size:11px; margin:0 0 6px; }}
+  .hint.hidden {{ display:none; }}
+  .disc {{ margin-top:12px; padding:10px 12px; background:var(--surface);
+    border:1px solid var(--line); max-width:640px; }}
+  .disc h2 {{ font-size:12px; margin:0 0 7px; color:var(--muted); text-transform:uppercase; }}
+  .disc ol {{ margin:0; padding-left:18px; font-size:12px; line-height:1.6; }}
+  .classify {{ margin:6px 0 10px; padding:8px 10px; background:var(--surface);
+    border:1px solid var(--line); display:flex; gap:7px;
+    align-items:center; flex-wrap:wrap; font-size:12px; position:relative; }}
   .classify input[type=text], .classify select {{ font:inherit; padding:5px 8px;
-    border:1px solid #cbd5e0; border-radius:5px; background:#fff; color:#0f172a; }}
+    border:1px solid var(--line); border-radius:4px; background:var(--surface); color:var(--text); }}
   .classify input#cls-search {{ width:280px; }}
   .classify input#cls-node {{ width:180px; }}
-  .classify button {{ font:inherit; padding:5px 12px; background:#0f172a;
-    color:#fff; border:none; border-radius:5px; cursor:pointer; }}
-  .classify button:disabled {{ background:#94a3b8; cursor:not-allowed; }}
-  .classify .meta {{ color:#64748b; font-size:12px; }}
+  .classify button {{ font:inherit; padding:5px 12px; background:var(--text);
+    color:var(--surface); border:none; border-radius:4px; cursor:pointer; }}
+  .classify button:disabled {{ background:var(--muted); cursor:not-allowed; }}
+  .classify .meta {{ color:var(--muted); font-size:11px; }}
   .classify .msg.ok {{ color:#16a34a; }}
   .classify .msg.err {{ color:#dc2626; }}
   .cls-suggest {{ position:absolute; top:42px; left:42px; width:280px;
-    background:#fff; border:1px solid #e2e8f0; border-radius:6px;
-    box-shadow:0 6px 20px rgba(15,23,42,0.08); max-height:240px;
+    background:var(--surface); border:1px solid var(--line); border-radius:4px;
+    max-height:240px;
     overflow-y:auto; z-index:50; display:none; }}
   .cls-suggest div {{ padding:6px 10px; cursor:pointer; font-size:13px;
-    border-bottom:1px solid #f1f5f9; }}
-  .cls-suggest div:hover, .cls-suggest div.active {{ background:#f1f5f9; }}
-  .cls-suggest .pill {{ float:right; font-size:11px; color:#64748b; }}
+    border-bottom:1px solid var(--line-soft); }}
+  .cls-suggest div:hover, .cls-suggest div.active {{ background:var(--surface-2); }}
+  .cls-suggest .pill {{ float:right; font-size:11px; color:var(--muted); }}
+  .table-tools {{ margin:6px 0 8px; }}
+  .table-filter {{ width:min(420px, 100%); box-sizing:border-box; padding:6px 9px;
+    border:1px solid var(--line); background:var(--surface); color:var(--text);
+    font:inherit; font-size:12px; }}
+  .table-scroll {{ overflow:auto; border:1px solid var(--line); background:var(--surface);
+    -webkit-overflow-scrolling:touch; }}
+  .terminal-table {{ width:100%; min-width:860px; border-collapse:collapse;
+    font-size:12px; font-variant-numeric:tabular-nums; }}
+  .terminal-table th {{ text-align:left; color:var(--muted); background:var(--surface-2);
+    border-bottom:1px solid var(--line); border-right:1px solid var(--line-soft);
+    padding:6px 8px; text-transform:uppercase; font-size:11px; }}
+  .terminal-table td {{ border-bottom:1px solid var(--line-soft);
+    border-right:1px solid var(--line-soft); padding:5px 8px; vertical-align:middle; }}
+  .terminal-table tr:hover {{ background:var(--surface-2); }}
+  .terminal-table select,.terminal-table input {{ width:100%; box-sizing:border-box;
+    border:1px solid var(--line); background:var(--surface); color:var(--text);
+    padding:4px 6px; font:inherit; font-size:12px; }}
+  .terminal-table button {{ border:1px solid var(--line); background:var(--text);
+    color:var(--surface); padding:4px 8px; font:inherit; font-size:11px; cursor:pointer; }}
+  .row-msg {{ margin-left:7px; color:var(--muted); font-size:11px; }}
+  .row-msg.ok {{ color:#16a34a; }}
+  .row-msg.err {{ color:#dc2626; }}
+  .pill {{ display:inline-block; padding:2px 7px; color:white; background:var(--pill);
+    font-weight:650; border-radius:999px; white-space:nowrap; }}
+  .empty {{ padding:18px; border:1px dashed var(--line); color:var(--muted);
+    background:var(--surface); }}
+  .pager {{ display:flex; align-items:center; gap:8px; margin-top:8px; color:var(--muted);
+    font-size:11px; }}
+  .pager button {{ border:1px solid var(--line); background:var(--surface);
+    color:var(--text); padding:4px 8px; font:inherit; font-size:11px; cursor:pointer; }}
+  .pager button:disabled {{ opacity:0.4; cursor:not-allowed; }}
+  @media (max-width: 820px) {{
+    .wrap {{ padding:8px; }}
+    .header-actions {{ width:100%; justify-content:space-between; }}
+    .tabs {{ flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }}
+    .tab {{ flex:0 0 auto; padding:7px 10px; font-size:11px; }}
+    .classify {{ display:grid; grid-template-columns:1fr; }}
+    .classify input#cls-search,.classify input#cls-node,.classify select,.classify button {{ width:100%; box-sizing:border-box; }}
+    .cls-suggest {{ left:10px; right:10px; width:auto; top:76px; }}
+    .panel {{ overflow-x:auto; -webkit-overflow-scrolling:touch; }}
+    .panel .js-plotly-plot {{ min-width:720px; }}
+    .terminal-table {{ min-width:760px; }}
+  }}
 </style></head><body>
 <div class="wrap">
   <div class="header">
     <h1>Taiwan AI universe \u2014 correlation map</h1>
-    <div class="meta">{snap["n_tickers"]} tickers \u00b7 window {snap["window_days"]}d \u00b7 as of {snap["asof"]}</div>
+    <div class="header-actions">
+      <button id="theme-toggle" class="terminal-btn" type="button">Dark</button>
+      <div class="meta">{snap["n_tickers"]} tickers \u00b7 window {snap["window_days"]}d \u00b7 as of {snap["asof"]}</div>
+    </div>
   </div>
   <div class="tabs">
     <button class="tab active" data-tab="all">All (2\u00d72)</button>
@@ -789,8 +860,9 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
     <button class="tab" data-tab="momentum">Cluster vs return</button>
     <button class="tab" data-tab="risk">Risk vs return</button>
     <button class="tab" data-tab="heatmap">Correlation heatmap</button>
+    <button class="tab" data-tab="discovery">Discovery candidates</button>
   </div>
-  <p class="hint">Drag to pan \u00b7 scroll to zoom \u00b7 double-click to reset \u00b7 click a pillar in the legend to toggle.</p>
+  <p id="graph-hint" class="hint">Drag to pan \u00b7 scroll to zoom \u00b7 double-click to reset \u00b7 click a pillar in the legend to toggle.</p>
   <div class="classify">
     <span>\U0001f50d</span>
     <input id="cls-search" type="text" placeholder="Search ticker (e.g. 3583, ChipMOS)\u2026" autocomplete="off">
@@ -812,15 +884,34 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
   <div class="panel" data-panel="momentum">{div_momentum}</div>
   <div class="panel" data-panel="risk">{div_risk}</div>
   <div class="panel" data-panel="heatmap">{div_heatmap}</div>
-  {disc_block}
+  <div class="panel" data-panel="discovery">{disc_table}</div>
 </div>
 <script>
 (function() {{
+  const root = document.documentElement;
+  const savedTheme = localStorage.getItem('alphatecx-theme');
+  if (savedTheme === 'dark' || savedTheme === 'light') root.dataset.theme = savedTheme;
+  const btn = document.getElementById('theme-toggle');
+  function sync() {{ if (btn) btn.textContent = (root.dataset.theme || 'light') === 'dark' ? 'Light' : 'Dark'; }}
+  if (btn) {{
+    btn.addEventListener('click', () => {{
+      const next = (root.dataset.theme || 'light') === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = next;
+      localStorage.setItem('alphatecx-theme', next);
+      sync();
+    }});
+    sync();
+  }}
+}})();
+(function() {{
   const tabs   = document.querySelectorAll('.tab');
   const panels = document.querySelectorAll('.panel');
+  const graphTabs = new Set(['all', 'cluster', 'momentum', 'risk', 'heatmap']);
+  const graphHint = document.getElementById('graph-hint');
   function show(name) {{
     tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
     panels.forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+    if (graphHint) graphHint.classList.toggle('hidden', !graphTabs.has(name));
     const active = document.querySelector('.panel.active .js-plotly-plot');
     if (active && window.Plotly) window.Plotly.Plots.resize(active);
     if (history.replaceState) history.replaceState(null, '', '#' + name);
@@ -828,6 +919,17 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
   tabs.forEach(t => t.addEventListener('click', () => show(t.dataset.tab)));
   const hash = (location.hash || '').replace(/^#/, '');
   if (hash && document.querySelector(`.panel[data-panel="${{hash}}"]`)) show(hash);
+}})();
+(function() {{
+  document.querySelectorAll('.table-filter').forEach(input => {{
+    input.addEventListener('input', () => {{
+      const table = document.getElementById(input.dataset.target);
+      const q = input.value.trim().toLowerCase();
+      table.querySelectorAll('tbody tr').forEach(row => {{
+        row.style.display = q && !(row.dataset.q || row.textContent).toLowerCase().includes(q) ? 'none' : '';
+      }});
+    }});
+  }});
 }})();
 (function() {{
   const DIRECTORY = {directory_json};
@@ -921,6 +1023,7 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
       $save.disabled = false;
     }}
   }});
+
 }})();
 </script>
 </body></html>"""

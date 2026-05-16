@@ -58,10 +58,12 @@ PILLAR_INDEX = {
 _FM_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 def parse_frontmatter(text: str) -> dict:
     m = _FM_RE.match(text)
-    if not m: return {}
+    if not m:
+        return {}
     out = {}
     for line in m.group(1).splitlines():
-        if ":" not in line: continue
+        if ":" not in line:
+            continue
         k, _, v = line.partition(":")
         out[k.strip()] = v.strip()
     return out
@@ -89,9 +91,11 @@ def get_target_tickers(conn) -> list[dict]:
                             "ai_pillar": pillar, "node": node, "source": "watchlist"}
     if THESES_DIR.exists():
         for p in THESES_DIR.glob("*.md"):
-            if p.name == "README.md": continue
+            if p.name == "README.md":
+                continue
             fm = parse_frontmatter(p.read_text())
-            if fm.get("status", "").lower() != "active": continue
+            if fm.get("status", "").lower() != "active":
+                continue
             tid = fm.get("ticker", "")
             if tid and tid not in out:
                 out[tid] = {"ticker_id": tid, "company_name": fm.get("company", ""),
@@ -99,40 +103,52 @@ def get_target_tickers(conn) -> list[dict]:
     return list(out.values())
 
 
-def load_ohlcv(conn, ticker: str, days: int = 252):
-    cutoff = (date.today() - timedelta(days=days * 2)).isoformat()  # buffer for weekends
+def load_ohlcv_by_ticker(conn, tickers: list[str], days: int = 252) -> dict[str, list]:
+    cutoff = (date.today() - timedelta(days=days * 2)).isoformat()
     with conn.cursor() as c:
         c.execute("""
-            SELECT date, open, high, low, close, volume_shares
+            SELECT ticker_id, date, open, high, low, close, volume_shares
               FROM raw_twse_ohlcv
-             WHERE ticker_id = %s AND date >= %s
+             WHERE ticker_id = ANY(%s) AND date >= %s
                AND close IS NOT NULL
-             ORDER BY date
-        """, (ticker, cutoff))
-        return c.fetchall()
+             ORDER BY ticker_id, date
+        """, (tickers, cutoff))
+        rows = c.fetchall()
+    out: dict[str, list] = {}
+    for ticker_id, *row in rows:
+        out.setdefault(ticker_id, []).append(tuple(row))
+    return out
 
 
-def load_t86_flow(conn, ticker: str, days: int = 90):
+def load_t86_flow_by_ticker(conn, tickers: list[str], days: int = 90) -> dict[str, list]:
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     with conn.cursor() as c:
         c.execute("""
-            SELECT date, foreign_net, trust_net, total_net
+            SELECT ticker_id, date, foreign_net, trust_net, total_net
               FROM raw_twse_t86
-             WHERE ticker_id = %s AND date >= %s
-             ORDER BY date
-        """, (ticker, cutoff))
-        return c.fetchall()
+             WHERE ticker_id = ANY(%s) AND date >= %s
+             ORDER BY ticker_id, date
+        """, (tickers, cutoff))
+        rows = c.fetchall()
+    out: dict[str, list] = {}
+    for ticker_id, *row in rows:
+        out.setdefault(ticker_id, []).append(tuple(row))
+    return out
 
 
-def load_valuation(conn, ticker: str):
+def load_valuation_by_ticker(conn, tickers: list[str]) -> dict[str, list]:
     with conn.cursor() as c:
         c.execute("""
-            SELECT date, close, pe_ratio, pb_ratio, dividend_yield
+            SELECT ticker_id, date, close, pe_ratio, pb_ratio, dividend_yield
               FROM raw_twse_valuation
-             WHERE ticker_id = %s
-             ORDER BY date
-        """, (ticker,))
-        return c.fetchall()
+             WHERE ticker_id = ANY(%s)
+             ORDER BY ticker_id, date
+        """, (tickers,))
+        rows = c.fetchall()
+    out: dict[str, list] = {}
+    for ticker_id, *row in rows:
+        out.setdefault(ticker_id, []).append(tuple(row))
+    return out
 
 
 def load_sector_index(conn, index_name: str, days: int = 252):
@@ -146,54 +162,74 @@ def load_sector_index(conn, index_name: str, days: int = 252):
         return c.fetchall()
 
 
-def load_signals(conn, ticker: str):
-    with conn.cursor() as c:
-        c.execute("""
-            SELECT as_of, rsi_14, macd_line, macd_signal_line, macd_histogram,
-                   bb_pct_b, atr_14, sma_50, sma_200, rs_vs_market_60,
-                   pct_below_52w_high, foreign_net_z20, foreign_net_5d_sum
-              FROM view_latest_signals WHERE ticker_id = %s
-        """, (ticker,))
-        row = c.fetchone()
-    if not row: return None
+def load_signals_by_ticker(conn, tickers: list[str]) -> dict[str, dict]:
     keys = ["as_of", "rsi_14", "macd_line", "macd_signal_line", "macd_histogram",
             "bb_pct_b", "atr_14", "sma_50", "sma_200", "rs_vs_market_60",
             "pct_below_52w_high", "foreign_net_z20", "foreign_net_5d_sum"]
-    return dict(zip(keys, row))
+    with conn.cursor() as c:
+        c.execute("""
+            SELECT ticker_id, as_of, rsi_14, macd_line, macd_signal_line,
+                   macd_histogram, bb_pct_b, atr_14, sma_50, sma_200,
+                   rs_vs_market_60, pct_below_52w_high, foreign_net_z20,
+                   foreign_net_5d_sum
+              FROM view_latest_signals WHERE ticker_id = ANY(%s)
+        """, (tickers,))
+        rows = c.fetchall()
+    return {ticker_id: dict(zip(keys, row, strict=True)) for ticker_id, *row in rows}
 
 
-def load_news(conn, ticker: str, company_name: str, days: int = 30):
+def load_news_by_ticker(conn, metas: list[dict], days: int = 30) -> dict[str, list]:
+    """Load recent news once and apply the existing title substring match per ticker."""
     cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
-    if not company_name:
-        return []
     with conn.cursor() as c:
         c.execute("""
             SELECT title, url, source, published_at
               FROM raw_news
              WHERE published_at >= %s
-               AND (title ILIKE '%%' || %s || '%%'
-                    OR title ILIKE '%%' || %s || '%%')
-             ORDER BY published_at DESC LIMIT 15
-        """, (cutoff, ticker, company_name))
-        return c.fetchall()
+             ORDER BY published_at DESC
+        """, (cutoff,))
+        articles = c.fetchall()
+
+    out: dict[str, list] = {}
+    matchers = []
+    for meta in metas:
+        ticker = meta["ticker_id"]
+        company_name = meta["company_name"]
+        if company_name:
+            matchers.append((ticker, ticker.lower(), company_name.lower()))
+
+    for title, url, source, published_at in articles:
+        title_l = (title or "").lower()
+        for ticker, ticker_l, company_l in matchers:
+            if ticker_l in title_l or company_l in title_l:
+                ticker_news = out.setdefault(ticker, [])
+                if len(ticker_news) < 15:
+                    ticker_news.append((title, url, source, published_at))
+    return out
 
 
-def load_thesis(ticker: str) -> dict | None:
+def load_active_theses_by_ticker() -> dict[str, dict]:
+    """Load active thesis frontmatter once per build."""
+    out: dict[str, dict] = {}
     if not THESES_DIR.exists():
-        return None
+        return out
     for p in THESES_DIR.glob("*.md"):
-        if p.name == "README.md": continue
+        if p.name == "README.md":
+            continue
         fm = parse_frontmatter(p.read_text())
-        if fm.get("ticker") == ticker and fm.get("status", "").lower() == "active":
-            return fm
-    return None
+        if fm.get("status", "").lower() != "active":
+            continue
+        ticker = fm.get("ticker", "")
+        if ticker:
+            out[ticker] = fm
+    return out
 
 
 def render_page(meta, ohlcv, flow, valuation, sector_idx, signals, news, thesis):
     """Compose the plotly figure + HTML wrapper."""
+    import numpy as np
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
-    import numpy as np
 
     ticker = meta["ticker_id"]
     name = meta["company_name"] or ticker
@@ -299,8 +335,8 @@ def render_page(meta, ohlcv, flow, valuation, sector_idx, signals, news, thesis)
         oh_close = np.array([r[4] for r in ohlcv], dtype=float)
 
         # Align by intersect of dates
-        ix_map = {d: c for d, c in zip(ix_dates, ix_close)}
-        oh_map = {d: c for d, c in zip(oh_dates, oh_close)}
+        ix_map = {d: c for d, c in zip(ix_dates, ix_close, strict=True)}
+        oh_map = {d: c for d, c in zip(oh_dates, oh_close, strict=True)}
         common = sorted(set(ix_dates) & set(oh_dates))
         if len(common) > 5:
             ic = np.array([ix_map[d] for d in common])
@@ -340,9 +376,12 @@ def render_page(meta, ohlcv, flow, valuation, sector_idx, signals, news, thesis)
         latest = valuation[-1]
         d_, c_, pe, pb, dy = latest
         parts = []
-        if pe is not None: parts.append(f"P/E <b>{pe:.1f}</b>")
-        if pb is not None: parts.append(f"P/B <b>{pb:.2f}</b>")
-        if dy is not None: parts.append(f"yield <b>{dy:.2f}%</b>")
+        if pe is not None:
+            parts.append(f"P/E <b>{pe:.1f}</b>")
+        if pb is not None:
+            parts.append(f"P/B <b>{pb:.2f}</b>")
+        if dy is not None:
+            parts.append(f"yield <b>{dy:.2f}%</b>")
         if parts:
             val_pill = f'<span class="valpill">{" · ".join(parts)}</span>'
 
@@ -354,9 +393,12 @@ def render_page(meta, ohlcv, flow, valuation, sector_idx, signals, news, thesis)
         fz  = s.get("foreign_net_z20")
         below52 = s.get("pct_below_52w_high")
         parts = []
-        if rsi is not None: parts.append(f"RSI <b>{rsi:.0f}</b>")
-        if fz is not None:  parts.append(f"foreign-z <b>{fz:+.2f}</b>")
-        if below52 is not None: parts.append(f"{below52*100:+.1f}% vs 52wH")
+        if rsi is not None:
+            parts.append(f"RSI <b>{rsi:.0f}</b>")
+        if fz is not None:
+            parts.append(f"foreign-z <b>{fz:+.2f}</b>")
+        if below52 is not None:
+            parts.append(f"{below52 * 100:+.1f}% vs 52wH")
         if parts:
             sig_pill = f'<span class="sigpill">{" · ".join(parts)}</span>'
 
@@ -397,31 +439,9 @@ def render_page(meta, ohlcv, flow, valuation, sector_idx, signals, news, thesis)
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{escape(ticker)} {escape(name)} · alphatecx</title>
 <link rel="stylesheet" href="../dashboard.css">
-<style>
-  .ticker-header {{ display:flex; flex-wrap:wrap; align-items:center; gap:10px;
-    margin-bottom:10px; }}
-  .ticker-header h1 {{ font-size:20px; margin:0; }}
-  .pillpill {{ display:inline-block; padding:2px 9px; border-radius:12px;
-    background:#94a3b8; color:white; font-size:11px; font-weight:600; }}
-  .valpill, .sigpill {{ display:inline-block; padding:2px 9px; border-radius:12px;
-    background:#f1f5f9; color:#334155; font-size:12px; font-weight:500; }}
-  .valpill b, .sigpill b {{ color:#0f172a; }}
-  .thesis-box {{ margin:10px 0; padding:12px 16px; background:#fffbeb;
-    border:1px solid #fcd34d; border-radius:8px; font-size:13px; line-height:1.6; }}
-  .thesis-head {{ font-weight:600; margin-bottom:4px; }}
-  .thesis-line {{ font-size:12px; color:#475569; margin-top:3px; }}
-  .news {{ margin-top:14px; padding:10px 16px; background:#f8fafc;
-    border:1px solid #e2e8f0; border-radius:8px; font-size:12px; }}
-  .news h3 {{ font-size:13px; margin:0 0 6px; }}
-  .news ul {{ margin:0; padding-left:20px; line-height:1.7; }}
-  .news a {{ color:#2563eb; text-decoration:none; }}
-  .news a:hover {{ text-decoration:underline; }}
-  .news .meta {{ color:#94a3b8; font-size:11px; }}
-  .nav-back {{ font-size:12px; color:#64748b; }}
-  .nav-back a {{ color:#2563eb; text-decoration:none; }}
-</style></head><body>
+</head><body>
 <div class="wrap">
-  <div class="nav-back"><a href="../">← back to dashboard</a></div>
+  <div class="nav-back"><a href="../home">Home</a><a href="../">Dashboard</a><button id="theme-toggle" class="terminal-btn" type="button">Dark</button></div>
   <div class="ticker-header">
     <h1>{escape(ticker)} <span style="color:#64748b; font-weight:500">{escape(name)}</span></h1>
     {pillar_pill} {val_pill} {sig_pill}
@@ -430,6 +450,7 @@ def render_page(meta, ohlcv, flow, valuation, sector_idx, signals, news, thesis)
   {plot_html}
   {news_html}
 </div>
+<script src="../dashboard.js"></script>
 </body></html>"""
 
 
@@ -446,23 +467,36 @@ def main():
 
     with psycopg.connect(DATABASE_URL) as conn:
         targets = get_target_tickers(conn)
+        target_ids = [meta["ticker_id"] for meta in targets]
+        ohlcv_by_ticker = load_ohlcv_by_ticker(conn, target_ids)
+        flow_by_ticker = load_t86_flow_by_ticker(conn, target_ids)
+        valuation_by_ticker = load_valuation_by_ticker(conn, target_ids)
+        signals_by_ticker = load_signals_by_ticker(conn, target_ids)
+        news_by_ticker = load_news_by_ticker(conn, targets)
+        theses_by_ticker = load_active_theses_by_ticker()
+        sector_index_cache: dict[str, list] = {}
         log.info("targets: %d tickers", len(targets))
 
         for meta in targets:
             ticker = meta["ticker_id"]
-            ohlcv = load_ohlcv(conn, ticker)
+            ohlcv = ohlcv_by_ticker.get(ticker, [])
             if len(ohlcv) < 20:
                 log.warning("skip %s — only %d ohlcv rows", ticker, len(ohlcv))
                 n_empty += 1
                 continue
-            flow      = load_t86_flow(conn, ticker)
-            valuation = load_valuation(conn, ticker)
-            signals   = load_signals(conn, ticker)
-            news      = load_news(conn, ticker, meta["company_name"])
-            thesis    = load_thesis(ticker)
+            flow      = flow_by_ticker.get(ticker, [])
+            valuation = valuation_by_ticker.get(ticker, [])
+            signals   = signals_by_ticker.get(ticker)
+            news      = news_by_ticker.get(ticker, [])
+            thesis    = theses_by_ticker.get(ticker)
             pillar    = meta.get("ai_pillar")
-            sector    = (load_sector_index(conn, PILLAR_INDEX[pillar])
-                         if pillar in PILLAR_INDEX else [])
+            if pillar in PILLAR_INDEX:
+                index_name = PILLAR_INDEX[pillar]
+                if index_name not in sector_index_cache:
+                    sector_index_cache[index_name] = load_sector_index(conn, index_name)
+                sector = sector_index_cache[index_name]
+            else:
+                sector = []
             html = render_page(meta, ohlcv, flow, valuation, sector,
                                signals, news, thesis)
             (out_dir / f"{ticker}.html").write_text(html)
