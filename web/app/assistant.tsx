@@ -49,7 +49,7 @@ export const Assistant = () => {
     tools: Tools({
       mcpApp: McpAppRenderer({
         host: McpAppsRemoteHost({ url: "/api/mcp-apps" }),
-        hostInfo: { name: "assistant-ui-starter-mcp", version: "0.1.0" },
+        hostInfo: { name: "taistock-terminal", version: "0.1.0" },
       }),
     }),
   });
@@ -75,17 +75,11 @@ export const Assistant = () => {
               <Breadcrumb>
                 <BreadcrumbList>
                   <BreadcrumbItem className="hidden md:block">
-                    <BreadcrumbLink
-                      href="https://www.assistant-ui.com/docs/getting-started"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Build Your Own ChatGPT UX
-                    </BreadcrumbLink>
+                    <BreadcrumbPage>TaiStock</BreadcrumbPage>
                   </BreadcrumbItem>
                   <BreadcrumbSeparator className="hidden md:block" />
                   <BreadcrumbItem>
-                    <BreadcrumbPage>Starter Template</BreadcrumbPage>
+                    <BreadcrumbPage>Terminal</BreadcrumbPage>
                   </BreadcrumbItem>
                 </BreadcrumbList>
               </Breadcrumb>

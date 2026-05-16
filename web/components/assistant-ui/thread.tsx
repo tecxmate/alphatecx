@@ -142,7 +142,7 @@ const ThreadWelcome: FC = () => {
       <div className="aui-thread-welcome-center flex w-full grow flex-col items-center justify-center">
         <div className="aui-thread-welcome-message flex size-full flex-col justify-center px-4">
           <h1 className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both font-semibold text-2xl duration-200">
-            TECXMATE Terminal
+            TaiStock Terminal
           </h1>
           <p className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-muted-foreground text-xl delay-75 duration-200">
             Ask anything about Taiwan equities — chip flow, screens, supply chain, news.
@@ -156,23 +156,23 @@ const ThreadWelcome: FC = () => {
 
 const ThreadSuggestions: FC = () => {
   return (
-    <div className="aui-thread-welcome-suggestions grid w-full @md:grid-cols-2 gap-2 pb-4">
+    <div className="aui-thread-welcome-suggestions flex w-full flex-wrap gap-2 pb-4">
       {STARTER_PROMPTS.map((s, i) => (
-        <div
+        <ThreadPrimitive.Suggestion
           key={s.title}
-          className="aui-thread-welcome-suggestion-display fade-in slide-in-from-bottom-2 animate-in fill-mode-both duration-200"
-          style={{ animationDelay: `${i * 40}ms` }}
+          prompt={s.prompt}
+          send
+          asChild
         >
-          <ThreadPrimitive.Suggestion prompt={s.prompt} send asChild>
-            <Button
-              variant="ghost"
-              className="aui-thread-welcome-suggestion h-auto w-full @md:flex-col flex-wrap items-start justify-start gap-1 rounded-2xl border bg-background px-4 py-3 text-start text-sm transition-colors hover:bg-muted"
-            >
-              <span className="font-medium">{s.title}</span>
-              <span className="text-muted-foreground text-xs">{s.prompt}</span>
-            </Button>
-          </ThreadPrimitive.Suggestion>
-        </div>
+          <Button
+            variant="ghost"
+            title={s.prompt}
+            className="aui-thread-welcome-suggestion fade-in slide-in-from-bottom-2 h-8 animate-in rounded-full border bg-background px-3 text-xs font-medium fill-mode-both transition-colors duration-200 hover:bg-muted"
+            style={{ animationDelay: `${i * 40}ms` }}
+          >
+            {s.title}
+          </Button>
+        </ThreadPrimitive.Suggestion>
       ))}
     </div>
   );

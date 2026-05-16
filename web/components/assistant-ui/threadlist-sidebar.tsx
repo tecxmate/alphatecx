@@ -1,6 +1,5 @@
 import type * as React from "react";
 import { MessagesSquare } from "lucide-react";
-import { GitHubIcon } from "@/components/icons/github";
 import {
   Sidebar,
   SidebarContent,
@@ -11,6 +10,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { SettingsDialog } from "@/components/assistant-ui/settings-dialog";
 import { ThreadList } from "@/components/assistant-ui/thread-list";
 import { WatchlistPanel } from "@/components/assistant-ui/watchlist-panel";
 
@@ -24,17 +24,16 @@ export function ThreadListSidebar({
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton size="lg" asChild>
-                <a
-                  href="https://assistant-ui.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+                <a href="/" rel="noopener noreferrer">
                   <div className="aui-sidebar-header-icon-wrapper flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
                     <MessagesSquare className="aui-sidebar-header-icon size-4" />
                   </div>
                   <div className="aui-sidebar-header-heading me-6 flex flex-col gap-0.5 leading-none">
                     <span className="aui-sidebar-header-title font-semibold">
-                      assistant-ui
+                      TaiStock
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Terminal
                     </span>
                   </div>
                 </a>
@@ -57,23 +56,7 @@ export function ThreadListSidebar({
       <SidebarFooter className="aui-sidebar-footer border-t">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <a
-                href="https://github.com/assistant-ui/assistant-ui"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <div className="aui-sidebar-footer-icon-wrapper flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                  <GitHubIcon className="aui-sidebar-footer-icon size-4" />
-                </div>
-                <div className="aui-sidebar-footer-heading flex flex-col gap-0.5 leading-none">
-                  <span className="aui-sidebar-footer-title font-semibold">
-                    GitHub
-                  </span>
-                  <span>View Source</span>
-                </div>
-              </a>
-            </SidebarMenuButton>
+            <SettingsDialog />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
