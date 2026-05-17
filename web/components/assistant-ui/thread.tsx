@@ -204,6 +204,16 @@ const Composer: FC = () => {
 
 const MODEL_OPTIONS = [
   {
+    id: "claude-sonnet-4-6",
+    name: "Claude Sonnet 4.6",
+    description: "Anthropic · best tool reasoning",
+  },
+  {
+    id: "claude-opus-4-7",
+    name: "Claude Opus 4.7",
+    description: "Anthropic · highest quality",
+  },
+  {
     id: "gemini-2.5-flash",
     name: "Gemini 2.5 Flash",
     description: "Free · fast · ~15 RPM",
@@ -257,7 +267,7 @@ const ComposerAction: FC = () => {
       <div className="ml-auto flex items-center gap-2">
         <ModelSelector
           models={MODEL_OPTIONS}
-          defaultValue="gemini-2.5-flash"
+          defaultValue="claude-sonnet-4-6"
           size="sm"
           variant="ghost"
         />
