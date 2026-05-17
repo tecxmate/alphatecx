@@ -422,3 +422,15 @@ attributed_to: [niko, antigravity-agent]   belongs_to: [web-frontend]
 - User wanted the Assistant UI to support multiple reasoning and tool-calling rounds instead of stopping after one tool call.
 - Added AI SDK `stopWhen: stepCountIs(5)` to `web/app/api/chat/route.ts`; this lifts the server-side default one-step limit while keeping a cost/runaway bound.
 - Updated [2026-05-17-assistant-ui-frontend](decisions/2026-05-17-assistant-ui-frontend.md).
+
+## [2026-05-17] decision | Tune assistant chat performance
+attributed_to: [niko, antigravity-agent]   belongs_to: [web-frontend]
+- User asked to improve chatbot performance through prompt and runtime changes.
+- Changed the default tool loop cap to `MAX_TOOL_STEPS=3`, tightened the system prompt around narrow/sufficient tool use, and added `MCP_TOOL_CACHE_TTL_SECONDS=60` for common read-only MCP tool outputs.
+- Updated [2026-05-17-assistant-ui-frontend](decisions/2026-05-17-assistant-ui-frontend.md).
+
+## [2026-05-17] chat | Sidebar trigger placement and favicon
+attributed_to: [niko, antigravity-agent]   belongs_to: [web-frontend]
+- User requested the sidebar button at the top right of the side panel, with the top-bar button shown only while the side panel is collapsed.
+- Added an editable SVG favicon using the sidebar brand mark.
+- Updated [web-frontend](topics/web-frontend.md).

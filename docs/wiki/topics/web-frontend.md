@@ -3,6 +3,7 @@ title: Web frontend (Next.js + assistant-ui)
 type: topic
 slug: web-frontend
 date: 2026-05-17
+updated: 2026-05-17
 attributed_to: [niko, antigravity-agent]
 belongs_to: [alphatecx, system-architecture]
 source: chat
@@ -16,6 +17,10 @@ related: [system-architecture, 2026-05-17-assistant-ui-frontend]
 `web/` is a Next.js 15 app scaffolded from `assistant-ui@latest create --template mcp`. It is a conversational frontend over the existing Python FastMCP server.
 
 ## Layout
+
+### Shell chrome
+
+On 2026-05-17, [niko] specified that the sidebar toggle belongs at the top right of the side panel while the panel is visible, and should only appear in the top bar when the side panel is collapsed. The browser favicon uses the same `TrendingUp`-style brand mark as the sidebar logo via `web/app/icon.svg`.
 
 ```
 web/
