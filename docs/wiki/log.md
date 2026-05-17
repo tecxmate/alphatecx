@@ -416,3 +416,9 @@ attributed_to: [niko, antigravity-agent]   belongs_to: [web-frontend]
 - Cross-tool interactivity: `<TickerChip>` wraps any ticker_id in a `ThreadPrimitive.Suggestion` that sends a chip-flow follow-up prompt. Wired into screener-table, ticker-momentum, supply-chain-list, watchlist-table.
 - Live watchlist sidebar: new `/api/watchlist` route calls `w_watchlist` server-side via the cached MCP client and returns `{watchlist, count}`. `<WatchlistPanel>` fetches on mount and renders ticker chips above the chat thread list. Verified 200 with real Neon data (3231/6488/3324).
 - MCP server's watchlist row uses `company_name`, not `name` — defensive rendering in both panel and tool UI.
+
+## [2026-05-17] decision | Enable multi-step assistant tool loops
+attributed_to: [niko, antigravity-agent]   belongs_to: [web-frontend]
+- User wanted the Assistant UI to support multiple reasoning and tool-calling rounds instead of stopping after one tool call.
+- Added AI SDK `stopWhen: stepCountIs(5)` to `web/app/api/chat/route.ts`; this lifts the server-side default one-step limit while keeping a cost/runaway bound.
+- Updated [2026-05-17-assistant-ui-frontend](decisions/2026-05-17-assistant-ui-frontend.md).
