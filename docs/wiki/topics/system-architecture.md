@@ -3,7 +3,7 @@ title: System Architecture (v2 Stateful Upgrade)
 type: topic
 slug: system-architecture
 date: 2026-05-07
-updated: 2026-05-11
+updated: 2026-05-13
 belongs_to: [niko]
 source: chat
 status: active
@@ -84,3 +84,4 @@ The `alphatecx-v2` server exposes 7 tools:
 - 2026-05-11: Graph viewer navigation now treats Discovery candidates as a first-level tab and adds a Tracked tickers tab with client-rendered inline classification editing, preserving initial page weight. [niko, antigravity-agent]
 - 2026-05-11: Tracked tickers tab changed to lazy search-only rendering with 20 rows per page, and graph interaction hints now display only on Plotly graph tabs. [niko, antigravity-agent]
 - 2026-05-11: Ticker management moved from the graph viewer to a dedicated Home-linked `/t/{token}/` directory. The page renders 20 rows by default, supports search/paging, keeps inline pillar/node edits, and stores user folders/lists in `dim_ticker.tags`. [niko, antigravity-agent]
+- 2026-05-13: Go-to-market note: Claude Desktop/iOS remains the simplest MCP customer install path, while ChatGPT distribution should be planned as a remote MCP/app integration with workspace/admin/developer-mode requirements or via a custom OpenAI API chat product. [niko, antigravity-agent]

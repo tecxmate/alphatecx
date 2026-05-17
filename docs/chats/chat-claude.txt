@@ -1694,3 +1694,98 @@ All four tools working end-to-end. Notable bonus: u_universe(filter='extreme') s
   
   If you want, I can scope just step 2+3 for one ticker as a proof-of-concept first (~3–4 hours of work), and only roll it out to all tickers if it looks
    right. Want me to do that?
+
+
+⏺ Here's the plan, organic to what's already in the repo.
+
+  Plan: assistant-ui chat frontend (web/)
+
+  Layout
+  
+  alphatecx-2/
+  ├── mcp_server/        # existing Python MCP (unchanged)
+  ├── src/, scripts/...  # existing Python data layer (unchanged)
+  └── web/               # NEW — Next.js 15 + assistant-ui
+      ├── app/
+      │   ├── api/chat/route.ts     # AI SDK + Anthropic + MCP client
+      │   └── page.tsx              # Thread UI
+      ├── components/
+      │   └── tools/                # Generative UI per tool
+      │       ├── ChipFlowChart.tsx
+      │       ├── ScreenerTable.tsx
+      │       └── SupplyChainGraph.tsx
+      ├── lib/mcp.ts                # MCP client factory
+      └── .env.local                # ANTHROPIC_API_KEY, MCP_URL, MCP_TOKEN
+
+  Step 1 — Bootstrap (verify CLI first)
+
+  The exact incantation has changed across assistant-ui releases. Before running, I'll check current docs via Context7 — the modern command is
+  typically:
+  cd web && npx assistant-ui@latest create .   # or `init` inside an existing Next.js app
+  Verify: pnpm dev boots a working chat against a mock backend before any wiring.
+
+  Step 2 — Wire /api/chat to Anthropic + existing MCP
+
+  - Install: ai, @ai-sdk/anthropic, @modelcontextprotocol/sdk.
+  - In app/api/chat/route.ts: use streamText with anthropic('claude-sonnet-4-6'), experimental_createMCPClient({ transport: { type: 'sse', url: 
+  process.env.MCP_URL! } }), then tools: await mcpClient.tools(). maxSteps: 5.
+  - System prompt: "Taiwanese quantitative analyst. Always validate 4-digit TWSE codes. Prefer tool calls over assertions. Cite _source and
+  _as_of from tool results."
+  - Verify: ask "show me 2330 chip flow last 5 days" → see a tool call in the stream.
+
+  Step 3 — Generative UI for the 3 highest-signal tools
+
+  Map MCP tool names → React components in assistant-ui's makeAssistantToolUI / <ToolFallback>:
+
+  ┌───────────────────────────────────────┬──────────────────┬────────────────────┐
+  │               MCP tool                │    Component     │      Library       │
+  ├───────────────────────────────────────┼──────────────────┼────────────────────┤
+  │ sc_ticker_momentum / raw_flow_history │ ChipFlowChart    │ Recharts bar chart │
+  ┌───────────────────────────────────────┬──────────────────┬────────────────────┐
+  │               MCP tool                │    Component     │      Library       │
+  ├───────────────────────────────────────┼──────────────────┼────────────────────┤
+  │ sc_ticker_momentum / raw_flow_history │ ChipFlowChart    │ Recharts bar chart │
+  ├───────────────────────────────────────┼──────────────────┼────────────────────┤
+  │ q_screener / sc_accumulation_screen   │ ScreenerTable    │ TanStack Table     │
+  ├───────────────────────────────────────┼──────────────────┼────────────────────┤
+  │ sc_supply_chain_map                   │ SupplyChainGraph │ React Flow         │
+  └───────────────────────────────────────┴──────────────────┴────────────────────┘
+
+  Each component receives the tool's JSON output (already includes _source, _as_of, _freshness per index.py:1). Render the provenance stamp in a
+   footer chip so it's always visible.
+
+  Step 4 — Deploy
+
+  - Add web/ as a second Vercel project (separate from the MCP project; same repo, different root directory).
+
+
+  Each component receives the tool's JSON output (already includes _source, _as_of, _freshness per index.py:1).
+  Render the provenance stamp in a footer chip so it's always visible.
+
+  Step 4 — Deploy
+
+  - Add web/ as a second Vercel project (separate from the MCP project; same repo, different root directory).
+  - Env: ANTHROPIC_API_KEY, MCP_URL=https://<mcp-app>.vercel.app/mcp/<token>/sse, no DB creds needed (frontend
+  never talks to Neon directly — only via MCP).
+
+  Step 5 — Wiki entries (per AGENTS.md)
+
+  - docs/wiki/decisions/2026-05-17-assistant-ui-frontend.md — why assistant-ui + AI SDK MCP client over hand-rolled
+   tools.
+  - docs/wiki/topics/web-frontend.md — new topic page.
+  - One-line append to docs/wiki/log.md.
+
+  Explicitly out of scope for v1
+
+  - Clerk auth, Stripe, 20-prompt gate (Section 5 of the spec) — defer to v2.
+  - Replacing the existing static dashboard — leaves coexist; PWA manifest later.
+  - Chat history persistence — assistant-ui's in-memory threads only; Neon persistence later when auth lands.
+
+  Risks / open questions
+
+  - MCP auth pattern. The Python server uses URL-as-secret (/mcp/<TOKEN>/). The AI SDK MCP SSE client supports
+  custom headers but URL-embedded auth Just Works — needs a 2-minute connectivity test before building tool UI.
+  - Vercel function duration. Multi-step tool chains can exceed the hobby 10s limit. May need maxDuration = 60 and
+  Pro plan, or move chat route to Edge runtime.
+  - CLI drift. npx assistant-ui init was the user's phrasing; current docs may use create. I'll verify via Context7
+   at execution time, not guess.

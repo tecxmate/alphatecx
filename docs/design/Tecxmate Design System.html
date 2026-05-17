@@ -1,0 +1,1535 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280" />
+<title>Tecxmate — Design System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  /* =============================================================
+     DESIGN TOKENS — lifted verbatim from tecxmate/tecxmate@main
+     - app/globals.css (HSL variables)
+     - tailwind.config.ts (color map, radius, spacing)
+     ============================================================= */
+  :root {
+    /* Primary — Purple (brand) */
+    --primary:          271 76% 53%;  /* #8c52ff */
+    --primary-light:    271 85% 65%;  /* #a978ff */
+    --primary-dark:     271 70% 40%;  /* #6b3fcc */
+    --primary-foreground: 0 0% 100%;
+
+    /* Success — Apple Green */
+    --success:          142 71% 45%;  /* #30d158 */
+    --success-light:    142 63% 60%;
+    --success-dark:     142 46% 34%;
+
+    /* Destructive — Apple Red */
+    --destructive:      0 84% 42%;    /* #d70015 */
+    --destructive-light: 4 90% 58%;   /* #ff3b30 */
+    --destructive-dark: 0 67% 39%;
+
+    /* Warning — Apple Orange */
+    --warning:          20 100% 37%;  /* #bf4800 */
+    --warning-light:    33 100% 50%;  /* #ff9500 */
+
+    /* Info */
+    --info:             271 76% 53%;
+
+    /* Surface */
+    --background:       0 0% 98%;   /* #fafafa */
+    --foreground:       0 0% 11%;   /* #1d1d1f */
+    --card:             0 0% 100%;  /* #ffffff */
+    --popover:          0 0% 100%;
+
+    /* Text */
+    --text-primary:     0 0% 11%;
+    --text-secondary:   0 0% 43%;   /* #6e6e73 */
+    --text-tertiary:    0 0% 53%;   /* #86868b */
+
+    /* Secondary / muted */
+    --secondary:        0 0% 96%;
+    --muted:            0 0% 96%;
+    --accent:           0 0% 96%;
+
+    /* Borders */
+    --border:           0 0% 90%;   /* #e5e5e7 */
+    --border-medium:    0 0% 82%;   /* #d2d2d7 */
+    --border-dark:      0 0% 53%;
+    --divider:          0 0% 96%;   /* #f5f5f7 */
+    --ring:             271 76% 53%;
+
+    /* Radius scale */
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;   /* --radius */
+    --radius-xl: 16px;
+
+    /* Spacing — Apple scale */
+    --sp-xs: 4px;
+    --sp-sm: 8px;
+    --sp-md: 12px;
+    --sp-lg: 16px;
+    --sp-xl: 24px;
+    --sp-xxl: 32px;
+    --sp-xxxl: 48px;
+
+    /* Alt palette (ALT Agency compat) */
+    --alt-black:    #000000;
+    --alt-gray-100: #F4F4F4;
+    --alt-gray-200: #E5E5E5;
+    --alt-gray-300: #CCCCCC;
+    --alt-gray-400: #999999;
+    --alt-gray-500: #666666;
+    --alt-gray-600: #333333;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    letter-spacing: -0.01em;
+    color: hsl(var(--text-primary));
+    background: hsl(var(--background));
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Apple-inspired typographic scale — matches globals.css */
+  h1 { font-size: 32px; font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; margin: 0; }
+  h2 { font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; margin: 0; }
+  h3 { font-size: 24px; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; margin: 0; }
+  h4 { font-size: 20px; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; margin: 0; }
+  h5 { font-size: 18px; font-weight: 600; line-height: 1.4; margin: 0; }
+  h6 { font-size: 16px; font-weight: 600; line-height: 1.4; margin: 0; }
+  p  { font-size: 15px; font-weight: 400; line-height: 1.5; margin: 0; }
+  .t-small   { font-size: 13px; color: hsl(var(--text-secondary)); }
+  .t-caption { font-size: 12px; color: hsl(var(--text-secondary)); }
+
+  /* Page scaffolding */
+  .page {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 64px 56px 120px;
+  }
+
+  /* Brand wordmark — Instrument Serif Italic: balanced, editorial, non-generic */
+  .wordmark {
+    font-family: 'Instrument Serif', 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+    font-weight: 400;
+    font-style: italic;
+    letter-spacing: 0;
+    color: hsl(var(--primary));
+    line-height: 1;
+  }
+
+  /* ------------ Section scaffolding ------------ */
+  section.ds {
+    margin-top: 96px;
+    padding-top: 48px;
+    border-top: 1px solid hsl(var(--border));
+  }
+  section.ds:first-of-type { border-top: none; margin-top: 64px; padding-top: 0; }
+  .ds-eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: hsl(var(--primary));
+    margin-bottom: 12px;
+  }
+  .ds-title { font-size: 40px; font-weight: 600; letter-spacing: -0.025em; margin-bottom: 12px; }
+  .ds-lede  { font-size: 17px; color: hsl(var(--text-secondary)); max-width: 68ch; margin-bottom: 40px; }
+  .ds-sub   { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: hsl(var(--text-secondary)); margin-bottom: 16px; }
+
+  .grid { display: grid; gap: 16px; }
+  .g-2 { grid-template-columns: repeat(2, 1fr); }
+  .g-3 { grid-template-columns: repeat(3, 1fr); }
+  .g-4 { grid-template-columns: repeat(4, 1fr); }
+  .g-6 { grid-template-columns: repeat(6, 1fr); }
+
+  /* =============================================================
+     HERO
+     ============================================================= */
+  .hero {
+    position: relative;
+    border: 1px solid hsl(var(--border));
+    background: #fff;
+    padding: 56px 56px 48px;
+    overflow: hidden;
+  }
+  .hero::before {
+    /* Shader-background-inspired gradient wash */
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(1200px 500px at 110% -10%, rgba(140,82,255,0.18), transparent 60%),
+      radial-gradient(800px 400px at -10% 110%, rgba(169,120,255,0.12), transparent 60%),
+      linear-gradient(180deg, #ffffff 0%, #fafafa 100%);
+    pointer-events: none;
+  }
+  .hero > * { position: relative; }
+  .hero-meta {
+    display: flex; align-items: center; gap: 12px;
+    font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+    color: hsl(var(--text-secondary));
+    margin-bottom: 28px;
+  }
+  .hero-meta .dot { width: 6px; height: 6px; border-radius: 50%; background: hsl(var(--primary)); }
+  .hero-title { font-size: 56px; line-height: 1.05; letter-spacing: -0.03em; font-weight: 600; max-width: 14ch; margin: 0 0 20px; }
+  .hero-title em { font-style: normal; color: hsl(var(--primary)); }
+  .hero-sub   { font-size: 19px; color: hsl(var(--text-secondary)); max-width: 62ch; margin-bottom: 36px; }
+  .hero-kpis  { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: hsl(var(--border)); margin-top: 48px; border: 1px solid hsl(var(--border)); }
+  .kpi { background: #fff; padding: 20px 24px; }
+  .kpi-label { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: hsl(var(--text-secondary)); margin-bottom: 8px; }
+  .kpi-value { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; color: hsl(var(--text-primary)); }
+  .kpi-value .accent { color: hsl(var(--primary)); }
+
+  /* =============================================================
+     LOGO & WORDMARK BLOCK
+     ============================================================= */
+  .logo-grid { grid-template-columns: 1.3fr 1fr 1fr; }
+  .logo-card {
+    border: 1px solid hsl(var(--border));
+    background: #fff;
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 240px;
+  }
+  .logo-card.dark { background: var(--alt-black); color: #fff; }
+  .logo-card.purple { background: hsl(var(--primary)); color: #fff; }
+  .logo-card .label {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+    color: hsl(var(--text-tertiary)); margin-bottom: 8px;
+  }
+  .logo-card.dark .label, .logo-card.purple .label { color: rgba(255,255,255,0.6); }
+  .logo-lg   { font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-weight: 400; font-size: 88px; line-height: 1; letter-spacing: 0; color: hsl(var(--primary)); }
+  .logo-card.dark .logo-lg   { color: hsl(var(--primary)); }
+  .logo-card.purple .logo-lg { color: #fff; }
+  .logo-spec { font-size: 12px; color: hsl(var(--text-secondary)); display: flex; justify-content: space-between; margin-top: 16px; }
+  .logo-card.dark .logo-spec, .logo-card.purple .logo-spec { color: rgba(255,255,255,0.7); }
+
+  .wordmark-anatomy {
+    border: 1px solid hsl(var(--border));
+    background: #fff;
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .anatomy-wordmark { font-size: 120px; }
+  .anatomy-callouts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .anatomy-callout { border-left: 2px solid hsl(var(--primary)); padding-left: 12px; }
+  .anatomy-callout .num { font-size: 11px; font-weight: 700; color: hsl(var(--primary)); letter-spacing: 0.1em; }
+  .anatomy-callout .note { font-size: 13px; color: hsl(var(--text-secondary)); margin-top: 4px; }
+
+  /* =============================================================
+     COLOR SWATCHES
+     ============================================================= */
+  .swatch {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid hsl(var(--border));
+    background: #fff;
+  }
+  .swatch-chip { height: 112px; position: relative; }
+  .swatch-chip .name {
+    position: absolute; top: 12px; left: 12px; right: 12px;
+    font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: inherit;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .swatch-chip.on-dark { color: #fff; }
+  .swatch-chip.on-light { color: hsl(var(--text-primary)); }
+  .swatch-meta { padding: 12px 14px; font-size: 12px; display: flex; justify-content: space-between; border-top: 1px solid hsl(var(--border)); background: #fff; color: hsl(var(--text-secondary)); font-variant-numeric: tabular-nums; }
+  .swatch-meta .hex { font-weight: 600; color: hsl(var(--text-primary)); letter-spacing: 0.02em; }
+
+  .ramp {
+    display: grid; grid-template-columns: 1.4fr repeat(3, 1fr);
+    background: #fff; border: 1px solid hsl(var(--border));
+  }
+  .ramp > .swatch { border: none; border-right: 1px solid hsl(var(--border)); }
+  .ramp > .swatch:last-child { border-right: none; }
+
+  .status-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+  /* Neutral / text palette as a horizontal strip */
+  .text-palette {
+    display: grid; grid-template-columns: repeat(6, 1fr);
+    border: 1px solid hsl(var(--border)); background: #fff;
+  }
+  .text-palette > div {
+    padding: 24px 16px;
+    border-right: 1px solid hsl(var(--border));
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .text-palette > div:last-child { border-right: none; }
+  .text-palette .lbl { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: hsl(var(--text-tertiary)); }
+  .text-palette .val { font-size: 14px; font-weight: 600; }
+  .text-palette .hex { font-size: 12px; color: hsl(var(--text-secondary)); font-variant-numeric: tabular-nums; }
+  .chip-sq { width: 28px; height: 28px; border: 1px solid rgba(0,0,0,0.08); margin-bottom: 8px; }
+
+  /* =============================================================
+     TYPOGRAPHY
+     ============================================================= */
+  .type-stack {
+    border: 1px solid hsl(var(--border));
+    background: #fff;
+    overflow: hidden;
+  }
+  .type-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 200px;
+    align-items: baseline;
+    padding: 24px 28px;
+    border-bottom: 1px solid hsl(var(--border));
+    gap: 24px;
+  }
+  .type-row:last-child { border-bottom: none; }
+  .type-row .meta { font-size: 12px; color: hsl(var(--text-secondary)); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+  .type-row .sample { color: hsl(var(--text-primary)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .type-row .usage { font-size: 12px; color: hsl(var(--text-secondary)); }
+
+  .type-sample-h1  { font-size: 32px; font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; }
+  .type-sample-h2  { font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; }
+  .type-sample-h3  { font-size: 24px; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
+  .type-sample-h4  { font-size: 20px; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
+  .type-sample-h5  { font-size: 18px; font-weight: 600; }
+  .type-sample-body{ font-size: 15px; font-weight: 400; }
+  .type-sample-sm  { font-size: 13px; font-weight: 400; color: hsl(var(--text-secondary)); }
+  .type-sample-cap { font-size: 12px; font-weight: 400; color: hsl(var(--text-secondary)); }
+
+  .type-families { grid-template-columns: 1fr 1fr; }
+  .family-card { border: 1px solid hsl(var(--border)); background: #fff; padding: 32px; }
+  .family-card .sample { margin: 16px 0 24px; color: hsl(var(--text-primary)); }
+  .family-stack { font-size: 12px; color: hsl(var(--text-secondary)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; line-height: 1.6; }
+
+  /* =============================================================
+     SPACING & RADIUS
+     ============================================================= */
+  .spacing-bars { display: flex; flex-direction: column; gap: 12px; background: #fff; border: 1px solid hsl(var(--border)); padding: 28px 32px; }
+  .space-row { display: grid; grid-template-columns: 140px 80px 1fr; align-items: center; gap: 16px; font-size: 13px; }
+  .space-row .key { font-weight: 600; color: hsl(var(--text-primary)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .space-row .val { color: hsl(var(--text-secondary)); font-variant-numeric: tabular-nums; }
+  .space-bar { height: 12px; background: hsl(var(--primary)); border-radius: 2px; }
+
+  .radius-grid { grid-template-columns: repeat(4, 1fr); }
+  .radius-card {
+    background: #fff; border: 1px solid hsl(var(--border));
+    padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 16px;
+  }
+  .radius-sample {
+    width: 120px; height: 120px;
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--primary-light)) 100%);
+  }
+  .radius-label { display: flex; justify-content: space-between; width: 100%; font-size: 12px; }
+  .radius-label .key { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .radius-label .val { color: hsl(var(--text-secondary)); }
+
+  /* =============================================================
+     BUTTONS
+     ============================================================= */
+  .showcase { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 28px; background: #fff; border: 1px solid hsl(var(--border)); }
+  .showcase + .showcase { margin-top: 12px; }
+  .showcase .showcase-label { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: hsl(var(--text-tertiary)); width: 100%; margin-bottom: 4px; }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    font-size: 14px; font-weight: 500;
+    padding: 10px 16px;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 160ms ease;
+    font-family: inherit;
+    white-space: nowrap;
+  }
+  .btn svg { width: 16px; height: 16px; }
+  .btn-primary { background: hsl(var(--primary)); color: #fff; }
+  .btn-primary:hover { background: hsl(var(--primary) / 0.9); }
+  .btn-destructive { background: hsl(var(--destructive)); color: #fff; }
+  .btn-outline { background: #fff; color: hsl(var(--text-primary)); border-color: hsl(var(--border-medium)); }
+  .btn-outline:hover { border-color: hsl(var(--border-dark)); }
+  .btn-secondary { background: hsl(var(--secondary)); color: hsl(var(--text-primary)); }
+  .btn-ghost { background: transparent; color: hsl(var(--text-primary)); }
+  .btn-ghost:hover { background: hsl(var(--accent)); }
+  .btn-link { background: transparent; color: hsl(var(--primary)); padding: 10px 4px; }
+  .btn-link:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+  /* Signature "Book a call" — pill-shaped with shadow, as used in hero & navbar */
+  .btn-pill {
+    padding: 16px 32px;
+    font-size: 16px;
+    border-radius: 999px;
+    background: hsl(var(--primary));
+    color: #fff;
+    box-shadow: 0 10px 30px rgba(140, 82, 255, 0.28);
+  }
+  .btn-pill:hover { background: hsl(var(--primary-dark)); box-shadow: 0 14px 40px rgba(140, 82, 255, 0.38); }
+
+  .btn-sm  { padding: 8px 12px; font-size: 13px; }
+  .btn-lg  { padding: 12px 32px; font-size: 15px; }
+  .btn-icon { width: 40px; height: 40px; padding: 0; }
+
+  .btn[disabled] { opacity: 0.5; pointer-events: none; }
+
+  /* =============================================================
+     BADGES
+     ============================================================= */
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    letter-spacing: 0.01em;
+  }
+  .badge-primary     { background: hsl(var(--primary)); color: #fff; }
+  .badge-secondary   { background: hsl(var(--secondary)); color: hsl(var(--text-primary)); }
+  .badge-destructive { background: hsl(var(--destructive)); color: #fff; }
+  .badge-success     { background: hsl(var(--success)); color: #fff; }
+  .badge-warning     { background: hsl(var(--warning-light)); color: #fff; }
+  .badge-outline     { background: #fff; color: hsl(var(--text-primary)); border-color: hsl(var(--border-medium)); }
+
+  /* Category badge — as used on campaigns cards */
+  .cat-badge {
+    background: #fff;
+    color: hsl(var(--primary));
+    font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+    padding: 6px 12px;
+    border-radius: 0;
+    display: inline-block;
+  }
+
+  /* =============================================================
+     FORM CONTROLS
+     ============================================================= */
+  .form-stack { display: flex; flex-direction: column; gap: 20px; background: #fff; border: 1px solid hsl(var(--border)); padding: 32px; max-width: 420px; }
+  .field { display: flex; flex-direction: column; gap: 8px; }
+  .field label { font-size: 13px; font-weight: 500; color: hsl(var(--text-primary)); }
+  .input, .textarea, .select {
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 14px;
+    font-family: inherit;
+    border: 1px solid hsl(var(--input));
+    border-radius: var(--radius-md);
+    background: #fff;
+    color: hsl(var(--text-primary));
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+  }
+  .input:focus, .textarea:focus, .select:focus {
+    outline: none;
+    border-color: hsl(var(--ring));
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.15);
+  }
+  .textarea { min-height: 80px; resize: vertical; font-family: inherit; }
+  .input::placeholder, .textarea::placeholder { color: hsl(var(--text-tertiary)); }
+
+  .checkbox-row, .radio-row { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  .check, .radio {
+    width: 18px; height: 18px; border: 1px solid hsl(var(--input));
+    background: #fff; display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .check { border-radius: 4px; }
+  .radio { border-radius: 50%; }
+  .check.checked { background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: #fff; }
+  .check.checked::after { content: ''; width: 10px; height: 6px; border-left: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(-45deg) translate(1px, -1px); }
+  .radio.checked { border-color: hsl(var(--primary)); }
+  .radio.checked::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: hsl(var(--primary)); }
+
+  /* Switch */
+  .switch {
+    width: 40px; height: 22px;
+    background: hsl(var(--border-medium));
+    border-radius: 999px; position: relative;
+    transition: background 160ms ease;
+  }
+  .switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 18px; height: 18px; background: #fff;
+    border-radius: 50%; transition: transform 160ms ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  }
+  .switch.on { background: hsl(var(--primary)); }
+  .switch.on::after { transform: translateX(18px); }
+
+  /* =============================================================
+     CARDS — signature patterns from tecxmate
+     ============================================================= */
+  /* Service card — squared, colored glow on hover */
+  .svc-grid { grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .svc-card {
+    background: hsl(0 0% 97% / 0.5);
+    border: 1px solid hsl(0 0% 94%);
+    padding: 24px;
+    display: flex; flex-direction: column;
+    transition: border-color 300ms ease, box-shadow 300ms ease;
+  }
+  .svc-card[data-accent="blue"]:hover   { border-color: rgba(59,130,246,0.6); box-shadow: 0 0 40px rgba(59,130,246,0.25); }
+  .svc-card[data-accent="sky"]:hover    { border-color: rgba(56,189,248,0.6); box-shadow: 0 0 40px rgba(56,189,248,0.25); }
+  .svc-card[data-accent="purple"]:hover { border-color: hsl(var(--primary) / 0.4); box-shadow: 0 0 40px rgba(139,92,246,0.28); }
+  .svc-card[data-accent="amber"]:hover  { border-color: rgba(245,158,11,0.6); box-shadow: 0 0 40px rgba(245,158,11,0.25); }
+  .svc-card[data-accent="rose"]:hover   { border-color: rgba(244,114,182,0.6); box-shadow: 0 0 40px rgba(244,114,182,0.25); }
+  .svc-icon-tile {
+    width: 40px; height: 40px;
+    background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 12px;
+    color: var(--alt-gray-600);
+    transition: background 200ms, color 200ms;
+  }
+  .svc-card[data-accent="blue"]:hover   .svc-icon-tile { background: #eff6ff; color: #3b82f6; }
+  .svc-card[data-accent="sky"]:hover    .svc-icon-tile { background: #f0f9ff; color: #0ea5e9; }
+  .svc-card[data-accent="purple"]:hover .svc-icon-tile { background: hsl(var(--primary) / 0.1); color: hsl(var(--primary)); }
+  .svc-card[data-accent="amber"]:hover  .svc-icon-tile { background: #fffbeb; color: #f59e0b; }
+  .svc-card[data-accent="rose"]:hover   .svc-icon-tile { background: #fff1f2; color: #f43f5e; }
+  .svc-card h3 { font-size: 18px; color: var(--alt-black); margin-bottom: 8px; }
+  .svc-card p  { color: var(--alt-gray-500); font-size: 14px; }
+
+  /* Project card — squared with external-link CTA */
+  .project-card {
+    background: #fff;
+    border: 1px solid var(--alt-gray-200);
+    display: flex; flex-direction: column;
+    width: 320px;
+    transition: border-color 300ms ease, box-shadow 300ms ease;
+  }
+  .project-card:hover { border-color: hsl(var(--primary)); box-shadow: 0 6px 14px rgba(0,0,0,0.08); }
+  .project-thumb {
+    aspect-ratio: 4/3;
+    background: linear-gradient(135deg, hsl(var(--primary) / 0.2), hsl(var(--primary-light) / 0.35));
+    position: relative;
+    overflow: hidden;
+  }
+  .project-thumb::after {
+    content: 'VNME'; position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-size: 72px;
+    color: rgba(255,255,255,0.85); font-weight: 400;
+  }
+  .project-body { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .project-body h3 { font-size: 18px; font-weight: 600; color: var(--alt-black); }
+  .project-body p  { font-size: 14px; color: hsl(var(--text-secondary)); }
+  .project-cta { display: flex; align-items: center; gap: 6px; color: hsl(var(--primary)); font-size: 14px; font-weight: 500; margin-top: 4px; }
+
+  /* Team card — squared, photo on top, LinkedIn icons */
+  .team-grid { grid-template-columns: repeat(5, 1fr); gap: 16px; }
+  .team-card { background: #fff; overflow: hidden; transition: transform 300ms ease, box-shadow 300ms ease; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+  .team-card:hover { transform: translateY(-4px); box-shadow: 0 12px 30px rgba(0,0,0,0.10); }
+  .team-photo { aspect-ratio: 3/4; background: linear-gradient(180deg, #e9e0ff 0%, #c9b3ff 100%); position: relative; }
+  .team-photo::after {
+    content: '';
+    position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 70%; height: 80%;
+    background: radial-gradient(ellipse at 50% 20%, rgba(255,255,255,0.55) 0%, transparent 55%),
+                linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.05) 100%);
+  }
+  .team-body { padding: 16px 12px; text-align: center; }
+  .team-body h3 { font-size: 15px; font-weight: 600; color: var(--alt-black); margin-bottom: 2px; }
+  .team-role { font-size: 13px; color: hsl(var(--primary)); font-weight: 500; margin-bottom: 10px; }
+  .team-socials { display: flex; justify-content: center; gap: 8px; }
+  .social-tile { width: 36px; height: 36px; background: var(--alt-gray-100); display: flex; align-items: center; justify-content: center; color: var(--alt-gray-600); transition: background 160ms ease; }
+  .social-tile:hover { background: var(--alt-gray-200); }
+  .social-tile svg { width: 18px; height: 18px; }
+
+  /* Blog/campaign card */
+  .blog-grid { grid-template-columns: repeat(3, 1fr); gap: 32px; }
+  .blog-card { background: #fff; border: 1px solid hsl(0 0% 94%); box-shadow: 0 1px 2px rgba(0,0,0,0.04); display: flex; flex-direction: column; transition: box-shadow 300ms ease; overflow: hidden; }
+  .blog-card:hover { box-shadow: 0 6px 14px rgba(0,0,0,0.08); }
+  .blog-thumb {
+    aspect-ratio: 16/9;
+    position: relative;
+    background: linear-gradient(120deg, #fff1e6 0%, #ffd9c0 100%);
+  }
+  .blog-thumb.alt { background: linear-gradient(120deg, #e0f2fe 0%, #bae6fd 100%); }
+  .blog-thumb.alt2 { background: linear-gradient(120deg, #ede9fe 0%, #c4b5fd 100%); }
+  .blog-thumb .tag { position: absolute; top: 16px; left: 16px; }
+  .blog-body { padding: 24px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+  .blog-meta { display: flex; gap: 16px; font-size: 12px; color: hsl(var(--text-tertiary)); }
+  .blog-meta span { display: inline-flex; align-items: center; gap: 4px; }
+  .blog-body h3 { font-size: 20px; font-weight: 700; color: hsl(var(--foreground)); line-height: 1.3; }
+  .blog-body p  { font-size: 14px; color: hsl(var(--text-secondary)); line-height: 1.6; flex: 1; }
+  .blog-cta { display: inline-flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 700; color: hsl(var(--primary)); }
+
+  /* =============================================================
+     SECTION BACKGROUNDS (key layout patterns)
+     ============================================================= */
+  .section-bg-demo { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .bg-chip { padding: 28px; min-height: 160px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid hsl(var(--border)); }
+  .bg-chip .label { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+  .bg-chip h4 { font-weight: 600; }
+  .bg-chip.light   { background: #fff;  color: hsl(var(--text-primary)); }
+  .bg-chip.light .label { color: hsl(var(--text-tertiary)); }
+  .bg-chip.muted   { background: #fafafa; color: hsl(var(--text-primary)); }
+  .bg-chip.muted .label { color: hsl(var(--text-tertiary)); }
+  .bg-chip.purple  { background: hsl(var(--primary)); color: #fff; border-color: hsl(var(--primary)); }
+  .bg-chip.purple .label { color: rgba(255,255,255,0.75); }
+  .bg-chip.black   { background: var(--alt-black); color: #fff; border-color: var(--alt-black); }
+  .bg-chip.black .label { color: rgba(255,255,255,0.6); }
+  .bg-chip.gray    { background: #f9f9f9; color: hsl(var(--text-primary)); }
+  .bg-chip.gray .label { color: hsl(var(--text-tertiary)); }
+
+  /* =============================================================
+     NAVBAR SPECIMEN
+     ============================================================= */
+  .navbar-demo {
+    position: relative; height: 72px;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(255,255,255,0.2);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 10px 30px rgba(0,0,0,0.06);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px;
+  }
+  .navbar-wrap { border: 1px solid hsl(var(--border)); position: relative; overflow: hidden; }
+  .navbar-wrap::before {
+    content: ''; position: absolute; inset: 0; top: 72px;
+    background: linear-gradient(180deg, #fafafa, #f0f0f5);
+    pointer-events: none; z-index: 0;
+  }
+  .navbar-demo .nav-links { display: flex; gap: 24px; font-size: 14px; font-weight: 500; }
+  .navbar-demo .nav-links a { color: hsl(var(--text-primary)); text-decoration: none; }
+  .navbar-demo .nav-links a.active { color: hsl(var(--primary)); }
+  .navbar-demo .nav-right { display: flex; align-items: center; gap: 12px; }
+  .navbar-demo .logo { font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-weight: 400; font-size: 28px; color: hsl(var(--primary)); line-height: 1; }
+  .navbar-demo .btn-primary { padding: 8px 16px; font-size: 14px; border-radius: var(--radius-md); }
+  .nav-caption { padding: 16px 24px; font-size: 12px; color: hsl(var(--text-secondary)); background: #fff; border-top: 1px solid hsl(var(--border)); position: relative; z-index: 1; }
+
+  /* =============================================================
+     ICONOGRAPHY
+     ============================================================= */
+  .icon-grid { grid-template-columns: repeat(8, 1fr); gap: 0; border: 1px solid hsl(var(--border)); background: #fff; }
+  .icon-cell { padding: 24px 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; border-right: 1px solid hsl(var(--border)); border-bottom: 1px solid hsl(var(--border)); color: hsl(var(--text-primary)); }
+  .icon-cell:nth-child(8n) { border-right: none; }
+  .icon-cell svg { width: 24px; height: 24px; stroke-width: 1.75; }
+  .icon-cell .name { font-size: 11px; color: hsl(var(--text-secondary)); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* =============================================================
+     FOOTER SPECIMEN
+     ============================================================= */
+  .footer-demo {
+    background: var(--alt-black);
+    color: #fff;
+    padding: 48px;
+    display: grid; grid-template-columns: 4fr 2fr 6fr; gap: 24px;
+  }
+  .footer-demo .brand-block .logo {
+    font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-weight: 400;
+    font-size: 32px; color: #fff; margin-bottom: 16px; line-height: 1;
+  }
+  .footer-demo p { font-size: 14px; color: #d4d4d4; line-height: 1.7; margin-bottom: 20px; }
+  .footer-demo a { color: #fff; text-decoration: none; font-size: 14px; }
+  .footer-demo .links-col ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
+  .footer-demo .links-col a { color: #d4d4d4; font-size: 14px; }
+  .footer-demo .links-col a:hover { color: #fff; }
+  .footer-demo .legal { border: 1px solid rgba(255,255,255,0.2); padding: 24px; font-size: 13px; line-height: 1.7; }
+  .footer-demo .legal strong { display: block; font-size: 14px; font-weight: 500; margin-bottom: 8px; }
+
+  /* =============================================================
+     PRINCIPLES
+     ============================================================= */
+  .principles { grid-template-columns: repeat(4, 1fr); gap: 0; border: 1px solid hsl(var(--border)); background: #fff; }
+  .principle { padding: 28px; border-right: 1px solid hsl(var(--border)); }
+  .principle:last-child { border-right: none; }
+  .principle-num { font-size: 12px; font-weight: 600; letter-spacing: 0.14em; color: hsl(var(--primary)); margin-bottom: 12px; font-variant-numeric: tabular-nums; }
+  .principle h4 { margin-bottom: 8px; }
+  .principle p { font-size: 14px; color: hsl(var(--text-secondary)); line-height: 1.6; }
+
+  /* =============================================================
+     FOOTNOTES
+     ============================================================= */
+  .ds-footer { margin-top: 120px; padding-top: 40px; border-top: 1px solid hsl(var(--border)); display: flex; justify-content: space-between; font-size: 12px; color: hsl(var(--text-tertiary)); }
+</style>
+</head>
+<body>
+<main class="page">
+
+<!-- =============================================================
+     HERO
+============================================================= -->
+<section class="hero">
+  <div class="hero-meta">
+    <span class="dot"></span>
+    <span>Tecxmate / Design System</span>
+    <span>v1.0 · Apr 2026</span>
+  </div>
+  <div style="display: flex; align-items: baseline; gap: 24px; flex-wrap: wrap; margin-bottom: 20px;">
+    <span class="wordmark" style="font-size: 68px;">tecxmate</span>
+    <span style="font-size: 14px; color: hsl(var(--text-tertiary)); letter-spacing: 0.08em; text-transform: uppercase;">Design System</span>
+  </div>
+  <h1 class="hero-title">Premier <em>technology partner</em> for founders &amp; SMEs.</h1>
+  <p class="hero-sub">
+    An Apple-inspired, engineer-clean visual language for Tecxmate's consultancy and product
+    surfaces — AI, web, automation, and digital transformation work across Ho Chi Minh City,
+    Taipei, and the US.
+  </p>
+
+  <div class="hero-kpis">
+    <div class="kpi"><div class="kpi-label">Primary</div><div class="kpi-value"><span class="accent">#8c52ff</span></div></div>
+    <div class="kpi"><div class="kpi-label">Type</div><div class="kpi-value">SF Pro stack</div></div>
+    <div class="kpi"><div class="kpi-label">Grid</div><div class="kpi-value">4 / 8 / 16 px</div></div>
+    <div class="kpi"><div class="kpi-label">Framework</div><div class="kpi-value">shadcn · Tailwind</div></div>
+  </div>
+</section>
+
+<!-- =============================================================
+     PRINCIPLES
+============================================================= -->
+<section class="ds">
+  <div class="ds-eyebrow">01 · Principles</div>
+  <h2 class="ds-title">Clarity, craft, and quiet confidence.</h2>
+  <p class="ds-lede">Four values guide every surface we ship — from the marketing site
+  to the onboarding form to any client-facing tool we build. Hold these before reaching for type, color, or components.</p>
+
+  <div class="grid principles">
+    <div class="principle">
+      <div class="principle-num">01</div>
+      <h4>Apple-clean by default</h4>
+      <p>System fonts, generous whitespace, neutral grays, subtle shadows. The UI gets out of the way so the work speaks.</p>
+    </div>
+    <div class="principle">
+      <div class="principle-num">02</div>
+      <h4>Purple is a tool, not décor</h4>
+      <p>Reserve <code style="background:hsl(var(--muted));padding:1px 5px;border-radius:3px;font-size:12px;">#8c52ff</code> for brand marks, primary actions, and section statements — never for decoration.</p>
+    </div>
+    <div class="principle">
+      <div class="principle-num">03</div>
+      <h4>Square, not rounded</h4>
+      <p>Cards, thumbnails, and tiles use <code style="background:hsl(var(--muted));padding:1px 5px;border-radius:3px;font-size:12px;">rounded-none</code>. Save radius for buttons, pills, and form fields.</p>
+    </div>
+    <div class="principle">
+      <div class="principle-num">04</div>
+      <h4>Glow on hover</h4>
+      <p>Interactive cards light up with a colored border and ambient shadow matching their category — not a blunt elevation.</p>
+    </div>
+  </div>
+</section>
+
+<!-- =============================================================
+     LOGO & WORDMARK
+============================================================= -->
+<section class="ds">
+  <div class="ds-eyebrow">02 · Brand</div>
+  <h2 class="ds-title">Wordmark.</h2>
+  <p class="ds-lede">The wordmark is set in <strong>Instrument Serif Italic</strong> — a
+  balanced, editorial display serif — and is always written lowercase: <span class="wordmark" style="font-size: 26px;">tecxmate</span>.
+  Display at a minimum clear space of 0.5× cap height on all sides.</p>
+
+  <div class="grid logo-grid">
+    <div class="logo-card">
+      <div>
+        <div class="label">Primary · on white</div>
+        <div class="logo-lg">tecxmate</div>
+      </div>
+      <div class="logo-spec"><span>Color · primary</span><span>Fussion Italic Thin</span></div>
+    </div>
+    <div class="logo-card dark">
+      <div>
+        <div class="label">Dark</div>
+        <div class="logo-lg">tecxmate</div>
+      </div>
+      <div class="logo-spec"><span>Black bg</span><span>Color · primary</span></div>
+    </div>
+    <div class="logo-card purple">
+      <div>
+        <div class="label">On brand</div>
+        <div class="logo-lg">tecxmate</div>
+      </div>
+      <div class="logo-spec"><span>Primary bg</span><span>Color · white</span></div>
+    </div>
+  </div>
+
+  <div class="ds-sub" style="margin-top: 32px;">Anatomy</div>
+  <div class="wordmark-anatomy">
+    <div class="wordmark anatomy-wordmark">tecxmate</div>
+    <div class="anatomy-callouts">
+      <div class="anatomy-callout">
+        <div class="num">01 · CASE</div>
+        <div class="note">Always lowercase. Never capitalize, never title-case the mark.</div>
+      </div>
+      <div class="anatomy-callout">
+        <div class="num">02 · ANGLE</div>
+        <div class="note">A gentle forward italic — kept as a single fluid word without kerning tweaks.</div>
+      </div>
+      <div class="anatomy-callout">
+        <div class="num">03 · WEIGHT</div>
+        <div class="note">Thin only. Do not bold, stroke, or outline the wordmark under any circumstances.</div>
+      </div>
+      <div class="anatomy-callout">
+        <div class="num">04 · COLOR</div>
+        <div class="note">Primary purple on light, white on primary or black. Never alternate colors per letter.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============================================================
+     COLOR
+============================================================= -->
+<section class="ds">
+  <div class="ds-eyebrow">03 · Color</div>
+  <h2 class="ds-title">Palette.</h2>
+  <p class="ds-lede">An Apple-grounded palette with a single saturated purple as the brand mark.
+  Status colors borrow Apple's system greens, reds, and oranges for universally-legible feedback.
+  All tokens are HSL for easy theming.</p>
+
+  <div class="ds-sub">Brand · Primary</div>
+  <div class="ramp" style="margin-bottom: 32px;">
+    <div class="swatch">
+      <div class="swatch-chip on-dark" style="background: hsl(var(--primary)); height: 180px;">
+        <div class="name"><span>Primary</span><span>default</span></div>
+      </div>
+      <div class="swatch-meta"><span class="hex">#8C52FF</span><span>hsl(271 76% 53%)</span></div>
+    </div>
+    <div class="swatch">
+      <div class="swatch-chip on-dark" style="background: hsl(var(--primary-light)); height: 180px;">
+        <div class="name"><span>Primary / Light</span><span>hover · tint</span></div>
+      </div>
+      <div class="swatch-meta"><span class="hex">#A978FF</span><span>hsl(271 85% 65%)</span></div>
+    </div>
+    <div class="swatch">
+      <div class="swatch-chip on-dark" style="background: hsl(var(--primary-dark)); height: 180px;">
+        <div class="name"><span>Primary / Dark</span><span>pressed</span></div>
+      </div>
+      <div class="swatch-meta"><span class="hex">#6B3FCC</span><span>hsl(271 70% 40%)</span></div>
+    </div>
+    <div class="swatch">
+      <div class="swatch-chip on-light" style="background: hsl(var(--primary) / 0.10); height: 180px;">
+        <div class="name" style="color: hsl(var(--primary))"><span>Primary / 10%</span><span>surface</span></div>
+      </div>
+      <div class="swatch-meta"><span class="hex">rgba · 10</span><span>hsl(271 76% 53% / .10)</span></div>
+    </div>
+  </div>
+
+  <div class="ds-sub">Status</div>
+  <div class="status-row" style="margin-bottom: 32px;">
+    <div class="swatch">
+      <div class="swatch-chip on-dark" style="background: hsl(var(--success));">
+        <div class="name"><span>Success</span><span>✓</span></div>
+      </div>
+      <div class="swatch-meta"><span class="hex">#30D158</span><span>142 71% 45%</span></div>
+    </div>
+    <div class="swatch">
+      <div class="swatch-chip on-dark" style="background: hsl(var(--destructive));">
+        <div class="name"><span>Destructive</span><span>!</span></div>
+      </div>
+      <div class="swatch-meta"><span class="hex">#D70015</span><span>0 84% 42%</span></div>
+    </div>
+    <div class="swatch">
+      <div class="swatch-chip on-dark" style="background: hsl(var(--warning-light));">
+        <div class="name"><span>Warning</span><span>△</span></div>
+      </div>
+      <div class="swatch-meta"><span class="hex">#FF9500</span><span>33 100% 50%</span></div>
+    </div>
+    <div class="swatch">
+      <div class="swatch-chip on-dark" style="background: hsl(var(--info));">
+        <div class="name"><span>Info</span><span>i</span></div>
+      </div>
+      <div class="swatch-meta"><span class="hex">#8C52FF</span><span>271 76% 53%</span></div>
+    </div>
+  </div>
+
+  <div class="ds-sub">Surface &amp; Text</div>
+  <div class="text-palette">
+    <div>
+      <div class="chip-sq" style="background: #fafafa;"></div>
+      <span class="lbl">Background</span>
+      <span class="val">Canvas</span>
+      <span class="hex">#FAFAFA</span>
+    </div>
+    <div>
+      <div class="chip-sq" style="background: #ffffff;"></div>
+      <span class="lbl">Card</span>
+      <span class="val">Surface</span>
+      <span class="hex">#FFFFFF</span>
+    </div>
+    <div>
+      <div class="chip-sq" style="background: #f5f5f7;"></div>
+      <span class="lbl">Divider</span>
+      <span class="val">Subtle</span>
+      <span class="hex">#F5F5F7</span>
+    </div>
+    <div>
+      <div class="chip-sq" style="background: #1d1d1f;"></div>
+      <span class="lbl">Text · Primary</span>
+      <span class="val">Body &amp; Head</span>
+      <span class="hex">#1D1D1F</span>
+    </div>
+    <div>
+      <div class="chip-sq" style="background: #6e6e73;"></div>
+      <span class="lbl">Text · Secondary</span>
+      <span class="val">Muted copy</span>
+      <span class="hex">#6E6E73</span>
+    </div>
+    <div>
+      <div class="chip-sq" style="background: #86868b;"></div>
+      <span class="lbl">Text · Tertiary</span>
+      <span class="val">Captions</span>
+      <span class="hex">#86868B</span>
+    </div>
+  </div>
+
+  <div class="ds-sub" style="margin-top: 32px;">Borders &amp; ALT neutrals</div>
+  <div class="text-palette">
+    <div>
+      <div class="chip-sq" style="background: #e5e5e7;"></div>
+      <span class="lbl">Border</span>
+      <span class="val">Default</span>
+      <span class="hex">#E5E5E7</span>
+    </div>
+    <div>
+      <div class="chip-sq" style="background: #d2d2d7;"></div>
+      <span class="lbl">Border · Medium</span>
+      <span class="val">Inputs</span>
+      <span class="hex">#D2D2D7</span>
+    </div>
+    <div>
+      <div class="chip-sq" style="background: #86868b;"></div>
+      <span class="lbl">Border · Dark</span>
+      <span class="val">Hover</span>
+      <span class="hex">#86868B</span>
+    </div>
+    <div>
+      <div class="chip-sq" style="background: #000000;"></div>
+      <span class="lbl">Alt / Black</span>
+      <span class="val">Footer</span>
+      <span class="hex">#000000</span>
+    </div>
+    <div>
+      <div class="chip-sq" style="background: #F4F4F4;"></div>
+      <span class="lbl">Alt / Gray 100</span>
+      <span class="val">Social tile</span>
+      <span class="hex">#F4F4F4</span>
+    </div>
+    <div>
+      <div class="chip-sq" style="background: #666666;"></div>
+      <span class="lbl">Alt / Gray 500</span>
+      <span class="val">Body copy</span>
+      <span class="hex">#666666</span>
+    </div>
+  </div>
+</section>
+
+<!-- =============================================================
+     TYPOGRAPHY
+============================================================= -->
+<section class="ds">
+  <div class="ds-eyebrow">04 · Typography</div>
+  <h2 class="ds-title">Two families, one rhythm.</h2>
+  <p class="ds-lede">The interface speaks in Apple's system stack — crisp, familiar, and
+  zero-weight on the loader. The wordmark and rare accent moments call on
+  <strong>Instrument Serif Italic</strong>, an editorial display serif, held sparingly.</p>
+
+  <div class="grid type-families" style="margin-bottom: 40px;">
+    <div class="family-card">
+      <div class="ds-sub" style="margin-bottom: 8px;">Interface · font-sans</div>
+      <h3>San Francisco system stack</h3>
+      <div class="sample">
+        <div style="font-size: 48px; font-weight: 600; letter-spacing: -0.025em; line-height: 1.1;">AaBbCc 123</div>
+        <div style="font-size: 16px; color: hsl(var(--text-secondary)); margin-top: 8px;">The quick brown fox jumps over the lazy dog &amp; ships on schedule.</div>
+      </div>
+      <div class="family-stack">-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif</div>
+    </div>
+
+    <div class="family-card" style="background: linear-gradient(180deg, #faf8ff 0%, #ffffff 100%);">
+      <div class="ds-sub" style="margin-bottom: 8px;">Accent · font-accent</div>
+      <h3>Instrument Serif · italic</h3>
+      <div class="sample">
+        <div class="wordmark" style="font-size: 64px;">tecxmate</div>
+        <div style="font-size: 13px; color: hsl(var(--text-secondary)); margin-top: 8px;">Reserved for the wordmark and rare display moments. Never run as body copy.</div>
+      </div>
+      <div class="family-stack">'Instrument Serif', 'Cormorant Garamond', Georgia, 'Times New Roman', serif</div>
+    </div>
+  </div>
+
+  <div class="ds-sub">Scale</div>
+  <div class="type-stack">
+    <div class="type-row">
+      <span class="meta">H1 · 32 / 38.4</span>
+      <span class="sample type-sample-h1">Transform your business with AI.</span>
+      <span class="usage">Page titles</span>
+    </div>
+    <div class="type-row">
+      <span class="meta">H2 · 28 / 33.6</span>
+      <span class="sample type-sample-h2">Premier technology partner.</span>
+      <span class="usage">Section heads</span>
+    </div>
+    <div class="type-row">
+      <span class="meta">H3 · 24 / 31.2</span>
+      <span class="sample type-sample-h3">AI Applications &amp; Integration</span>
+      <span class="usage">Card titles</span>
+    </div>
+    <div class="type-row">
+      <span class="meta">H4 · 20 / 26</span>
+      <span class="sample type-sample-h4">Custom ERP solutions</span>
+      <span class="usage">Sub-heads</span>
+    </div>
+    <div class="type-row">
+      <span class="meta">H5 · 18 / 25.2</span>
+      <span class="sample type-sample-h5">Business automation</span>
+      <span class="usage">Small heads</span>
+    </div>
+    <div class="type-row">
+      <span class="meta">Body · 15 / 22.5</span>
+      <span class="sample type-sample-body">Expert AI integration, web development, and business automation services for SMEs and founders.</span>
+      <span class="usage">Default body</span>
+    </div>
+    <div class="type-row">
+      <span class="meta">Small · 13 / 19.5</span>
+      <span class="sample type-sample-sm">Based in Ho Chi Minh City · Available globally</span>
+      <span class="usage">Secondary copy</span>
+    </div>
+    <div class="type-row">
+      <span class="meta">Caption · 12 / 16.8</span>
+      <span class="sample type-sample-cap">MST: 0318XXXXXX · Updated Apr 18, 2026</span>
+      <span class="usage">Meta &amp; legal</span>
+    </div>
+  </div>
+</section>
+
+<!-- =============================================================
+     SPACING & RADIUS
+============================================================= -->
+<section class="ds">
+  <div class="ds-eyebrow">05 · Layout</div>
+  <h2 class="ds-title">Spacing &amp; radius.</h2>
+  <p class="ds-lede">An 8-point-aligned scale with a 4px half-step for icon gutters. Radius stays
+  small: surfaces are largely square, with just enough rounding on buttons, inputs, and pills to feel soft.</p>
+
+  <div class="grid g-2" style="gap: 24px;">
+    <div>
+      <div class="ds-sub">Spacing scale</div>
+      <div class="spacing-bars">
+        <div class="space-row"><span class="key">apple-xs</span>   <span class="val">4px</span>  <div class="space-bar" style="width:  4px"></div></div>
+        <div class="space-row"><span class="key">apple-sm</span>   <span class="val">8px</span>  <div class="space-bar" style="width:  8px"></div></div>
+        <div class="space-row"><span class="key">apple-md</span>   <span class="val">12px</span> <div class="space-bar" style="width: 12px"></div></div>
+        <div class="space-row"><span class="key">apple-lg</span>   <span class="val">16px</span> <div class="space-bar" style="width: 16px"></div></div>
+        <div class="space-row"><span class="key">apple-xl</span>   <span class="val">24px</span> <div class="space-bar" style="width: 24px"></div></div>
+        <div class="space-row"><span class="key">apple-xxl</span>  <span class="val">32px</span> <div class="space-bar" style="width: 32px"></div></div>
+        <div class="space-row"><span class="key">apple-xxxl</span> <span class="val">48px</span> <div class="space-bar" style="width: 48px"></div></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="ds-sub">Radius</div>
+      <div class="grid radius-grid">
+        <div class="radius-card">
+          <div class="radius-sample" style="border-radius: var(--radius-sm);"></div>
+          <div class="radius-label"><span class="key">sm</span><span class="val">6px</span></div>
+        </div>
+        <div class="radius-card">
+          <div class="radius-sample" style="border-radius: var(--radius-md);"></div>
+          <div class="radius-label"><span class="key">md</span><span class="val">8px</span></div>
+        </div>
+        <div class="radius-card">
+          <div class="radius-sample" style="border-radius: var(--radius-lg);"></div>
+          <div class="radius-label"><span class="key">lg</span><span class="val">12px</span></div>
+        </div>
+        <div class="radius-card">
+          <div class="radius-sample" style="border-radius: var(--radius-xl);"></div>
+          <div class="radius-label"><span class="key">xl</span><span class="val">16px</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-sub" style="margin-top: 40px;">Backgrounds &amp; section treatments</div>
+  <div class="section-bg-demo">
+    <div class="bg-chip light">
+      <div><span class="label">Default</span><h4 style="margin-top: 8px;">White surface</h4></div>
+      <span class="t-caption">#FFFFFF · Cards, modals, navbar</span>
+    </div>
+    <div class="bg-chip muted">
+      <div><span class="label">Canvas</span><h4 style="margin-top: 8px;">Light gray wash</h4></div>
+      <span class="t-caption">#FAFAFA · Body background</span>
+    </div>
+    <div class="bg-chip gray">
+      <div><span class="label">Quiet</span><h4 style="margin-top: 8px;">Gray 50/80</h4></div>
+      <span class="t-caption">#F9F9F9 · Campaigns section</span>
+    </div>
+    <div class="bg-chip purple">
+      <div><span class="label">Statement</span><h4 style="margin-top: 8px;">Primary block</h4></div>
+      <span style="color: rgba(255,255,255,0.8); font-size: 12px;">#8C52FF · Team, portfolio</span>
+    </div>
+    <div class="bg-chip black">
+      <div><span class="label">Grounded</span><h4 style="margin-top: 8px;">Black block</h4></div>
+      <span style="color: rgba(255,255,255,0.7); font-size: 12px;">#000000 · Footer only</span>
+    </div>
+    <div class="bg-chip light" style="background: radial-gradient(800px 300px at 100% 0%, rgba(140,82,255,0.18), transparent 60%), linear-gradient(180deg, #fff, #fafafa);">
+      <div><span class="label">Hero · Shader</span><h4 style="margin-top: 8px;">Purple radial wash</h4></div>
+      <span class="t-caption">Reserved for hero / landing</span>
+    </div>
+  </div>
+</section>
+
+<!-- =============================================================
+     BUTTONS
+============================================================= -->
+<section class="ds">
+  <div class="ds-eyebrow">06 · Components</div>
+  <h2 class="ds-title">Buttons.</h2>
+  <p class="ds-lede">Based on shadcn's <code style="background:hsl(var(--muted));padding:1px 5px;border-radius:3px;font-size:12px;">Button</code>.
+  Six variants × three sizes. The Book-a-call pill is a signature, brand-level affordance — use once per page, max.</p>
+
+  <div class="showcase">
+    <div class="showcase-label">Variants · default size</div>
+    <button class="btn btn-primary">Book a call</button>
+    <button class="btn btn-destructive">Delete account</button>
+    <button class="btn btn-outline">Learn more</button>
+    <button class="btn btn-secondary">Secondary</button>
+    <button class="btn btn-ghost">Ghost</button>
+    <button class="btn btn-link">View all posts →</button>
+  </div>
+
+  <div class="showcase">
+    <div class="showcase-label">Sizes</div>
+    <button class="btn btn-primary btn-sm">Small</button>
+    <button class="btn btn-primary">Default</button>
+    <button class="btn btn-primary btn-lg">Large</button>
+    <button class="btn btn-outline btn-icon" aria-label="next">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>
+    <button class="btn btn-primary" disabled>Disabled</button>
+  </div>
+
+  <div class="showcase">
+    <div class="showcase-label">Signature · book-a-call pill</div>
+    <button class="btn btn-pill">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+      Book discovery call
+    </button>
+    <button class="btn btn-outline btn-lg" style="border-radius: 999px; padding: 16px 32px;">
+      Explore services
+    </button>
+  </div>
+</section>
+
+<!-- =============================================================
+     BADGES
+============================================================= -->
+<section class="ds">
+  <div class="ds-eyebrow">06 · Components</div>
+  <h2 class="ds-title">Badges &amp; tags.</h2>
+  <p class="ds-lede">Rounded-full status tokens for system-level feedback, plus a flat,
+  letterspaced category badge used on campaign cards.</p>
+
+  <div class="showcase">
+    <div class="showcase-label">Pill badges</div>
+    <span class="badge badge-primary">Default</span>
+    <span class="badge badge-secondary">Secondary</span>
+    <span class="badge badge-destructive">Destructive</span>
+    <span class="badge badge-success">Live</span>
+    <span class="badge badge-warning">Beta</span>
+    <span class="badge badge-outline">Outline</span>
+  </div>
+
+  <div class="showcase">
+    <div class="showcase-label">Category tag · campaigns / blog</div>
+    <span class="cat-badge">AI &amp; Automation</span>
+    <span class="cat-badge">Web Development</span>
+    <span class="cat-badge">Case Study</span>
+  </div>
+</section>
+
+<!-- =============================================================
+     FORM CONTROLS
+============================================================= -->
+<section class="ds">
+  <div class="ds-eyebrow">06 · Components</div>
+  <h2 class="ds-title">Forms.</h2>
+  <p class="ds-lede">Used across the comprehensive onboarding form, contact surfaces, and
+  admin dashboards. Inputs get 8px radius and a soft purple focus ring.</p>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
+    <div class="form-stack">
+      <div class="field">
+        <label for="f-name">Your name</label>
+        <input id="f-name" class="input" placeholder="Nikolas Doan" value="Nikolas Doan" />
+      </div>
+      <div class="field">
+        <label for="f-email">Work email</label>
+        <input id="f-email" type="email" class="input" placeholder="you@company.com" />
+      </div>
+      <div class="field">
+        <label for="f-scope">What are you building?</label>
+        <select id="f-scope" class="select">
+          <option>AI application (chat, automation, agents)</option>
+          <option>Web platform</option>
+          <option>Business automation / ERP</option>
+          <option>Something else</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="f-notes">Anything we should know</label>
+        <textarea id="f-notes" class="textarea" placeholder="Tell us about your timeline and stakeholders…"></textarea>
+      </div>
+      <div class="checkbox-row"><span class="check checked"></span><span>Subscribe to Tecxmate newsletter</span></div>
+      <div class="checkbox-row"><span class="check"></span><span>I agree to the terms of service</span></div>
+
+      <button class="btn btn-primary" style="align-self: flex-start;">Submit brief</button>
+    </div>
+
+    <div class="form-stack">
+      <div>
+        <div class="ds-sub">Switches</div>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div class="checkbox-row"><span class="switch on"></span><span>Email updates on project milestones</span></div>
+          <div class="checkbox-row"><span class="switch"></span><span>SMS notifications (+84 / +886)</span></div>
+          <div class="checkbox-row"><span class="switch on"></span><span>Share anonymous analytics</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-sub">Radio · service tier</div>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div class="radio-row"><span class="radio checked"></span><span>Discovery · free 30-min call</span></div>
+          <div class="radio-row"><span class="radio"></span><span>Sprint · 2-week scoped engagement</span></div>
+          <div class="radio-row"><span class="radio"></span><span>Retainer · monthly partnership</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="ds-sub">States</div>
+        <div class="field">
+          <label>Disabled</label>
+          <input class="input" disabled value="read-only" style="opacity:0.6;" />
+        </div>
+        <div class="field" style="margin-top:12px;">
+          <label style="color: hsl(var(--destructive));">Error</label>
+          <input class="input" value="nikolas" style="border-color: hsl(var(--destructive)); box-shadow: 0 0 0 3px hsl(var(--destructive) / 0.12);" />
+          <span style="font-size: 12px; color: hsl(var(--destructive));">Please enter a valid email address.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============================================================
+     CARDS — SIGNATURE
+============================================================= -->
+<section class="ds">
+  <div class="ds-eyebrow">06 · Components</div>
+  <h2 class="ds-title">Cards.</h2>
+  <p class="ds-lede">Three specimen patterns that drive the marketing site — services, projects,
+  and team. Note: all are <strong>squared</strong>. Hover lights them up with a color-matched glow.</p>
+
+  <div class="ds-sub">Service card · color-glow grid</div>
+  <div class="grid svc-grid" style="margin-bottom: 48px;">
+    <div class="svc-card" data-accent="blue">
+      <div class="svc-icon-tile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+      </div>
+      <h3>Mobile app development</h3>
+      <p>iOS + Android apps built with React Native. From prototype to App Store in 6–12 weeks.</p>
+    </div>
+    <div class="svc-card" data-accent="sky">
+      <div class="svc-icon-tile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+      </div>
+      <h3>Website &amp; web platforms</h3>
+      <p>Marketing sites, dashboards, and headless commerce on Next.js + Tailwind.</p>
+    </div>
+    <div class="svc-card" data-accent="purple">
+      <div class="svc-icon-tile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/></svg>
+      </div>
+      <h3>AI applications</h3>
+      <p>Chat, agents, and bespoke models. We ship LangChain and Claude-powered tools weekly.</p>
+    </div>
+    <div class="svc-card" data-accent="amber">
+      <div class="svc-icon-tile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      </div>
+      <h3>Business automation</h3>
+      <p>Zaps, workflows, and internal tools that cut manual hours from your operations team.</p>
+    </div>
+    <div class="svc-card" data-accent="sky">
+      <div class="svc-icon-tile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>
+      </div>
+      <h3>AI integration</h3>
+      <p>Adding intelligence to existing products — search, summaries, classification, RAG.</p>
+    </div>
+    <div class="svc-card" data-accent="rose">
+      <div class="svc-icon-tile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+      </div>
+      <h3>Custom ERP</h3>
+      <p>Inventory, finance, and operations tools tailored to SMEs — with APIs baked in.</p>
+    </div>
+  </div>
+
+  <div class="ds-sub">Project card · portfolio carousel</div>
+  <div style="display: flex; gap: 24px; background: hsl(var(--primary)); padding: 48px; margin-bottom: 48px;">
+    <div class="project-card">
+      <div class="project-thumb"></div>
+      <div class="project-body">
+        <h3>Vietnamy · language app</h3>
+        <p>iOS + Android app teaching Vietnamese through story-driven mini-lessons and adaptive review.</p>
+        <div class="project-cta">
+          Learn more
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </div>
+      </div>
+    </div>
+    <div class="project-card">
+      <div class="project-thumb" style="background: linear-gradient(135deg, #ff9a9e 0%, #fad0c4 100%);"></div>
+      <div class="project-body">
+        <h3>Chichi · commerce</h3>
+        <p>D2C storefront and CMS for a Vietnamese skincare brand — with built-in campaign tooling.</p>
+        <div class="project-cta">Learn more
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </div>
+      </div>
+    </div>
+    <div class="project-card">
+      <div class="project-thumb" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"></div>
+      <div class="project-body">
+        <h3>IPRP Shield</h3>
+        <p>DMCA takedown pipeline — automated detection, evidence capture, and filing.</p>
+        <div class="project-cta">Learn more
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-sub">Team card · squared portrait</div>
+  <div class="grid team-grid" style="margin-bottom: 48px;">
+    <div class="team-card">
+      <div class="team-photo" style="background: linear-gradient(180deg, #c9b3ff 0%, #8c52ff 100%);"></div>
+      <div class="team-body">
+        <h3>Nikolas Doan</h3>
+        <div class="team-role">CEO &amp; CFO</div>
+        <div class="team-socials">
+          <a class="social-tile" href="#" aria-label="LinkedIn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg></a>
+          <a class="social-tile" href="#" aria-label="Scholar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg></a>
+        </div>
+      </div>
+    </div>
+    <div class="team-card">
+      <div class="team-photo" style="background: linear-gradient(180deg, #ffd6c0 0%, #ff9a73 100%);"></div>
+      <div class="team-body">
+        <h3>Brian Nguyen</h3>
+        <div class="team-role">CTO &amp; COO</div>
+        <div class="team-socials">
+          <a class="social-tile" href="#" aria-label="LinkedIn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg></a>
+          <a class="social-tile" href="#" aria-label="Company"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v8h4"/><path d="M18 9h2a2 2 0 0 1 2 2v11h-4"/></svg></a>
+        </div>
+      </div>
+    </div>
+    <div class="team-card">
+      <div class="team-photo" style="background: linear-gradient(180deg, #b8e6d2 0%, #65c795 100%);"></div>
+      <div class="team-body">
+        <h3>Lynn Ta</h3>
+        <div class="team-role">Project Manager</div>
+        <div class="team-socials">
+          <a class="social-tile" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg></a>
+        </div>
+      </div>
+    </div>
+    <div class="team-card">
+      <div class="team-photo" style="background: linear-gradient(180deg, #c4e8ff 0%, #60a5fa 100%);"></div>
+      <div class="team-body">
+        <h3>Ellis Wu</h3>
+        <div class="team-role">Business Dev</div>
+        <div class="team-socials">
+          <a class="social-tile" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg></a>
+          <a class="social-tile" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg></a>
+        </div>
+      </div>
+    </div>
+    <div class="team-card">
+      <div class="team-photo" style="background: linear-gradient(180deg, #fce7c2 0%, #f5b85a 100%);"></div>
+      <div class="team-body">
+        <h3>Jane Liu</h3>
+        <div class="team-role">Creative Dir.</div>
+        <div class="team-socials">
+          <a class="social-tile" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg></a>
+          <a class="social-tile" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ds-sub">Campaign · blog card</div>
+  <div class="grid blog-grid">
+    <div class="blog-card">
+      <div class="blog-thumb">
+        <span class="tag cat-badge">AI &amp; Automation</span>
+      </div>
+      <div class="blog-body">
+        <div class="blog-meta">
+          <span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Apr 12, 2026</span>
+          <span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 6 min read</span>
+        </div>
+        <h3>Shipping production AI agents, safely.</h3>
+        <p>What we learned deploying Claude agents across three live client workloads this quarter.</p>
+        <a class="blog-cta" href="#">Read full article →</a>
+      </div>
+    </div>
+    <div class="blog-card">
+      <div class="blog-thumb alt">
+        <span class="tag cat-badge">Web Development</span>
+      </div>
+      <div class="blog-body">
+        <div class="blog-meta">
+          <span>Apr 3, 2026</span><span>4 min read</span>
+        </div>
+        <h3>Next.js 15 at Tecxmate: our default stack.</h3>
+        <p>Turbo, RSC, streaming — a frank look at what lands for client work and what we skip.</p>
+        <a class="blog-cta" href="#">Read full article →</a>
+      </div>
+    </div>
+    <div class="blog-card">
+      <div class="blog-thumb alt2">
+        <span class="tag cat-badge">Case Study</span>
+      </div>
+      <div class="blog-body">
+        <div class="blog-meta">
+          <span>Mar 24, 2026</span><span>8 min read</span>
+        </div>
+        <h3>Building Vietnamy's adaptive review engine.</h3>
+        <p>From a hand-built SM-2 to a learned scheduler — the architecture behind our language app.</p>
+        <a class="blog-cta" href="#">Read full article →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =============================================================
+     ICONOGRAPHY
+============================================================= -->
+<section class="ds">
+  <div class="ds-eyebrow">07 · Iconography</div>
+  <h2 class="ds-title">Lucide · 24 / 1.75 stroke.</h2>
+  <p class="ds-lede">Drawn from <strong>lucide-react</strong> (the project's single icon library).
+  All strokes 1.75, all rounded line-caps &amp; line-joins, 24×24 base canvas.</p>
+
+  <div class="grid icon-grid">
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg><span class="name">Smartphone</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg><span class="name">Layout</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/></svg><span class="name">Brain</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span class="name">Zap</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg><span class="name">Bot</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg><span class="name">ServerCog</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg><span class="name">Globe</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg><span class="name">Menu</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg><span class="name">X</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg><span class="name">Coffee</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg><span class="name">Video</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg><span class="name">Phone</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><span class="name">Calendar</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span class="name">Clock</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg><span class="name">ArrowRight</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg><span class="name">ChevronLeft</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg><span class="name">ChevronRight</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg><span class="name">ExternalLink</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg><span class="name">Facebook</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"/></svg><span class="name">Twitter</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg><span class="name">Instagram</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg><span class="name">Linkedin</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg><span class="name">GraduationCap</span></div>
+    <div class="icon-cell"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v8h4"/><path d="M18 9h2a2 2 0 0 1 2 2v11h-4"/></svg><span class="name">Building2</span></div>
+  </div>
+</section>
+
+<!-- =============================================================
+     NAVBAR
+============================================================= -->
+<section class="ds">
+  <div class="ds-eyebrow">08 · Patterns</div>
+  <h2 class="ds-title">Navbar.</h2>
+  <p class="ds-lede">Fixed, translucent white with backdrop blur — wordmark left,
+  links center, language + primary CTA right. Always 64px tall on desktop.</p>
+
+  <div class="navbar-wrap">
+    <div class="navbar-demo">
+      <a class="logo" href="#">tecxmate</a>
+      <nav class="nav-links">
+        <a href="#" class="active">Home</a>
+        <a href="#">Projects</a>
+        <a href="#">Services</a>
+        <a href="#">Team</a>
+        <a href="#">News &amp; Insights</a>
+        <a href="#">About</a>
+      </nav>
+      <div class="nav-right">
+        <button class="btn btn-ghost btn-sm" style="display: inline-flex; gap: 8px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          English
+        </button>
+        <button class="btn btn-primary">Book a call</button>
+      </div>
+    </div>
+    <div class="nav-caption">
+      <strong>Spec:</strong> height 64px · background rgba(255,255,255,0.95) · backdrop-blur 20px ·
+      border-bottom 1px rgba(255,255,255,0.2) · shadow inset top 1px + 0 10px 30px rgba(0,0,0,0.06).
+      Shader-background hero sits directly beneath.
+    </div>
+  </div>
+</section>
+
+<!-- =============================================================
+     FOOTER
+============================================================= -->
+<section class="ds">
+  <div class="ds-eyebrow">08 · Patterns</div>
+  <h2 class="ds-title">Footer.</h2>
+  <p class="ds-lede">Black background, white type. Brand block + quick links + country-boxed
+  legal. Social icons sit tight against the <em>Book discovery call</em> lockup.</p>
+
+  <div class="footer-demo">
+    <div class="brand-block">
+      <div class="logo">tecxmate</div>
+      <p>Got an idea? Let's build it. We partner with founders and SMEs to ship AI-powered products in weeks, not quarters.</p>
+      <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+        <a style="display: inline-flex; align-items: center; gap: 8px; color: #d4d4d4; font-size: 14px; text-decoration: none;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          Book discovery call
+        </a>
+        <div style="display: flex; gap: 12px;">
+          <a href="#" style="color: #9ca3af;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg></a>
+          <a href="#" style="color: #9ca3af;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"/></svg></a>
+          <a href="#" style="color: #9ca3af;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg></a>
+          <a href="#" style="color: #9ca3af;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg></a>
+        </div>
+      </div>
+      <p style="margin-top: 16px; font-size: 13px;">Email: <a href="#"><span class="__cf_email__" data-cfemail="264940404f454f474a665243455e4b4752430845494b">[email&#160;protected]</span></a></p>
+    </div>
+    <div class="links-col">
+      <ul>
+        <li><a href="#">About</a></li>
+        <li><a href="#">News &amp; Insights</a></li>
+        <li><a href="#">Privacy policy</a></li>
+        <li><a href="#">Terms of service</a></li>
+      </ul>
+    </div>
+    <div class="legal">
+      <strong>TECXMATE COMPANY LIMITED</strong>
+      Villa Park Complex, Phu Huu Ward · Ho Chi Minh City, Vietnam<br>
+      MST: 0318XXXXXX<br><br>
+      <a href="#" style="display: inline-flex; align-items: center; gap: 6px; color: #fff;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        +84 33 746 0602
+      </a>
+    </div>
+  </div>
+</section>
+
+<div class="ds-footer">
+  <span>Tecxmate · Design System · v1.0 · April 2026</span>
+  <span>Sourced from <code>tecxmate/tecxmate@main</code> · app/globals.css · tailwind.config.ts</span>
+</div>
+
+</main>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script></body>
+</html>
