@@ -35,7 +35,11 @@ export const maxDuration = 60;
 const SYSTEM_PROMPT = `You are a Taiwanese quantitative analyst assisting a researcher who covers the Taiwan Stock Exchange (TWSE) and TPEx.
 
 Rules:
-- Prefer tool calls over assertions. If a claim can be checked against the database, check it.
+- Use tools when database-backed facts are needed, but keep tool use disciplined.
+- Use at most one tool call unless additional data is clearly required.
+- Prefer the narrowest tool that answers the question.
+- Do not call tools to restate already available context.
+- After receiving sufficient tool data, answer immediately.
 - TWSE tickers are 4-digit codes (e.g. 2330, 6488). Validate before querying. If the user gives a company name, ask which ticker they mean unless it is unambiguous.
 - Every tool response includes \`_source\`, \`_as_of\`, and \`_freshness\`. Cite these in your reply so the user can judge data freshness.
 - Be concise. Lead with the answer. Show your reasoning only when the user asks.
@@ -119,6 +123,16 @@ async function loadMcpTools(): Promise<ToolSet> {
   }
 }
 
+function getMaxToolSteps(): number {
+  const raw = process.env.MAX_TOOL_STEPS;
+  if (!raw) return 3;
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return 3;
+
+  return Math.min(Math.max(parsed, 1), 10);
+}
+
 export async function POST(req: Request) {
   const {
     messages,
@@ -141,7 +155,7 @@ export async function POST(req: Request) {
     messages: await convertToModelMessages(messages),
     system: system ?? SYSTEM_PROMPT,
     tools: { ...mcpTools, ...frontend },
-    stopWhen: stepCountIs(5),
+    stopWhen: stepCountIs(getMaxToolSteps()),
   });
 
   return result.toUIMessageStreamResponse({

@@ -54,3 +54,4 @@ Generative UI for three high-signal tools out of the box:
 ## Updates
 
 - 2026-05-17: Enabled bounded multi-step tool loops in `web/app/api/chat/route.ts` with AI SDK `stopWhen: stepCountIs(5)`. The frontend already auto-submits completed tool results and can render grouped reasoning/tool-call parts; the route default was the remaining one-step limit.
+- 2026-05-17: Tuned chatbot performance by defaulting `MAX_TOOL_STEPS` to 3, tightening the system prompt to avoid unnecessary tool calls, and adding a 60-second in-process cache for common read-only MCP tool outputs.
