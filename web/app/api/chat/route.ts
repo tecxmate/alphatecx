@@ -1,14 +1,32 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { deepseek } from "@ai-sdk/deepseek";
 import { google } from "@ai-sdk/google";
+import { createOpenAI, openai } from "@ai-sdk/openai";
 import { frontendTools } from "@assistant-ui/react-ai-sdk";
+
+// Moonshot (Kimi) speaks the OpenAI protocol — same client, different base.
+// Accepts either KIMI_API_KEY or MOONSHOT_API_KEY for env-var ergonomics.
+const moonshot = createOpenAI({
+  baseURL: "https://api.moonshot.ai/v1",
+  apiKey: process.env.KIMI_API_KEY ?? process.env.MOONSHOT_API_KEY,
+});
+
+// NVIDIA NIM cloud catalog — OpenAI-compatible. Free tier on build.nvidia.com.
+// Model ids use the `org/name` form (e.g. meta/llama-3.3-70b-instruct), which
+// is how providerFor() distinguishes NIM from the other providers.
+const nvidia = createOpenAI({
+  baseURL: "https://integrate.api.nvidia.com/v1",
+  apiKey: process.env.NVIDIA_API_KEY,
+});
+
 import {
+  convertToModelMessages,
   type JSONSchema7,
   type LanguageModel,
+  stepCountIs,
+  streamText,
   type ToolSet,
   type UIMessage,
-  convertToModelMessages,
-  streamText,
 } from "ai";
 import { getMcpTools } from "../mcp-client";
 
@@ -29,9 +47,22 @@ const NO_TOOL_MODELS = new Set(["deepseek-reasoner"]);
 
 // Infer provider from the model id prefix so the client only has to send a
 // single string (the assistant-ui ModelSelector ships `config.modelName`).
-function providerFor(modelId: string): "google" | "deepseek" | "anthropic" {
+function providerFor(
+  modelId: string,
+): "google" | "deepseek" | "moonshot" | "openai" | "nvidia" | "anthropic" {
+  // NIM model ids use org/name format (meta/llama..., mistralai/..., etc.)
+  // Catch them first so deepseek-ai/* doesn't get routed to DeepSeek's own API.
+  if (modelId.includes("/")) return "nvidia";
   if (modelId.startsWith("gemini")) return "google";
   if (modelId.startsWith("deepseek")) return "deepseek";
+  if (modelId.startsWith("kimi") || modelId.startsWith("moonshot"))
+    return "moonshot";
+  if (
+    modelId.startsWith("gpt-") ||
+    modelId.startsWith("o3") ||
+    modelId.startsWith("o4")
+  )
+    return "openai";
   return "anthropic";
 }
 
@@ -49,7 +80,11 @@ function selectModel(requested?: string): {
       ? "gemini-2.5-flash"
       : envProvider === "deepseek"
         ? "deepseek-reasoner"
-        : "claude-sonnet-4-5");
+        : envProvider === "moonshot"
+          ? "kimi-k2.6"
+          : envProvider === "openai"
+            ? "gpt-5-mini"
+            : "claude-sonnet-4-5");
   const provider = providerFor(modelId);
   if (provider === "google") {
     return { model: google(modelId), supportsTools: true };
@@ -59,6 +94,18 @@ function selectModel(requested?: string): {
       model: deepseek(modelId),
       supportsTools: !NO_TOOL_MODELS.has(modelId),
     };
+  }
+  if (provider === "moonshot") {
+    // Moonshot exposes Chat Completions only; AI SDK's openai() now defaults
+    // to the Responses API, so we have to opt into .chat() explicitly.
+    return { model: moonshot.chat(modelId), supportsTools: true };
+  }
+  if (provider === "openai") {
+    return { model: openai(modelId), supportsTools: true };
+  }
+  if (provider === "nvidia") {
+    // NIM is Chat Completions only — same opt-in as Moonshot.
+    return { model: nvidia.chat(modelId), supportsTools: true };
   }
   return { model: anthropic(modelId), supportsTools: true };
 }
@@ -94,6 +141,7 @@ export async function POST(req: Request) {
     messages: await convertToModelMessages(messages),
     system: system ?? SYSTEM_PROMPT,
     tools: { ...mcpTools, ...frontend },
+    stopWhen: stepCountIs(5),
   });
 
   return result.toUIMessageStreamResponse({

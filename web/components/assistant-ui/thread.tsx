@@ -214,10 +214,39 @@ const MODEL_OPTIONS = [
     description: "Free · fastest",
   },
   {
-    id: "gemini-2.5-pro",
-    name: "Gemini 2.5 Pro",
-    description: "Requires paid billing — unavailable",
-    disabled: true,
+    id: "gpt-5-mini",
+    name: "GPT-5 Mini",
+    description: "OpenAI · fast & cheap",
+  },
+  {
+    id: "gpt-5",
+    name: "GPT-5",
+    description: "OpenAI · top quality",
+  },
+  {
+    id: "gpt-4.1-mini",
+    name: "GPT-4.1 Mini",
+    description: "OpenAI · cheapest tool-use",
+  },
+  {
+    id: "meta/llama-3.3-70b-instruct",
+    name: "Llama 3.3 70B",
+    description: "NVIDIA NIM · free tier",
+  },
+  {
+    id: "meta/llama-4-maverick-17b-128e-instruct",
+    name: "Llama 4 Maverick",
+    description: "NVIDIA NIM · newest Llama",
+  },
+  {
+    id: "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+    name: "Nemotron Super 49B",
+    description: "NVIDIA NIM · fine-tuned",
+  },
+  {
+    id: "mistralai/mistral-medium-3.5-128b",
+    name: "Mistral Medium 3.5",
+    description: "NVIDIA NIM · strong tools",
   },
 ];
 
