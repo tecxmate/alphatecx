@@ -332,10 +332,13 @@ def query_beginner_stock_card(ticker_id: str) -> dict:
     chart_points = [
         {
             "date": row.get("date"),
+            "open": row.get("open"),
+            "high": row.get("high"),
+            "low": row.get("low"),
             "close": row.get("close"),
             "volume": row.get("volume"),
         }
-        for row in price_rows[-60:]
+        for row in price_rows[-90:]
     ]
 
     return {
@@ -346,9 +349,14 @@ def query_beginner_stock_card(ticker_id: str) -> dict:
         "node": company_row.get("node") or momentum.get("node"),
         "as_of": indicators.get("as_of") or valuation.get("date") or latest_price.get("date"),
         "price": {
+            "open": latest_price.get("open"),
+            "high": latest_price.get("high"),
+            "low": latest_price.get("low"),
             "close": close,
             "previous_close": prev_close,
             "change_pct": change_pct,
+            "volume": latest_price.get("volume"),
+            "turnover_twd": latest_price.get("turnover_twd"),
             "date": latest_price.get("date") or valuation.get("date"),
         },
         "trend_numbers": {
@@ -385,7 +393,7 @@ def query_beginner_stock_card(ticker_id: str) -> dict:
         ],
         "chart": {
             "type": "line",
-            "period_days": 60,
+            "period_days": 90,
             "points": chart_points,
         },
     }
