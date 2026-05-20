@@ -180,6 +180,29 @@ def sc_supply_chain_map(
     )
 
 
+# ── Tool: Ticker Lookup ────────────────────────────────────────────────────
+
+@mcp.tool()
+def ticker_lookup(query: str, limit: int = 8) -> dict:
+    """Search the full Taiwan ticker directory by ticker code or company name.
+
+    Use this when a user types a Chinese company name, English company name,
+    or ticker-like text and you need the canonical TWSE/TPEX ticker id before
+    calling ticker-specific tools.
+
+    Args:
+        query: Ticker code or company name, e.g. '2330' or '台積電'.
+        limit: Maximum matches to return.
+    """
+    rows = db_v2.query_ticker_lookup(query=query, limit=limit)
+    return _stamp(
+        {"matches": rows, "query": query, "count": len(rows)},
+        source="dim_ticker",
+        as_of=_today_iso(),
+        freshness="static",
+    )
+
+
 # ── Tool: Flow History (time series) ───────────────────────────────────────
 
 @mcp.tool()

@@ -173,6 +173,48 @@ def query_supply_chain(
     return _serialize(_fetch(sql, tuple(params)))
 
 
+# ── Ticker Lookup ──────────────────────────────────────────────────────────
+
+def query_ticker_lookup(query: str, limit: int = 8) -> list[dict]:
+    """Search the full ticker directory by ticker code or company name."""
+    q = (query or "").strip()
+    if not q:
+        return []
+
+    exact_ticker = q.upper()
+    prefix = f"{q}%"
+    contains = f"%{q}%"
+    sql = """
+        SELECT ticker_id, company_name, ai_pillar, node
+        FROM dim_ticker
+        WHERE ticker_id = %s
+           OR ticker_id ILIKE %s
+           OR company_name = %s
+           OR company_name ILIKE %s
+        ORDER BY
+          CASE
+            WHEN ticker_id = %s THEN 0
+            WHEN company_name = %s THEN 1
+            WHEN company_name ILIKE %s THEN 2
+            WHEN ticker_id ILIKE %s THEN 3
+            ELSE 4
+          END,
+          ticker_id
+        LIMIT %s
+    """
+    return _serialize(_fetch(sql, (
+        exact_ticker,
+        prefix,
+        q,
+        contains,
+        exact_ticker,
+        q,
+        prefix,
+        prefix,
+        max(1, min(int(limit), 20)),
+    )))
+
+
 # ── Flow History ───────────────────────────────────────────────────────────
 
 def query_flow_history(ticker_id: str, days: int = 20) -> list[dict]:
