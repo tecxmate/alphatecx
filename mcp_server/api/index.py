@@ -301,6 +301,51 @@ def q_indicators(ticker_id: str) -> dict:
     )
 
 
+# ── Tool: Beginner Stock Card ─────────────────────────────────────────────
+
+@mcp.tool()
+def beginner_stock_card(ticker_id: str) -> dict:
+    """Beginner-friendly factual stock card for one ticker.
+
+    This tool groups price, trend, institutional flow, valuation, and a
+    small chart-ready close series into simple sections. It intentionally
+    avoids buy/sell/quality judgments so product clients can render a clean
+    beginner card without opinionated language.
+
+    Args:
+        ticker_id: TWSE/TPEX code, e.g. '2330' for TSMC.
+    """
+    payload = db_v2.query_beginner_stock_card(ticker_id)
+    return _stamp(
+        payload,
+        source="beginner_stock_card",
+        as_of=str(payload.get("as_of") or _today_iso()),
+        freshness="T+1",
+    )
+
+
+@mcp.tool()
+def price_history(ticker_id: str, days: int = 90) -> dict:
+    """Chart-ready OHLCV history for one ticker.
+
+    Returns oldest-first rows suitable for rendering a simple line or candle
+    chart in LINE, web, or another product client. This tool returns data
+    only; chart image rendering should happen in the client/product layer.
+
+    Args:
+        ticker_id: TWSE/TPEX code, e.g. '2330'.
+        days: Number of trading days to return, capped at 365.
+    """
+    days = min(max(int(days), 1), 365)
+    rows = db_v2.query_price_history(ticker_id=ticker_id, days=days)
+    return _stamp(
+        {"ticker_id": ticker_id, "days": days, "prices": rows, "count": len(rows)},
+        source="raw_twse_ohlcv",
+        as_of=rows[-1]["date"] if rows else _today_iso(),
+        freshness="T+1",
+    )
+
+
 # ── Tool: Quant Screener ───────────────────────────────────────────────────
 
 @mcp.tool()
@@ -1073,6 +1118,8 @@ def sc_capabilities() -> dict:
             {"name": "sc_accumulation_screen", "purpose": "Find tickers with sustained FINI buying"},
             {"name": "sc_data_status", "purpose": "Pipeline health and data freshness"},
             {"name": "q_indicators", "purpose": "Latest technical + flow indicators for one ticker"},
+            {"name": "beginner_stock_card", "purpose": "Beginner-friendly factual stock card with grouped numbers and chart-ready points"},
+            {"name": "price_history", "purpose": "Chart-ready OHLCV history for one ticker"},
             {"name": "q_screener", "purpose": "Filter classified universe by AND-combined indicator conditions"},
             {"name": "q_backtest", "purpose": "Backtest a single-threshold signal rule"},
             {"name": "q_backtest_compound", "purpose": "Backtest multi-condition (AND) compound rules; up to 4 conditions"},

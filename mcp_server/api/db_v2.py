@@ -246,6 +246,109 @@ def query_indicators(ticker_id: str) -> dict:
     return {**_serialize(rows)[0], "found": True}
 
 
+def query_price_history(ticker_id: str, days: int = 90) -> list[dict]:
+    """Chart-ready OHLCV history for one ticker, oldest first."""
+    days = max(1, min(int(days), 365))
+    sql = """
+        SELECT date, ticker_id, open, high, low, close,
+               volume_shares AS volume, turnover_twd
+        FROM raw_twse_ohlcv
+        WHERE ticker_id = %s
+          AND close IS NOT NULL
+        ORDER BY date DESC
+        LIMIT %s
+    """
+    rows = _fetch(sql, (ticker_id, days))
+    rows.reverse()
+    return _serialize(rows)
+
+
+def query_beginner_stock_card(ticker_id: str) -> dict:
+    """Beginner-facing factual stock card.
+
+    This intentionally avoids buy/sell/quality judgments. It gathers the
+    same raw fields used by advanced tools, then groups them into plain
+    sections that product clients can render as cards, charts, or LINE text.
+    """
+    company = query_supply_chain(search=ticker_id)
+    company_row = next((row for row in company if row.get("ticker_id") == ticker_id), company[0] if company else {})
+    indicators = query_indicators(ticker_id)
+    valuation_rows = query_valuation(ticker_id=ticker_id, top_n=1)
+    valuation = valuation_rows[0] if valuation_rows else {}
+    momentum_rows = query_ticker_momentum(ticker_id=ticker_id, limit=1)
+    momentum = momentum_rows[0] if momentum_rows else {}
+    price_rows = query_price_history(ticker_id=ticker_id, days=90)
+    latest_price = price_rows[-1] if price_rows else {}
+    previous_price = price_rows[-2] if len(price_rows) >= 2 else {}
+
+    close = latest_price.get("close") or valuation.get("close")
+    prev_close = previous_price.get("close")
+    change_pct = None
+    if close is not None and prev_close not in (None, 0):
+        change_pct = (float(close) / float(prev_close) - 1.0) * 100.0
+
+    chart_points = [
+        {
+            "date": row.get("date"),
+            "close": row.get("close"),
+            "volume": row.get("volume"),
+        }
+        for row in price_rows[-60:]
+    ]
+
+    return {
+        "ticker_id": ticker_id,
+        "company_name": company_row.get("company_name") or valuation.get("company_name"),
+        "market": company_row.get("market") or momentum.get("market"),
+        "pillar": company_row.get("ai_pillar") or momentum.get("ai_pillar"),
+        "node": company_row.get("node") or momentum.get("node"),
+        "as_of": indicators.get("as_of") or valuation.get("date") or latest_price.get("date"),
+        "price": {
+            "close": close,
+            "previous_close": prev_close,
+            "change_pct": change_pct,
+            "date": latest_price.get("date") or valuation.get("date"),
+        },
+        "trend_numbers": {
+            "rsi_14": indicators.get("rsi_14"),
+            "macd_histogram": indicators.get("macd_histogram"),
+            "bb_pct_b": indicators.get("bb_pct_b"),
+            "sma_50": indicators.get("sma_50"),
+            "sma_200": indicators.get("sma_200"),
+            "rs_vs_market_60": indicators.get("rs_vs_market_60"),
+            "pct_below_52w_high": indicators.get("pct_below_52w_high"),
+        },
+        "flow_numbers": {
+            "foreign_1d": momentum.get("foreign_1d"),
+            "foreign_5d": momentum.get("foreign_5d"),
+            "foreign_10d": momentum.get("foreign_10d"),
+            "foreign_20d": momentum.get("foreign_20d"),
+            "total_5d": momentum.get("total_5d"),
+            "consecutive_foreign_buy_days": momentum.get("consecutive_foreign_buy_days"),
+            "foreign_net_z20": indicators.get("foreign_net_z20"),
+        },
+        "valuation_numbers": {
+            "pe_ratio": valuation.get("pe_ratio"),
+            "pb_ratio": valuation.get("pb_ratio"),
+            "dividend_yield": valuation.get("dividend_yield"),
+            "dividend_year": valuation.get("dividend_year"),
+            "fiscal_period": valuation.get("fiscal_period"),
+        },
+        "beginner_labels": [
+            {"key": "RSI", "meaning": "Momentum scale from 0 to 100."},
+            {"key": "MACD histogram", "meaning": "Trend momentum number."},
+            {"key": "BB%B", "meaning": "Price location inside Bollinger Bands."},
+            {"key": "Foreign flow", "meaning": "Foreign investor net buying or selling over a time window."},
+            {"key": "PE/PB/yield", "meaning": "Common valuation numbers."},
+        ],
+        "chart": {
+            "type": "line",
+            "period_days": 60,
+            "points": chart_points,
+        },
+    }
+
+
 def query_screener(
     rsi_below: Optional[float] = None,
     rsi_above: Optional[float] = None,
