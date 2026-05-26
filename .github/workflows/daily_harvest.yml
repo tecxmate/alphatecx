@@ -1,7 +1,7 @@
 name: Daily TWSE Harvest
 
-# Runs after Taiwan market close (13:30 Taipei) plus a buffer for TWSE/MOPS
-# to publish closing data. 16:30 Taipei == 08:30 UTC. Weekdays only.
+# Manual only as of 2026-05-27. The weekday schedule was disabled because
+# the automated refreshes were consuming too many Vercel CPU hours.
 #
 # Pipeline (see src/harvester/daily.py):
 #   T86, holdings, margin, revenue → atomic upsert
@@ -12,8 +12,6 @@ name: Daily TWSE Harvest
 #   Telegram daily-summary alert
 
 on:
-  schedule:
-    - cron: '30 8 * * 1-5'    # 16:30 Taipei, Mon-Fri
   workflow_dispatch:           # manual trigger from Actions tab
 
 env:

@@ -19,6 +19,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [2026-05-07 — V2 review fixes](decisions/2026-05-07-v2-review-fixes.md) — review of Gemini's V2; SQL injection, timezone, idempotency, view bug, RLS portability
 - [2026-05-08 — Analysis system plan](decisions/2026-05-08-analysis-system-plan.md) — phased plan for quant + news + dual-agent analysis layered on v2; Scheduled Tasks for digests, Skills for depth
 - [2026-05-17 — assistant-ui frontend](decisions/2026-05-17-assistant-ui-frontend.md) — scaffold Next.js chat at `web/`, talk to the existing Python MCP via AI SDK; defer Clerk/Stripe
+- [2026-05-27 — Disable scheduled harvest crons](decisions/2026-05-27-disable-scheduled-harvest-crons.md) — remove unattended GitHub Actions schedules to stop CPU-hour churn; keep manual dispatch
 
 ## Topics
 *Areas, products, events, and synthesised concepts. Topics don't make decisions; stakeholders do.*

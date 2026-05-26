@@ -3,7 +3,7 @@ title: Infrastructure accounts
 type: topic
 slug: infrastructure-accounts
 date: 2026-05-08
-updated: 2026-05-08
+updated: 2026-05-27
 belongs_to: [system-architecture]
 source: synthesis
 status: active
@@ -57,3 +57,4 @@ Where the production resources live and which login/org owns each. Recorded so f
 - 2026-04-29 — Neon project provisioned for v1.
 - 2026-05-07 — v2 schema applied; `mcp_viewer` role provisioned ([decision](../decisions/2026-05-07-v2-review-fixes.md)).
 - 2026-05-08 — Vercel `alphatecx-v2-mcp` project created; MCP deployed pointing at `mcp_viewer` DSN.
+- 2026-05-27 — Scheduled GitHub Actions harvest/news crons disabled to reduce Vercel CPU-hour usage; workflows remain manually runnable ([decision](../decisions/2026-05-27-disable-scheduled-harvest-crons.md)).

@@ -434,3 +434,9 @@ attributed_to: [niko, antigravity-agent]   belongs_to: [web-frontend]
 - User requested the sidebar button at the top right of the side panel, with the top-bar button shown only while the side panel is collapsed.
 - Added an editable SVG favicon using the sidebar brand mark.
 - Updated [web-frontend](topics/web-frontend.md).
+
+## [2026-05-27] decision | Disable scheduled harvest crons
+attributed_to: [niko]   belongs_to: [system-architecture, infrastructure-accounts]
+- User reported high Vercel CPU-hour usage from the running cron.
+- Disabled scheduled triggers in `.github/workflows/daily_harvest.yml` and `.github/workflows/news_harvest.yml`; kept `workflow_dispatch` manual runs.
+- Created [2026-05-27-disable-scheduled-harvest-crons](decisions/2026-05-27-disable-scheduled-harvest-crons.md) and updated [Infrastructure accounts](topics/infrastructure-accounts.md).
