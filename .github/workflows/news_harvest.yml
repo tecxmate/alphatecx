@@ -1,8 +1,7 @@
 name: News Harvest + Briefs
 
-# Manual only as of 2026-05-27. The Taiwan-market-aware schedule was disabled
-# because the automated refreshes were consuming too many Vercel CPU hours.
-# Previous schedule:
+# Taiwan-market-aware cron. Runs the news harvester at every slot, then
+# runs the appropriate brief mode based on which cron fired:
 #
 #   23:30 UTC = 07:30 Taipei (Mon-Fri) — pre_market brief (Telegram)
 #   02:00 UTC = 10:00 Taipei (Mon-Fri) — intraday alerts (silent unless threshold)
@@ -14,9 +13,20 @@ name: News Harvest + Briefs
 # Post-close brief lives in daily_harvest.yml so it runs after the full
 # TWSE+OHLCV+signals pipeline with fresh data.
 #
-# News harvester is idempotent — manual re-runs are no-ops on unchanged feeds.
+# Re-enabled 2026-06-03: see docs/wiki/decisions/2026-06-03-reenable-scheduled-harvest-crons.md.
+# Vercel CPU concern from the 2026-05-27 pause did not pan out; harvest runs
+# on GitHub-hosted runners and the news job does not commit to main.
+#
+# News harvester is idempotent — re-runs are no-ops on unchanged feeds.
 
 on:
+  schedule:
+    - cron: '30 23 * * 1-5'   # 07:30 Taipei pre-market
+    - cron: '0 2 * * 1-5'     # 10:00 Taipei intraday
+    - cron: '0 4 * * 1-5'     # 12:00 Taipei intraday
+    - cron: '30 6 * * 1-5'    # 14:30 Taipei intraday (T86 publishes ~15:00)
+    - cron: '0 13 * * *'      # 21:00 Taipei (US morning catch-up)
+    - cron: '0 22 * * *'      # 06:00 Taipei (pre-Asia)
   workflow_dispatch:
     inputs:
       brief_mode:
