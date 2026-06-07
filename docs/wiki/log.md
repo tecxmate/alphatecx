@@ -440,3 +440,17 @@ attributed_to: [niko]   belongs_to: [system-architecture, infrastructure-account
 - User reported high Vercel CPU-hour usage from the running cron.
 - Disabled scheduled triggers in `.github/workflows/daily_harvest.yml` and `.github/workflows/news_harvest.yml`; kept `workflow_dispatch` manual runs.
 - Created [2026-05-27-disable-scheduled-harvest-crons](decisions/2026-05-27-disable-scheduled-harvest-crons.md) and updated [Infrastructure accounts](topics/infrastructure-accounts.md).
+
+## [2026-06-03] decision | Re-enable scheduled harvest crons
+attributed_to: [niko]   belongs_to: [system-architecture, infrastructure-accounts]
+- APEX morning briefing for 2026-06-02 surfaced 8-day staleness (`latest_t86_date: 2026-05-25`), forcing TWSE-direct fallback and approximated D4 trailing averages.
+- Source inspection confirmed the harvest runs on GitHub-hosted runners; Vercel coupling is only the post-step snapshot commit. User assessed the assumed CPU cost as not material and asked to restore the schedule.
+- Restored `cron: '30 8 * * 1-5'` in `daily_harvest.yml` and all six Taiwan-market-aware crons in `news_harvest.yml`; `workflow_dispatch` retained.
+- One-off `workflow_dispatch` of Daily TWSE Harvest still needed to backfill May 26 – Jun 2.
+- Created [2026-06-03-reenable-scheduled-harvest-crons](decisions/2026-06-03-reenable-scheduled-harvest-crons.md); reverses [2026-05-27-disable-scheduled-harvest-crons](decisions/2026-05-27-disable-scheduled-harvest-crons.md).
+
+## [2026-06-07] infra | Executed cron re-enable + backfill
+attributed_to: [niko]   belongs_to: [system-architecture, infrastructure-accounts]
+- Root cause of continued staleness: the 2026-06-03 re-enable edits were never committed/pushed — a stale `.git/index.lock` from a crashed Jun 3 `git commit` left the workflow changes and decision doc unstaged, so remote `main` GitHub Actions still ran the manual-only (disabled-schedule) workflows.
+- Removed the stale lock, committed and pushed the re-enable (`29dc17d`); remote `main` now carries the weekday post-close schedule (daily) and the six Taiwan-market-aware slots (news).
+- Ran the May 26 – Jun 2 backfill via `workflow_dispatch` of Daily TWSE Harvest (run 27089576787, success in 5m11s); snapshot commit-back pushed as `8a68da8`. Ingestion to Neon is live again.

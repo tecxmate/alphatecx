@@ -20,6 +20,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [2026-05-08 — Analysis system plan](decisions/2026-05-08-analysis-system-plan.md) — phased plan for quant + news + dual-agent analysis layered on v2; Scheduled Tasks for digests, Skills for depth
 - [2026-05-17 — assistant-ui frontend](decisions/2026-05-17-assistant-ui-frontend.md) — scaffold Next.js chat at `web/`, talk to the existing Python MCP via AI SDK; defer Clerk/Stripe
 - [2026-05-27 — Disable scheduled harvest crons](decisions/2026-05-27-disable-scheduled-harvest-crons.md) — remove unattended GitHub Actions schedules to stop CPU-hour churn; keep manual dispatch
+- [2026-06-03 — Re-enable scheduled harvest crons](decisions/2026-06-03-reenable-scheduled-harvest-crons.md) — reverse the 2026-05-27 pause after observing concrete staleness cost; assumed CPU concern did not materialise
 
 ## Topics
 *Areas, products, events, and synthesised concepts. Topics don't make decisions; stakeholders do.*
