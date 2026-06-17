@@ -1,7 +1,10 @@
 name: News Harvest + Briefs
 
-# Taiwan-market-aware cron. Runs the news harvester at every slot, then
-# runs the appropriate brief mode based on which cron fired:
+# Taiwan-market-aware cron. Runs the news harvester at every slot.
+# Scheduled Telegram briefs are disabled; manual workflow_dispatch can
+# still run a selected brief mode.
+#
+# Prior scheduled brief mapping:
 #
 #   23:30 UTC = 07:30 Taipei (Mon-Fri) — pre_market brief (Telegram)
 #   02:00 UTC = 10:00 Taipei (Mon-Fri) — intraday alerts (silent unless threshold)
@@ -81,17 +84,13 @@ jobs:
 
       - name: Run brief (mode depends on which cron fired)
         run: |
-          # Map schedule cron expression → brief mode. Workflow_dispatch
-          # uses the explicit input; scheduled runs use github.event.schedule.
+          # Scheduled Telegram briefs are off as of 2026-06-17. Keep the
+          # workflow_dispatch path so a human can explicitly send one.
           MODE=""
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             MODE="${{ inputs.brief_mode }}"
           else
-            case "${{ github.event.schedule }}" in
-              '30 23 * * 1-5') MODE='pre_market' ;;
-              '0 2 * * 1-5'|'0 4 * * 1-5'|'30 6 * * 1-5') MODE='intraday' ;;
-              *) MODE='none' ;;
-            esac
+            MODE='none'
           fi
           echo "Selected brief mode: $MODE"
           if [[ "$MODE" == "none" ]]; then
