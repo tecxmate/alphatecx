@@ -454,3 +454,27 @@ attributed_to: [niko]   belongs_to: [system-architecture, infrastructure-account
 - Root cause of continued staleness: the 2026-06-03 re-enable edits were never committed/pushed — a stale `.git/index.lock` from a crashed Jun 3 `git commit` left the workflow changes and decision doc unstaged, so remote `main` GitHub Actions still ran the manual-only (disabled-schedule) workflows.
 - Removed the stale lock, committed and pushed the re-enable (`29dc17d`); remote `main` now carries the weekday post-close schedule (daily) and the six Taiwan-market-aware slots (news).
 - Ran the May 26 – Jun 2 backfill via `workflow_dispatch` of Daily TWSE Harvest (run 27089576787, success in 5m11s); snapshot commit-back pushed as `8a68da8`. Ingestion to Neon is live again.
+
+## [2026-06-11] decision | Neon storage retention prune
+attributed_to: [niko, codex-agent]   belongs_to: [system-architecture, infrastructure-accounts]
+- Neon production reached the free-tier storage cap at 490 MB; largest tables were all-market `raw_twse_t86`, `raw_twse_holdings`, and `raw_twse_margin`.
+- Pruned old bulk rows, kept bounded recent windows, and compacted affected tables with `VACUUM FULL`; database size dropped to 158 MB.
+- Created [2026-06-11-neon-retention-prune](decisions/2026-06-11-neon-retention-prune.md); updated [Infrastructure accounts](topics/infrastructure-accounts.md) and [Historical Data Backfill](topics/historical-backfill.md).
+
+## [2026-06-11] ingest | Neon usage banner interpretation
+attributed_to: [codex-agent]   belongs_to: [infrastructure-accounts]
+- Neon docs show console usage is split across root storage, child-branch storage, instant-restore/history storage, compute, and network transfer.
+- If the top banner remains after DB compaction, inspect **Review usage** / org **Billing** before assuming the active branch's current table size is still over limit.
+- Updated [Infrastructure accounts](topics/infrastructure-accounts.md).
+
+## [2026-06-17] decision | Disable scheduled Telegram briefs
+attributed_to: [niko]   belongs_to: [system-architecture, infrastructure-accounts]
+- User surfaced a `claude-finbot` intraday Telegram alert and asked to turn off the automation.
+- Traced the alert to scheduled `news_harvest.yml` brief mode mapping; scheduled runs now force `MODE='none'` while news harvesting and manual brief dispatch remain available.
+- Created [2026-06-17-disable-scheduled-telegram-briefs](decisions/2026-06-17-disable-scheduled-telegram-briefs.md) and updated [Infrastructure accounts](topics/infrastructure-accounts.md).
+
+## [2026-07-05] decision | Add full-market flow screener
+attributed_to: [niko, codex-agent]   belongs_to: [system-architecture]
+- User identified that AI-universe-only screening missed traditional-sector sleeper candidates.
+- Added `market_flow_screener` over all TWSE/TPEX T86 flow rows and expanded `q_screener` below-threshold filters / `all_with_signals` mode, while noting all-market technical signals still depend on OHLCV coverage.
+- Updated [System Architecture](topics/system-architecture.md).

@@ -3,7 +3,7 @@ title: Infrastructure accounts
 type: topic
 slug: infrastructure-accounts
 date: 2026-05-08
-updated: 2026-05-27
+updated: 2026-06-17
 belongs_to: [system-architecture]
 source: synthesis
 status: active
@@ -28,6 +28,7 @@ Where the production resources live and which login/org owns each. Recorded so f
 - **Roles:**
   - `neondb_owner` — writer; used by harvester, backfill, schema migrations. DSN in root `.env` as `DATABASE_URL`.
   - `mcp_viewer` — read-only role; SELECT on raw + view + dim_supply_chain + ingestion_log; no INSERT/UPDATE/DELETE; password in root `.env` as `MCP_VIEWER_PASSWORD`. DSN in `mcp_server/.env` as `MCP_DATABASE_URL`.
+- **Usage-accounting note:** The console's "monthly storage allowance" warning is project/account usage, not necessarily just the active branch's current `pg_database_size()`. Check the org **Billing** page or the banner's **Review usage** detail for root-branch storage, child-branch storage, instant-restore/history storage, compute CU-hours, and network transfer.
 
 **Old project (decommission window):**
 - **Organization:** `Tecxmate` (`org-muddy-hill-84308768`)
@@ -48,9 +49,9 @@ Where the production resources live and which login/org owns each. Recorded so f
 ## Telegram
 
 - Bot token + chat id in root `.env` (`TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`); reused from v1.
+- Scheduled Telegram briefs from `news_harvest.yml` are disabled as of 2026-06-17. The workflow still harvests news on schedule, but scheduled runs force `MODE='none'`; manual `workflow_dispatch` can still send a selected brief mode.
 
 ## Open questions
-- Free-tier Neon is at ~363 MB / 512 MB after Gemini's T86 prune. Need a plan if backfill grows beyond that — paid tier vs. tighter retention.
 - No automatic Neon backups beyond the 6h history window. Acceptable for now; reconsider once positions/journal data starts living here too.
 
 ## History
@@ -58,3 +59,6 @@ Where the production resources live and which login/org owns each. Recorded so f
 - 2026-05-07 — v2 schema applied; `mcp_viewer` role provisioned ([decision](../decisions/2026-05-07-v2-review-fixes.md)).
 - 2026-05-08 — Vercel `alphatecx-v2-mcp` project created; MCP deployed pointing at `mcp_viewer` DSN.
 - 2026-05-27 — Scheduled GitHub Actions harvest/news crons disabled to reduce Vercel CPU-hour usage; workflows remain manually runnable ([decision](../decisions/2026-05-27-disable-scheduled-harvest-crons.md)).
+- 2026-06-11 — Neon reached the free-tier storage cap at 490 MB. Pruned old all-market raw rows, compacted affected tables with `VACUUM FULL`, and reduced the database to 158 MB ([decision](../decisions/2026-06-11-neon-retention-prune.md)).
+- 2026-06-11 — Neon docs confirmed console usage is broken down by root storage, child-branch storage, instant-restore/history storage, compute, and transfer; a top-level monthly storage banner can lag or reflect project/account usage beyond the current active database size.
+- 2026-06-17 — Scheduled pre-market/intraday Telegram briefs from `news_harvest.yml` disabled while scheduled news harvesting remains active ([decision](../decisions/2026-06-17-disable-scheduled-telegram-briefs.md)).

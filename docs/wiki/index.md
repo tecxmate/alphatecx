@@ -10,6 +10,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 
 - [Niko](stakeholders/niko.md) — project owner, strategy & trading decisions (owner)
 - [Antigravity Agent](stakeholders/antigravity-agent.md) — Claude agent, wiki curation & implementation (agent)
+- [Codex Agent](stakeholders/codex-agent.md) — Codex agent, implementation and operational debugging (agent)
 - [Gemini Agent](stakeholders/gemini-agent.md) — Google Gemini agent, initial architecture & strategy proposal (agent)
 
 ## Decisions
@@ -21,6 +22,8 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [2026-05-17 — assistant-ui frontend](decisions/2026-05-17-assistant-ui-frontend.md) — scaffold Next.js chat at `web/`, talk to the existing Python MCP via AI SDK; defer Clerk/Stripe
 - [2026-05-27 — Disable scheduled harvest crons](decisions/2026-05-27-disable-scheduled-harvest-crons.md) — remove unattended GitHub Actions schedules to stop CPU-hour churn; keep manual dispatch
 - [2026-06-03 — Re-enable scheduled harvest crons](decisions/2026-06-03-reenable-scheduled-harvest-crons.md) — reverse the 2026-05-27 pause after observing concrete staleness cost; assumed CPU concern did not materialise
+- [2026-06-11 — Neon retention prune](decisions/2026-06-11-neon-retention-prune.md) — pruned old all-market raw data and compacted Neon from 490 MB to 158 MB
+- [2026-06-17 — Disable scheduled Telegram briefs](decisions/2026-06-17-disable-scheduled-telegram-briefs.md) — stop scheduled pre-market/intraday Telegram messages while leaving news harvests and manual dispatch available
 
 ## Topics
 *Areas, products, events, and synthesised concepts. Topics don't make decisions; stakeholders do.*

@@ -3,7 +3,7 @@ title: Historical Data Backfill Strategy
 type: topic
 slug: historical-backfill
 date: 2026-05-07
-updated: 2026-05-07
+updated: 2026-06-11
 belongs_to: [system-architecture]
 source: chat
 status: active
@@ -73,3 +73,7 @@ Well within the 500MB free tier. Even with a year of daily accumulation, total s
 - Should backfill run as a one-time script, or as a GitHub Action that detects gaps and fills them?
 - Do we backfill TPEX (上櫃) with the same depth, or focus on TWSE (上市) first?
 - Should we store the raw JSON responses as well, or only the parsed/normalized rows?
+
+## Retention Policy
+
+- 2026-06-11 — After Neon hit the free-tier storage cap, current retention was tightened to 60 trading days for `raw_twse_t86`, `raw_twse_valuation`, and `raw_twse_index`; 30 trading days for `raw_twse_holdings` and `raw_twse_margin`; latest 3 `lead_lag` snapshots; and 2026+ news. Long `raw_twse_ohlcv` history remains because it is small and supports indicators/backtests ([decision](../decisions/2026-06-11-neon-retention-prune.md)).
