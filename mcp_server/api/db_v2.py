@@ -143,6 +143,94 @@ def query_ticker_momentum(
     return _serialize(_fetch(sql, tuple(params)))
 
 
+def query_market_flow_screener(
+    market: Optional[str] = None,
+    classification: str = "all",
+    search: Optional[str] = None,
+    min_streak: int = 0,
+    foreign_1d_above: Optional[int] = None,
+    foreign_5d_above: Optional[int] = None,
+    foreign_20d_above: Optional[int] = None,
+    total_5d_above: Optional[int] = None,
+    sort_by: str = "foreign_5d",
+    sort_direction: str = "desc",
+    limit: int = 50,
+) -> list[dict]:
+    """Screen the full TWSE/TPEX flow universe from view_ticker_momentum.
+
+    This is intentionally flow-first: T86 coverage is all-market, while
+    OHLCV-derived technical indicators currently exist only where the daily
+    price harvester has populated history. Signal fields are included via a
+    LEFT JOIN when available, but lack of signal coverage does not exclude
+    an otherwise valid all-market flow row.
+    """
+    conditions: list[str] = []
+    params: list = []
+
+    if market:
+        market_norm = market.upper()
+        if market_norm not in ("TWSE", "TPEX"):
+            return [{"error": "market must be 'TWSE' or 'TPEX'"}]
+        conditions.append("tm.market = %s")
+        params.append(market_norm)
+
+    if classification == "classified":
+        conditions.append("tm.ai_pillar != 'unclassified'")
+    elif classification == "unclassified":
+        conditions.append("tm.ai_pillar = 'unclassified'")
+    elif classification != "all":
+        return [{"error": "classification must be 'all', 'classified', or 'unclassified'"}]
+
+    if search:
+        q = f"%{search.strip()}%"
+        conditions.append("(tm.ticker_id ILIKE %s OR tm.company_name ILIKE %s)")
+        params.extend([q, q])
+
+    if min_streak > 0:
+        conditions.append("tm.consecutive_foreign_buy_days >= %s")
+        params.append(int(min_streak))
+    if foreign_1d_above is not None:
+        conditions.append("tm.foreign_1d >= %s")
+        params.append(int(foreign_1d_above))
+    if foreign_5d_above is not None:
+        conditions.append("tm.foreign_5d >= %s")
+        params.append(int(foreign_5d_above))
+    if foreign_20d_above is not None:
+        conditions.append("tm.foreign_20d >= %s")
+        params.append(int(foreign_20d_above))
+    if total_5d_above is not None:
+        conditions.append("tm.total_5d >= %s")
+        params.append(int(total_5d_above))
+
+    where = " AND ".join(conditions) if conditions else "1=1"
+    order_col = _safe_col(sort_by, "foreign_5d")
+    direction = "ASC" if str(sort_direction).lower() == "asc" else "DESC"
+    limit = max(1, min(int(limit), 200))
+
+    sql = f"""
+        SELECT
+          tm.ticker_id, tm.company_name, tm.market,
+          tm.ai_pillar, tm.node,
+          tm.foreign_1d, tm.total_1d,
+          tm.foreign_3d, tm.total_3d,
+          tm.foreign_5d, tm.total_5d,
+          tm.foreign_10d, tm.total_10d,
+          tm.foreign_20d, tm.total_20d,
+          tm.consecutive_foreign_buy_days,
+          ls.as_of AS signals_as_of,
+          ls.rsi_14, ls.sma_50, ls.sma_200, ls.rs_vs_market_60,
+          ls.pct_below_52w_high, ls.foreign_net_z20,
+          tm.refreshed_at
+        FROM view_ticker_momentum tm
+        LEFT JOIN view_latest_signals ls ON ls.ticker_id = tm.ticker_id
+        WHERE {where}
+        ORDER BY tm.{order_col} {direction}, tm.ticker_id
+        LIMIT %s
+    """
+    params.append(limit)
+    return _serialize(_fetch(sql, tuple(params)))
+
+
 # ── Supply Chain Map ───────────────────────────────────────────────────────
 
 def query_supply_chain(
@@ -405,16 +493,25 @@ def query_screener(
     macd_hist_above: Optional[float] = None,
     above_sma_200: Optional[bool] = None,
     rs_above: Optional[float] = None,
+    rs_below: Optional[float] = None,
     foreign_z_above: Optional[float] = None,
+    foreign_z_below: Optional[float] = None,
     pct_below_52w_high_above: Optional[float] = None,
+    pct_below_52w_high_below: Optional[float] = None,
+    universe: str = "classified",
 ) -> list[dict]:
-    """Screen latest signals across all classified tickers.
+    """Screen latest signals across classified or all signal-covered tickers.
 
     Combines conditions with AND. Joins view_latest_signals with
-    raw_twse_ohlcv to expose latest close + dim_supply_chain for pillar/node.
+    raw_twse_ohlcv to expose latest close + dim_ticker for pillar/node.
     """
     conditions: list[str] = []
     params: list = []
+
+    if universe == "classified":
+        conditions.append("dt.ai_pillar IS NOT NULL")
+    elif universe != "all_with_signals":
+        return [{"error": "universe must be 'classified' or 'all_with_signals'"}]
 
     if rsi_below is not None:
         conditions.append("ls.rsi_14 < %s")
@@ -432,25 +529,35 @@ def query_screener(
     if rs_above is not None:
         conditions.append("ls.rs_vs_market_60 > %s")
         params.append(rs_above)
+    if rs_below is not None:
+        conditions.append("ls.rs_vs_market_60 < %s")
+        params.append(rs_below)
     if foreign_z_above is not None:
         conditions.append("ls.foreign_net_z20 > %s")
         params.append(foreign_z_above)
+    if foreign_z_below is not None:
+        conditions.append("ls.foreign_net_z20 < %s")
+        params.append(foreign_z_below)
     if pct_below_52w_high_above is not None:
         # Stored as a negative or zero number; "above" a threshold like -5
         # means "within 5% of the high" (i.e. closer to high than -5%).
         conditions.append("ls.pct_below_52w_high > %s")
         params.append(pct_below_52w_high_above)
+    if pct_below_52w_high_below is not None:
+        # Useful for finding names far from their highs, e.g. below -20.
+        conditions.append("ls.pct_below_52w_high < %s")
+        params.append(pct_below_52w_high_below)
 
     where = " AND ".join(conditions) if conditions else "1=1"
     sql = f"""
-        SELECT ls.ticker_id, sc.company_name, sc.ai_pillar, sc.node,
+        SELECT ls.ticker_id, dt.company_name, dt.market, dt.ai_pillar, dt.node,
                o.close AS latest_close, ls.as_of,
                ls.rsi_14, ls.macd_histogram, ls.bb_pct_b,
                ls.sma_50, ls.sma_200, ls.rs_vs_market_60,
                ls.pct_below_52w_high, ls.foreign_net_z20,
                ls.foreign_net_5d_sum, ls.total_net_z20
         FROM view_latest_signals ls
-        JOIN dim_supply_chain sc ON sc.ticker_id = ls.ticker_id
+        JOIN dim_ticker dt ON dt.ticker_id = ls.ticker_id
         LEFT JOIN raw_twse_ohlcv o
           ON o.ticker_id = ls.ticker_id AND o.date = ls.as_of
         WHERE {where}

@@ -298,6 +298,69 @@ def sc_accumulation_screen(
     )
 
 
+# ── Tool: Full-Market Flow Screener ────────────────────────────────────────
+
+@mcp.tool()
+def market_flow_screener(
+    market: Optional[str] = None,
+    classification: str = "all",
+    search: Optional[str] = None,
+    min_streak: int = 0,
+    foreign_1d_above: Optional[int] = None,
+    foreign_5d_above: Optional[int] = None,
+    foreign_20d_above: Optional[int] = None,
+    total_5d_above: Optional[int] = None,
+    sort_by: str = "foreign_5d",
+    sort_direction: str = "desc",
+    top_n: int = 50,
+) -> dict:
+    """Screen the full Taiwan market by institutional flow momentum.
+
+    Unlike the `sc_*` supply-chain tools, this searches every ticker present
+    in the TWSE/TPEX T86 institutional-flow feed. Non-AI names are labelled
+    `unclassified`, so use `classification='unclassified'` to look outside
+    the curated AI universe.
+
+    Args:
+        market: Optional exchange filter: 'TWSE' or 'TPEX'.
+        classification: 'all', 'classified', or 'unclassified'.
+        search: Optional ticker/company-name substring.
+        min_streak: Minimum consecutive foreign net-buy days.
+        foreign_1d_above: Minimum latest-day foreign net flow in shares.
+        foreign_5d_above: Minimum 5-day foreign net flow in shares.
+        foreign_20d_above: Minimum 20-day foreign net flow in shares.
+        total_5d_above: Minimum 5-day total institutional net flow in shares.
+        sort_by: One of foreign_1d/3d/5d/10d/20d, total_1d/3d/5d/10d/20d,
+            or consecutive_foreign_buy_days.
+        sort_direction: 'desc' for accumulation leaders, 'asc' for selling.
+        top_n: Max results, capped at 200.
+    """
+    rows = db_v2.query_market_flow_screener(
+        market=market,
+        classification=classification,
+        search=search,
+        min_streak=min_streak,
+        foreign_1d_above=foreign_1d_above,
+        foreign_5d_above=foreign_5d_above,
+        foreign_20d_above=foreign_20d_above,
+        total_5d_above=total_5d_above,
+        sort_by=sort_by,
+        sort_direction=sort_direction,
+        limit=top_n,
+    )
+    return _stamp(
+        {
+            "matches": rows,
+            "count": len(rows),
+            "classification": classification,
+            "market": market,
+        },
+        source="view_ticker_momentum",
+        as_of=_today_iso(),
+        freshness="T+1",
+    )
+
+
 # ── Tool: Quant Indicators (per ticker) ────────────────────────────────────
 
 @mcp.tool()
@@ -378,15 +441,20 @@ def q_screener(
     macd_hist_above: Optional[float] = None,
     above_sma_200: Optional[bool] = None,
     rs_above: Optional[float] = None,
+    rs_below: Optional[float] = None,
     foreign_z_above: Optional[float] = None,
+    foreign_z_below: Optional[float] = None,
     pct_below_52w_high_above: Optional[float] = None,
+    pct_below_52w_high_below: Optional[float] = None,
+    universe: str = "classified",
 ) -> dict:
-    """Filter the classified universe by indicator conditions (AND-combined).
+    """Filter signal-covered tickers by indicator conditions (AND-combined).
 
     Combines technical + flow signals. Examples:
       - oversold-in-uptrend: rsi_below=40, above_sma_200=true, macd_hist_above=0
       - foreign-buying surge: foreign_z_above=1.5
       - near-highs momentum: pct_below_52w_high_above=-3, rs_above=1.0
+      - beaten-down relative weakness: rs_below=-5, pct_below_52w_high_below=-20
 
     Args:
         rsi_below: RSI-14 below this value.
@@ -394,19 +462,28 @@ def q_screener(
         macd_hist_above: MACD histogram above this value.
         above_sma_200: True = price above 200-day MA; False = below.
         rs_above: 60d relative strength vs market threshold (1.0 = neutral).
+        rs_below: 60d relative strength below this threshold.
         foreign_z_above: 20-day z-score of daily foreign net flow.
+        foreign_z_below: 20-day z-score below this threshold.
         pct_below_52w_high_above: Filter to tickers within X% of 52w high
             (pass -3 to mean "within 3% of the high"; pass -10 for "within 10%").
+        pct_below_52w_high_below: Filter to tickers farther below their 52w high
+            than X% (pass -20 to mean "more than 20% below the high").
+        universe: 'classified' (default) or 'all_with_signals'. Full-market
+            flow-only screening is provided by `market_flow_screener`.
     """
     rows = db_v2.query_screener(
         rsi_below=rsi_below, rsi_above=rsi_above,
         macd_hist_above=macd_hist_above,
         above_sma_200=above_sma_200, rs_above=rs_above,
-        foreign_z_above=foreign_z_above,
+        rs_below=rs_below,
+        foreign_z_above=foreign_z_above, foreign_z_below=foreign_z_below,
         pct_below_52w_high_above=pct_below_52w_high_above,
+        pct_below_52w_high_below=pct_below_52w_high_below,
+        universe=universe,
     )
     return _stamp(
-        {"matches": rows, "count": len(rows)},
+        {"matches": rows, "count": len(rows), "universe": universe},
         source="view_latest_signals",
         as_of=_today_iso(),
         freshness="T+1",
@@ -1109,21 +1186,23 @@ def sc_data_status() -> dict:
 def sc_capabilities() -> dict:
     """Describe all available tools and what this MCP server provides.
 
-    alphatecx v2 is a Taiwan AI supply chain intelligence system.
-    It tracks institutional capital flows (foreign investors, investment
-    trusts, dealers) across ~7000 TWSE/TPEX stocks, classified into
-    4 AI pillars: semiconductor, equipment, infrastructure, energy.
+    alphatecx v2 is a Taiwan market intelligence system with deep AI supply
+    chain classification. It tracks institutional capital flows (foreign
+    investors, investment trusts, dealers) across ~7000 TWSE/TPEX stocks,
+    with a curated subset classified into 4 AI pillars: semiconductor,
+    equipment, infrastructure, energy.
 
     The system detects "trickle down" accumulation patterns as foreign
     capital flows from foundry (TSMC) → server ODMs → cooling/PCB → power.
     """
     return {
         "server": "alphatecx-v2",
-        "description": "Taiwan AI supply chain intelligence — institutional flow tracking",
+        "description": "Taiwan market intelligence — full-market flow tracking plus AI supply chain classification",
         "data_coverage": {
-            "tickers": "~7000 TWSE + TPEX stocks",
+            "flow_tickers": "~7000 TWSE + TPEX stocks from T86",
             "classified": "~27 stocks across 4 AI pillars",
-            "history": "up to 90 trading days",
+            "technical_signals": "computed where OHLCV history is harvested; currently deepest on classified tickers",
+            "history": "bounded recent windows after storage-retention pruning",
             "update_frequency": "daily after 16:00 CST",
         },
         "ai_pillars": {
@@ -1139,11 +1218,12 @@ def sc_capabilities() -> dict:
             {"name": "raw_flow_history", "purpose": "Daily flow time series for one ticker"},
             {"name": "sc_compare_nodes", "purpose": "Side-by-side node flow comparison"},
             {"name": "sc_accumulation_screen", "purpose": "Find tickers with sustained FINI buying"},
+            {"name": "market_flow_screener", "purpose": "Full TWSE/TPEX flow screener across classified and unclassified tickers"},
             {"name": "sc_data_status", "purpose": "Pipeline health and data freshness"},
             {"name": "q_indicators", "purpose": "Latest technical + flow indicators for one ticker"},
             {"name": "beginner_stock_card", "purpose": "Beginner-friendly factual stock card with grouped numbers and chart-ready points"},
             {"name": "price_history", "purpose": "Chart-ready OHLCV history for one ticker"},
-            {"name": "q_screener", "purpose": "Filter classified universe by AND-combined indicator conditions"},
+            {"name": "q_screener", "purpose": "Filter signal-covered tickers by AND-combined indicator conditions"},
             {"name": "q_backtest", "purpose": "Backtest a single-threshold signal rule"},
             {"name": "q_backtest_compound", "purpose": "Backtest multi-condition (AND) compound rules; up to 4 conditions"},
             {"name": "n_recent", "purpose": "Recent news articles (RSS + Google News); titles + summaries"},
