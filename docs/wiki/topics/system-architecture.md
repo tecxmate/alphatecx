@@ -3,7 +3,7 @@ title: System Architecture (v2 Stateful Upgrade)
 type: topic
 slug: system-architecture
 date: 2026-05-07
-updated: 2026-05-13
+updated: 2026-07-05
 belongs_to: [niko]
 source: chat
 status: active
@@ -54,7 +54,7 @@ Absolute volume (e.g., FINI buying 210M shares of Foxconn) shows where the weigh
 
 ## MCP Tools (v2)
 
-The `alphatecx-v2` server exposes 7 tools:
+The `alphatecx-v2` server exposes MCP tools across supply-chain flow, broad-market flow, quant indicators, news, digests, watchlists, and status:
 1. `sc_capabilities`: System metadata and AI pillar/node definitions.
 2. `sc_sector_momentum`: Sector-level capital flows across pillars.
 3. `sc_ticker_momentum`: Per-ticker flow with consecutive buy streak tracking.
@@ -62,6 +62,8 @@ The `alphatecx-v2` server exposes 7 tools:
 5. `sc_accumulation_screen`: Finds tickers with sustained FINI buying (e.g., min streak).
 6. `sc_supply_chain_map`: Look up ticker → pillar/node/US partner.
 7. `raw_flow_history`: Daily flow time series for any ticker.
+8. `market_flow_screener`: Full TWSE/TPEX flow screen across classified and unclassified tickers.
+9. `q_screener`: Technical/flow signal screen over signal-covered tickers; defaults to classified names, with `all_with_signals` for broader signal rows when available.
 
 ## Daily Systematic Workflow
 
@@ -85,3 +87,4 @@ The `alphatecx-v2` server exposes 7 tools:
 - 2026-05-11: Tracked tickers tab changed to lazy search-only rendering with 20 rows per page, and graph interaction hints now display only on Plotly graph tabs. [niko, antigravity-agent]
 - 2026-05-11: Ticker management moved from the graph viewer to a dedicated Home-linked `/t/{token}/` directory. The page renders 20 rows by default, supports search/paging, keeps inline pillar/node edits, and stores user folders/lists in `dim_ticker.tags`. [niko, antigravity-agent]
 - 2026-05-13: Go-to-market note: Claude Desktop/iOS remains the simplest MCP customer install path, while ChatGPT distribution should be planned as a remote MCP/app integration with workspace/admin/developer-mode requirements or via a custom OpenAI API chat product. [niko, antigravity-agent]
+- 2026-07-05: Added `market_flow_screener` for all-market TWSE/TPEX institutional-flow discovery outside the AI classification, and expanded `q_screener` with below-threshold filters plus an `all_with_signals` mode. Full-market technical screening remains bounded by which tickers have OHLCV-derived signal rows. [niko, codex-agent]
