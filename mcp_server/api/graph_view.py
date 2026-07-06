@@ -2,7 +2,7 @@
 
 `GET /g/{TOKEN}/` regenerates the graph on demand from current DB state,
 with a short in-memory TTL cache so back-to-back loads (pan, zoom, tab
-swaps) don't pay the recompute cost. The committed `graph.png` /
+swaps) don't pay the recompute cost. The committed `graph-image.png` /
 `graph_snapshot.json` artifacts are still produced by the nightly CI job
 and used by Telegram / programmatic clients.
 
@@ -31,12 +31,12 @@ _NODE_RE       = re.compile(r"^[0-9A-Za-z][0-9A-Za-z\- _/]{0,63}$")
 _FOLDER_RE     = re.compile(r"^[0-9A-Za-z][0-9A-Za-z\- _/]{0,47}$")
 
 _STATIC = Path(__file__).parent / "static"
-_HTML_PATH        = _STATIC / "graph.html"
-_PNG_PATH         = _STATIC / "graph.png"
+_HTML_PATH        = _STATIC / "graph-view.html"
+_PNG_PATH         = _STATIC / "graph-image.png"
 _JSON_PATH        = _STATIC / "graph_snapshot.json"
-_DASHBOARD_PATH   = _STATIC / "dashboard.html"
-_DASHBOARD_CSS    = _STATIC / "dashboard.css"
-_DASHBOARD_JS     = _STATIC / "dashboard.js"
+_DASHBOARD_PATH   = _STATIC / "dashboard-page.html"
+_DASHBOARD_CSS    = _STATIC / "dashboard-style.css"
+_DASHBOARD_JS     = _STATIC / "dashboard-app.js"
 _TICKER_DIR       = _STATIC / "ticker"
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the static data dashboard at mcp_server/api/static/dashboard.html.
+"""Build the static data dashboard at mcp_server/api/static/dashboard-page.html.
 
 Four tabs:
   - Watchlist     active rows + current signals
@@ -34,7 +34,7 @@ THESES_DIR = Path(__file__).resolve().parents[2] / "docs" / "theses"
 SNAPSHOT = (Path(__file__).resolve().parents[2]
             / "mcp_server" / "api" / "static" / "graph_snapshot.json")
 OUT_PATH = (Path(__file__).resolve().parents[2]
-            / "mcp_server" / "api" / "static" / "dashboard.html")
+            / "mcp_server" / "api" / "static" / "dashboard-page.html")
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(name)s %(levelname)s %(message)s")

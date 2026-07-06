@@ -99,7 +99,7 @@ jobs:
         run: python -m src.cron.thesis_status
 
       - name: Build data dashboard
-        # Static HTML at mcp_server/api/static/dashboard.html with 4 tabs:
+        # Static HTML at mcp_server/api/static/dashboard-page.html with 4 tabs:
         # Watchlist / Theses / Discovery / Lead-lag. Served at /d/{TOKEN}/.
         if: success()
         continue-on-error: true
@@ -130,9 +130,9 @@ jobs:
           git config user.name  "alphatecx-cron"
           git config user.email "alphatecx-cron@users.noreply.github.com"
           git add mcp_server/api/static/graph_snapshot.json \
-                  mcp_server/api/static/graph.html \
-                  mcp_server/api/static/graph.png \
-                  mcp_server/api/static/dashboard.html \
+                  mcp_server/api/static/graph-view.html \
+                  mcp_server/api/static/graph-image.png \
+                  mcp_server/api/static/dashboard-page.html \
                   mcp_server/api/static/ticker/
           if git diff --cached --quiet; then
             echo "no static-asset changes to commit"

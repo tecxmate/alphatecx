@@ -719,6 +719,13 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
                               "fig-heatmap", include_js=False)
 
     disc = snap.get("discovery", [])
+
+    def _neighbour_text(candidate: dict) -> str:
+        return "; ".join(
+            f"{n['id']} {n['rho']}"
+            for n in (candidate.get("neighbours") or [])[:4]
+        )
+
     disc_rows = "".join(
         f'<tr data-q="{c["ticker"]} {c["name"]} {c["suggested_pillar"]} {c.get("suggested_node") or ""}">'
         f'<td><b>{c["ticker"]}</b></td>'
@@ -726,7 +733,7 @@ def build_plotly_2d_html(snap: dict, corr: np.ndarray, tickers: list[str],
         f'<td><span class="pill" style="--pill:{PILLAR_COLOR.get(c["suggested_pillar"], "#64748b")}">{c["suggested_pillar"]}</span></td>'
         f'<td>{c.get("suggested_node") or ""}</td>'
         f'<td>{c["conviction"]}</td>'
-        f'<td>{"; ".join(f"{n["id"]} {n["rho"]}" for n in (c.get("neighbours") or [])[:4])}</td>'
+        f'<td>{_neighbour_text(c)}</td>'
         f'</tr>'
         for c in disc
     )
@@ -1045,7 +1052,7 @@ def main():
     ap.add_argument("--out-json", type=str,
                     default="mcp_server/api/static/graph_snapshot.json")
     ap.add_argument("--out-html", type=str,
-                    default="mcp_server/api/static/graph.html")
+                    default="mcp_server/api/static/graph-view.html")
     args = ap.parse_args()
 
     snapshot, corr, tickers = build_snapshot(window_days=args.window)
@@ -1055,7 +1062,7 @@ def main():
     json_path.write_text(json.dumps(snapshot, indent=2))
 
     # PNG (static, Telegram/reports) — same Plotly figure as the web viewer.
-    png_path = Path(args.out_json).parent / "graph.png"
+    png_path = Path(args.out_json).parent / "graph-image.png"
     png_path.write_bytes(build_combined_png(snapshot, corr, tickers))
 
     # HTML (interactive, web viewer) — plotly 2D with linked axes
