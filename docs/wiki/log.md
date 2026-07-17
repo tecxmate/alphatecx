@@ -495,4 +495,10 @@ attributed_to: [niko, antigravity-agent]   belongs_to: [limit-board-scanner, sys
 - Trap worth remembering: TWSE prints `'--'` for an exhausted book side, TPEX prints `'0.00'`. Parsed literally, every TPEX lock is silently missed (14 of 36 on 2026-07-16). Caught only by running the tool against a live session, not by unit tests.
 - Post-review hardening (code-reviewer: 0 critical / 0 high / 2 medium, both real): TWSE's non-OK `stat` was folded into "holiday", so a TWSE outage + healthy TPEX would have returned half the market as a clean scan with an empty `errors[]`. Now only `沒有符合條件的資料` counts as a non-trading day; everything else is reported. Added a per-market coverage guard + `universe_by_market` because TPEX can never signal failure (`stat` is always `'ok'`).
 - Also found while fixing: a malformed `date` makes TPEX return **today's** board instead of erroring — `date` is now strictly validated, or a typo answers about the wrong session under the requested label.
-- Fetch budget cut 45s×3 → 10s×2 (endpoints measure 1–2.5s), ~42s worst case for both markets; set `maxDuration: 60` for `api/index.py` in `mcp_server/vercel.json`. This is the only tool here making outbound calls, so the only one with a real time budget.
+- Fetch budget cut 45s×3 → 10s×2 (endpoints measure 1–2.5s), ~42s worst case for both markets. This is the only tool here making outbound calls, so the only one with a real time budget.
+
+## [2026-07-18] fix | Revert MCP-wide maxDuration override
+attributed_to: [niko, antigravity-agent]   belongs_to: [limit-board-scanner, system-architecture]
+- The 2026-07-17 scanner commit set `maxDuration: 60` on `api/index.py`. Niko flagged that this is per-*function*, not per-tool: all 35 MCP tools share the single `api/index.py` function, so the override capped every Neon-only tool at 60s too.
+- Checked the platform default: under Fluid Compute (enabled by default, all plans) it is **300s**, ~7× `scan_limit_board`'s ~42s worst case — already sufficient. The override only *lowered* the ceiling for the other 34 tools; it fixed nothing.
+- Reverted `mcp_server/vercel.json` to its pre-scanner state (no `functions` block). `scan_limit_board` still fits comfortably.

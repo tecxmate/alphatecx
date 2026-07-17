@@ -68,9 +68,13 @@ filtering.
   `date` must be validated strictly (`YYYY-MM-DD`, not in the future) before any fetch, or a
   typo silently answers with the wrong session under the requested label.
 - **Both endpoints answer in 1–2.5s** (TWSE ~239 KB, TPEX ~1.5 MB; measured 2026-07-17). The
-  fetch budget is `_TIMEOUT=10` × `_RETRIES=2` × 2 markets ≈ 42s worst case, sized to fit the
-  60s `maxDuration` now set explicitly for `api/index.py` in `mcp_server/vercel.json`. This is
-  the only tool here that makes outbound calls, so it is the only one with a real time budget.
+  fetch budget is `_TIMEOUT=10` × `_RETRIES=2` × 2 markets ≈ 42s worst case. This is the only
+  tool here that makes outbound calls, so the only one with a real time budget — but it fits
+  comfortably inside the platform default. Vercel's function duration ceiling is per *function*,
+  not per tool, and all 35 tools share the single `api/index.py` function; its `maxDuration`
+  defaults to 300s under Fluid Compute (all plans), ~7× the worst case, so **no `maxDuration`
+  override is set** — an earlier `maxDuration: 60` was reverted because it would have capped the
+  other 34 (Neon-only) tools at 60s to solve a non-problem.
 
 ## Partial-coverage guard
 
