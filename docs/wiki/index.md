@@ -24,6 +24,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [2026-06-03 — Re-enable scheduled harvest crons](decisions/2026-06-03-reenable-scheduled-harvest-crons.md) — reverse the 2026-05-27 pause after observing concrete staleness cost; assumed CPU concern did not materialise
 - [2026-06-11 — Neon retention prune](decisions/2026-06-11-neon-retention-prune.md) — pruned old all-market raw data and compacted Neon from 490 MB to 158 MB
 - [2026-06-17 — Disable scheduled Telegram briefs](decisions/2026-06-17-disable-scheduled-telegram-briefs.md) — stop scheduled pre-market/intraday Telegram messages while leaving news harvests and manual dispatch available
+- [2026-07-17 — scan_limit_board ships EOD-only](decisions/2026-07-17-limit-board-scanner-eod-only.md) — realtime MIS sweep doesn't fit the stateless Vercel function; board fetched live from the exchanges since Neon can't serve full-market
 
 ## Topics
 *Areas, products, events, and synthesised concepts. Topics don't make decisions; stakeholders do.*
@@ -38,6 +39,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [3D Correlation Graph](topics/correlation-graph-3d.md) — Mantegna-distance MDS embedding of TW universe; three.js viewer at `/g/{TOKEN}/`; pipeline + auth + math
 - [Architecture Review 2026-05-11](topics/architecture-review-2026-05-11.md) — repo architecture assessment and prioritized modularization plan
 - [Web Frontend (Next.js + assistant-ui)](topics/web-frontend.md) — `web/` chat app; layout, env, turn flow, how to add generative UI
+- [Limit Board Scanner](topics/limit-board-scanner.md) — `scan_limit_board`: 漲停/跌停 board + sleeper/chase triage; exchange quirks, spec deviations, enrichment coverage gaps
 
 ## Log
 - [log.md](log.md) — append-only chronological record

@@ -478,3 +478,21 @@ attributed_to: [niko, codex-agent]   belongs_to: [system-architecture]
 - User identified that AI-universe-only screening missed traditional-sector sleeper candidates.
 - Added `market_flow_screener` over all TWSE/TPEX T86 flow rows and expanded `q_screener` below-threshold filters / `all_with_signals` mode, while noting all-market technical signals still depend on OHLCV coverage.
 - Updated [System Architecture](topics/system-architecture.md).
+
+## [2026-07-11] ingest | Weekly watch — 拓凱 / 晟田
+attributed_to: [claude-cowork]   belongs_to: [topkey-4536]
+- 拓凱 4536: 171.5 (Fri close, -2.0%) — BUYABLE BASE, sitting at top of 166–170 zone, holding >160 invalidation.
+- 晟田 4541: 61.0 (Fri close, -8.5%) — EXTENDED, ~18% above 50–52 base; wait for pullback, don't chase.
+- Flow: 4536 foreign net sellers last 2 sessions (7/8 -19k, 7/9 -95k張-equiv) after heavy mid-June accumulation — cooling. 4541 foreign flow whipsawing (7/7 +1.36M, 7/8 -1.34M, 7/9 +709k shares) — volatile, size small.
+- Note: created data/watchlist.csv (did not previously exist in this repo layout); refreshed prices for 0050 105.8, 00662 120.9, 2330 2415.0.
+
+## [2026-07-17] decision+ingest | scan_limit_board — EOD-only limit board scanner
+attributed_to: [niko, antigravity-agent]   belongs_to: [limit-board-scanner, system-architecture]
+- Built `scan_limit_board` from Niko's spec (`~/Downloads/scan_limit_board_spec.md`). Niko scoped it EOD-only: realtime MIS sweep (~3–4 min, ~40–60 batches) doesn't fit the stateless Vercel function, and `lock_time` needs cross-poll state. See [decision](decisions/2026-07-17-limit-board-scanner-eod-only.md).
+- Board is fetched live from TWSE MI_INDEX (ALLBUT0999) + TPEX dailyQuotes — Neon can't serve it (`raw_twse_ohlcv` covers ~58 classified tickers, not the ~1,950-name market). First MCP tool here making outbound exchange calls.
+- Validated before merge: `reference_price = close - change` matched TPEX's own 次日參考價 848/848; the §3 tick table matched the exchange's own limit prices 885/889.
+- Three spec deviations, all forced by real data: EOD `is_locked` **is** knowable (both feeds publish the closing bid/ask); a null P/E must not imply `no_earnings` (BWIBBU has zero TPEX coverage, so §6 read literally labels the whole 上櫃 board `chase`); and `foreign_net_z20` must come from `raw_twse_t86` (12,791 tickers) not `signal_value` (58) — otherwise `accumulating` never fires and `triage="sleeper"` is unreachable. Details in [topic](topics/limit-board-scanner.md).
+- Trap worth remembering: TWSE prints `'--'` for an exhausted book side, TPEX prints `'0.00'`. Parsed literally, every TPEX lock is silently missed (14 of 36 on 2026-07-16). Caught only by running the tool against a live session, not by unit tests.
+- Post-review hardening (code-reviewer: 0 critical / 0 high / 2 medium, both real): TWSE's non-OK `stat` was folded into "holiday", so a TWSE outage + healthy TPEX would have returned half the market as a clean scan with an empty `errors[]`. Now only `沒有符合條件的資料` counts as a non-trading day; everything else is reported. Added a per-market coverage guard + `universe_by_market` because TPEX can never signal failure (`stat` is always `'ok'`).
+- Also found while fixing: a malformed `date` makes TPEX return **today's** board instead of erroring — `date` is now strictly validated, or a typo answers about the wrong session under the requested label.
+- Fetch budget cut 45s×3 → 10s×2 (endpoints measure 1–2.5s), ~42s worst case for both markets; set `maxDuration: 60` for `api/index.py` in `mcp_server/vercel.json`. This is the only tool here making outbound calls, so the only one with a real time budget.

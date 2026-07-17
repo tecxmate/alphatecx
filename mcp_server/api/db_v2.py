@@ -143,6 +143,116 @@ def query_ticker_momentum(
     return _serialize(_fetch(sql, tuple(params)))
 
 
+def query_limit_board_enrichment(ticker_ids: list[str], as_of: str) -> dict[str, dict]:
+    """Batch-join flow/valuation/ownership context for limit-board hits.
+
+    One query for the whole hit list — the board is fetched live from the
+    exchanges, so this is the only database round trip the scan makes.
+
+    Every source is read as-of `as_of` rather than "latest", so a post-mortem
+    of an old session reports what was knowable that day instead of today's
+    numbers. Signals and valuation are LEFT JOINed: coverage is partial
+    (OHLCV-derived signals exist only where the price harvester has run; TWSE
+    BWIBBU carries no TPEX names), and a hit is never dropped for missing
+    enrichment.
+    """
+    if not ticker_ids:
+        return {}
+
+    sql = """
+        WITH ids AS (SELECT unnest(%s::text[]) AS ticker_id)
+        SELECT
+          i.ticker_id,
+          dt.company_name, dt.market, dt.ai_pillar, dt.node,
+          val.pe_ratio, val.pb_ratio, val.dividend_yield,
+          COALESCE(val.valuation_known, false) AS valuation_known,
+          flow.foreign_net_5d, flow.trust_net_5d, flow.dealer_net_5d,
+          flow.foreign_net_z20, flow.flow_days,
+          sig.rsi_14, sig.sma_50, sig.sma_200,
+          sig.rs_vs_market_60, sig.pct_below_52w_high, sig.signals_as_of,
+          hold.foreign_held_pct, hold.foreign_room_pct,
+          mar.margin_balance, mar.margin_limit, mar.short_balance,
+          rev.yoy_pct AS revenue_yoy_pct, rev.mom_pct AS revenue_mom_pct,
+          rev.industry, rev.ym AS revenue_ym
+        FROM ids i
+        LEFT JOIN dim_ticker dt ON dt.ticker_id = i.ticker_id
+        LEFT JOIN LATERAL (
+          -- `valuation_known` separates "issuer has no positive earnings"
+          -- (row present, pe_ratio NULL) from "we hold no valuation row for
+          -- this name" (no row — most TPEX names). §6's no_earnings
+          -- anti-flag may only fire on the former.
+          SELECT v.pe_ratio, v.pb_ratio, v.dividend_yield, true AS valuation_known
+          FROM raw_twse_valuation v
+          WHERE v.ticker_id = i.ticker_id AND v.date <= %s
+          ORDER BY v.date DESC LIMIT 1
+        ) val ON true
+        -- Flow comes straight from raw_twse_t86 rather than from
+        -- signal_value/view_latest_signals. T86 is all-market (~12.8k
+        -- tickers) while the signal tables only cover the ~58 classified
+        -- names, and a limit-board hit is almost never one of those. Reading
+        -- z20 from signal_value left it NULL for nearly every hit, which
+        -- meant the `accumulating` flag never fired and `triage='sleeper'`
+        -- was unreachable — the one verdict the scanner exists to produce.
+        --
+        -- Same definition as src/quant/indicators.zscore: (latest - mean20)
+        -- / sample stddev20, so the classified names agree with q_indicators.
+        LEFT JOIN LATERAL (
+          SELECT
+            SUM(t.foreign_net) FILTER (WHERE t.rn <= 5) AS foreign_net_5d,
+            SUM(t.trust_net)   FILTER (WHERE t.rn <= 5) AS trust_net_5d,
+            SUM(t.dealer_net)  FILTER (WHERE t.rn <= 5) AS dealer_net_5d,
+            CASE WHEN COUNT(*) = 20 THEN
+              (MAX(t.foreign_net) FILTER (WHERE t.rn = 1) - AVG(t.foreign_net))
+              / NULLIF(STDDEV_SAMP(t.foreign_net), 0)
+            END AS foreign_net_z20,
+            COUNT(*) AS flow_days
+          FROM (
+            SELECT foreign_net, trust_net, dealer_net,
+                   ROW_NUMBER() OVER (ORDER BY date DESC) AS rn
+            FROM raw_twse_t86
+            WHERE ticker_id = i.ticker_id AND date <= %s
+            ORDER BY date DESC LIMIT 20
+          ) t
+        ) flow ON true
+        LEFT JOIN LATERAL (
+          SELECT
+            MAX(s.date) AS signals_as_of,
+            MAX(s.value) FILTER (WHERE s.signal_name = 'rsi_14')             AS rsi_14,
+            MAX(s.value) FILTER (WHERE s.signal_name = 'sma_50')             AS sma_50,
+            MAX(s.value) FILTER (WHERE s.signal_name = 'sma_200')            AS sma_200,
+            MAX(s.value) FILTER (WHERE s.signal_name = 'rs_vs_market_60')    AS rs_vs_market_60,
+            MAX(s.value) FILTER (WHERE s.signal_name = 'pct_below_52w_high') AS pct_below_52w_high
+          FROM signal_value s
+          WHERE s.ticker_id = i.ticker_id
+            AND s.date = (
+              SELECT MAX(date) FROM signal_value
+              WHERE ticker_id = i.ticker_id AND date <= %s
+            )
+        ) sig ON true
+        LEFT JOIN LATERAL (
+          SELECT h.foreign_held_pct, h.foreign_room_pct
+          FROM raw_twse_holdings h
+          WHERE h.ticker_id = i.ticker_id AND h.date <= %s
+          ORDER BY h.date DESC LIMIT 1
+        ) hold ON true
+        LEFT JOIN LATERAL (
+          SELECT m.margin_balance, m.margin_limit, m.short_balance
+          FROM raw_twse_margin m
+          WHERE m.ticker_id = i.ticker_id AND m.date <= %s
+          ORDER BY m.date DESC LIMIT 1
+        ) mar ON true
+        LEFT JOIN LATERAL (
+          SELECT r.yoy_pct, r.mom_pct, r.industry, r.ym
+          FROM raw_monthly_revenue r
+          WHERE r.ticker_id = i.ticker_id AND r.ym <= %s
+          ORDER BY r.ym DESC LIMIT 1
+        ) rev ON true
+    """
+    params = (list(ticker_ids), as_of, as_of, as_of, as_of, as_of, as_of[:7])
+    rows = _serialize(_fetch(sql, params))
+    return {r["ticker_id"]: r for r in rows}
+
+
 def query_market_flow_screener(
     market: Optional[str] = None,
     classification: str = "all",

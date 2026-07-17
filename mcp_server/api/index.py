@@ -16,7 +16,7 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -38,6 +38,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 import db_v2
 import graph_view
+import limit_board
 try:
     from security import is_authorized_path, token_matches
 except ModuleNotFoundError:  # package import path used by local tests
@@ -359,6 +360,245 @@ def market_flow_screener(
         as_of=_today_iso(),
         freshness="T+1",
     )
+
+
+# ── Tool: Limit Board Scanner ─────────────────────────────────────────────
+
+def _resolve_board_date(date: Optional[str]) -> tuple[list[str], bool]:
+    """Return (candidate dates newest-first, caller_pinned).
+
+    A caller-supplied date is honoured exactly — a post-mortem of a specific
+    session must not silently answer about a different one. With no date we
+    walk back from today, because "today" is a holiday, a weekend, or a
+    pre-close intraday moment more often than not.
+    """
+    if date:
+        # Strict, because TPEX answers a malformed date with *today's* board
+        # instead of an error — an unvalidated typo would silently return the
+        # wrong session under the right label.
+        try:
+            parsed = datetime.strptime(date, "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            raise ValueError(f"date must be 'YYYY-MM-DD'; got {date!r}") from None
+        if parsed > datetime.now(_TPE).date():
+            raise ValueError(f"date {date} is in the future")
+        return [parsed.isoformat()], True
+    today = datetime.now(_TPE).date()
+    days = [today - timedelta(days=i) for i in range(9)]
+    # Skip weekends: each candidate costs a round trip per market, and the
+    # exchange has never traded one. Holidays and typhoon closures still fall
+    # through to an empty board, which the walk-back handles.
+    return [d.isoformat() for d in days if d.weekday() < 5][:5], False
+
+
+@mcp.tool()
+def scan_limit_board(
+    direction: str = "up",
+    markets: Optional[list[str]] = None,
+    min_pct: float = 9.5,
+    locked_only: bool = False,
+    min_turnover_twd: int = 0,
+    enrich: bool = True,
+    date: Optional[str] = None,
+    limit: int = 200,
+    mode: str = "eod",
+) -> dict:
+    """Scan the Taiwan limit-up / limit-down board (漲停/跌停) and triage it.
+
+    Answers both halves of board triage: *who* is at the limit, and *which of
+    them is a base-breakout vs. a chase*. The board is fetched live from TWSE
+    and TPEX for the session in question, then joined to our own flow,
+    valuation, ownership and margin history to produce `sleeper_flags` and a
+    `triage` verdict per hit.
+
+    Coverage is common stock only (4-digit codes). ETFs, ETNs and warrants are
+    excluded: they carry different tick scales, and some foreign-tracking ETFs
+    have no price limit at all.
+
+    `min_pct` admits near-limit names, not only those that printed the limit —
+    read `is_at_limit` to tell them apart. `is_locked` means the name closed at
+    the limit with a one-sided book (漲停鎖住).
+
+    Examples:
+      - live-ish board, real liquidity: locked_only=true, min_turnover_twd=20000000
+      - post-mortem of a past session: mode="eod", date="2026-07-16"
+      - limit-down washout, TWSE only: direction="down", markets=["TWSE"], min_pct=9.0
+
+    Args:
+        direction: 'up', 'down', or 'both'.
+        markets: Subset of ['TWSE','TPEX']. Default both.
+        min_pct: Absolute % move required to be listed (default 9.5).
+        locked_only: Keep only one-sided-book locks.
+        min_turnover_twd: Liquidity floor on the session's turnover, in TWD.
+        enrich: Join flow/valuation/ownership and compute triage. Set false
+            for a fast, board-only answer.
+        date: 'YYYY-MM-DD' session to scan. Defaults to the most recent
+            session with published data.
+        limit: Max hits returned (capped at 200).
+        mode: 'eod' only. Realtime intraday scanning is not implemented —
+            see the tool's docs for why.
+    """
+    if mode != "eod":
+        return {
+            "error": (
+                "mode='realtime' is not implemented. This server runs as a "
+                "stateless serverless function; a full-market MIS sweep needs "
+                "~40-60 batched calls (~3-4 min) and lock_time needs "
+                "cross-poll state, neither of which fits. Use mode='eod'."
+            )
+        }
+    if direction not in ("up", "down", "both"):
+        return {"error": "direction must be 'up', 'down', or 'both'"}
+
+    wanted = [m.upper() for m in (markets or ["TWSE", "TPEX"])]
+    bad = [m for m in wanted if m not in ("TWSE", "TPEX")]
+    if bad:
+        return {"error": f"markets must be 'TWSE' and/or 'TPEX'; got {bad}"}
+
+    try:
+        candidates, pinned = _resolve_board_date(date)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    errors: list[str] = []
+    rows: list[dict] = []
+    as_of: Optional[str] = None
+    per_market: dict[str, int] = {}
+
+    for iso in candidates:
+        compact = iso.replace("-", "")
+        slashed = iso.replace("-", "/")
+        attempt: list[dict] = []
+        counts: dict[str, int] = {}
+        fatal = False
+        for market in wanted:
+            if market == "TWSE":
+                got, err = limit_board.fetch_twse_board(compact)
+            else:
+                got, err = limit_board.fetch_tpex_board(slashed)
+            if err:
+                errors.append(err)
+                fatal = True
+            counts[market] = len(got)
+            attempt.extend(got)
+        # An empty board means a non-trading day, not an error — unless a
+        # fetch actually failed, in which case walking back would silently
+        # answer about the wrong session.
+        if attempt or fatal:
+            rows, as_of, per_market = attempt, iso, counts
+            break
+
+    # A session where one exchange has a board and the other doesn't is not a
+    # thing. If it happens, the quiet market failed in a way it declined to
+    # report (TPEX never reports), and the answer covers half the market.
+    # Say so rather than presenting it as the board.
+    if rows and any(n == 0 for n in per_market.values()):
+        silent = [m for m, n in per_market.items() if n == 0]
+        live = [m for m, n in per_market.items() if n > 0]
+        errors.append(
+            f"partial coverage: {'/'.join(silent)} returned no rows for {as_of} "
+            f"while {'/'.join(live)} returned data. Results cover {'/'.join(live)} only."
+        )
+
+    if not rows:
+        if errors:
+            return {"error": "; ".join(errors)}
+        if pinned:
+            return {
+                "error": (
+                    f"No board data published for {date}. Likely a weekend, "
+                    "a holiday, a typhoon closure, or a session that has not "
+                    "closed yet."
+                )
+            }
+        return {"error": "No board data found in the last 7 days."}
+
+    hits = limit_board.filter_board(
+        rows,
+        direction=direction,
+        min_pct=min_pct,
+        locked_only=locked_only,
+        min_turnover_twd=min_turnover_twd,
+    )
+    truncated = len(hits) > limit
+    hits = hits[: max(1, min(int(limit), 200))]
+
+    if enrich and hits:
+        try:
+            ctx = db_v2.query_limit_board_enrichment(
+                [h["ticker_id"] for h in hits], as_of
+            )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"enrichment unavailable: {type(exc).__name__}: {exc}")
+            ctx = {}
+        hits = [limit_board.apply_triage(_merge(h, ctx.get(h["ticker_id"], {})))
+                for h in hits]
+
+    return _stamp(
+        {
+            "direction": direction,
+            "mode": "eod",
+            "markets": wanted,
+            "count": len(hits),
+            "at_limit_count": sum(1 for h in hits if h["is_at_limit"]),
+            "locked_count": sum(1 for h in hits if h["is_locked"]),
+            "universe_scanned": len(rows),
+            "universe_by_market": per_market,
+            "truncated": truncated,
+            "hits": hits,
+            "errors": errors,
+        },
+        source="twse_mi_index+tpex_daily_quotes",
+        as_of=as_of,
+        freshness="EOD",
+    )
+
+
+def _merge(hit: dict, ctx: dict) -> dict:
+    """Fold an enrichment row into a board hit.
+
+    Board fields win on conflict: `name`/`market` come from the exchange feed
+    for the session actually scanned, which is authoritative over dim_ticker.
+    """
+    if not ctx:
+        return hit
+    margin_balance = ctx.get("margin_balance")
+    margin_limit = ctx.get("margin_limit")
+    margin_pct = None
+    if margin_balance is not None and margin_limit:
+        margin_pct = round(margin_balance / margin_limit * 100, 2)
+
+    merged = {
+        **hit,
+        "industry": ctx.get("industry"),
+        "ai_pillar": ctx.get("ai_pillar"),
+        "node": ctx.get("node"),
+        "pe_ratio": ctx.get("pe_ratio"),
+        "pb_ratio": ctx.get("pb_ratio"),
+        "dividend_yield": ctx.get("dividend_yield"),
+        "foreign_net_5d": ctx.get("foreign_net_5d"),
+        "trust_net_5d": ctx.get("trust_net_5d"),
+        "dealer_net_5d": ctx.get("dealer_net_5d"),
+        "foreign_net_z20": ctx.get("foreign_net_z20"),
+        "flow_days": ctx.get("flow_days"),
+        "foreign_held_pct": ctx.get("foreign_held_pct"),
+        "foreign_room_pct": ctx.get("foreign_room_pct"),
+        "margin_pct_of_limit": margin_pct,
+        "short_balance": ctx.get("short_balance"),
+        "rsi_14": ctx.get("rsi_14"),
+        "sma_50": ctx.get("sma_50"),
+        "sma_200": ctx.get("sma_200"),
+        "rs_vs_market_60": ctx.get("rs_vs_market_60"),
+        "pct_below_52w_high": ctx.get("pct_below_52w_high"),
+        "signals_as_of": ctx.get("signals_as_of"),
+        "revenue_yoy_pct": ctx.get("revenue_yoy_pct"),
+        "revenue_mom_pct": ctx.get("revenue_mom_pct"),
+        "revenue_ym": ctx.get("revenue_ym"),
+        "_valuation_known": ctx.get("valuation_known", False),
+    }
+    if ctx.get("company_name"):
+        merged["name"] = hit.get("name") or ctx["company_name"]
+    return merged
 
 
 # ── Tool: Quant Indicators (per ticker) ────────────────────────────────────
@@ -1219,6 +1459,7 @@ def sc_capabilities() -> dict:
             {"name": "sc_compare_nodes", "purpose": "Side-by-side node flow comparison"},
             {"name": "sc_accumulation_screen", "purpose": "Find tickers with sustained FINI buying"},
             {"name": "market_flow_screener", "purpose": "Full TWSE/TPEX flow screener across classified and unclassified tickers"},
+            {"name": "scan_limit_board", "purpose": "Scan the TWSE/TPEX limit-up/limit-down board (EOD) and triage each hit as sleeper vs chase"},
             {"name": "sc_data_status", "purpose": "Pipeline health and data freshness"},
             {"name": "q_indicators", "purpose": "Latest technical + flow indicators for one ticker"},
             {"name": "beginner_stock_card", "purpose": "Beginner-friendly factual stock card with grouped numbers and chart-ready points"},
