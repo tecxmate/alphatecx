@@ -25,6 +25,8 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [2026-06-11 — Neon retention prune](decisions/2026-06-11-neon-retention-prune.md) — pruned old all-market raw data and compacted Neon from 490 MB to 158 MB
 - [2026-06-17 — Disable scheduled Telegram briefs](decisions/2026-06-17-disable-scheduled-telegram-briefs.md) — stop scheduled pre-market/intraday Telegram messages while leaving news harvests and manual dispatch available
 - [2026-07-17 — scan_limit_board ships EOD-only](decisions/2026-07-17-limit-board-scanner-eod-only.md) — realtime MIS sweep doesn't fit the stateless Vercel function; board fetched live from the exchanges since Neon can't serve full-market
+- [2026-07-21 — flow_leaders_scan](decisions/2026-07-21-flow-leaders-scan.md) — median-anchored flatness (survives corrupt prints), single-day z demoted from a gate to optional; valuation.close is the price source since ohlcv misses the acceptance names
+- [2026-07-21 — session_state calendar](decisions/2026-07-21-session-state-calendar.md) — holiday classifier, manual typhoon overrides, and the mcp_viewer GRANT/RLS every new MCP-read table needs
 
 ## Topics
 *Areas, products, events, and synthesised concepts. Topics don't make decisions; stakeholders do.*
@@ -40,6 +42,10 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [Architecture Review 2026-05-11](topics/architecture-review-2026-05-11.md) — repo architecture assessment and prioritized modularization plan
 - [Web Frontend (Next.js + assistant-ui)](topics/web-frontend.md) — `web/` chat app; layout, env, turn flow, how to add generative UI
 - [Limit Board Scanner](topics/limit-board-scanner.md) — `scan_limit_board`: 漲停/跌停 board + sleeper/chase triage; exchange quirks, spec deviations, enrichment coverage gaps
+- [Flow-Leaders Scan](topics/flow-leaders-scan.md) — `flow_leaders_scan`: market-wide screen for quiet foreign accumulation into a flat, cheap price (generative sleeper board); median-anchored flatness, data-source map
+- [Session State + Market Calendar](topics/session-state.md) — `session_state`: Taipei market phase + trading calendar; 試撮 indicative-price guard, holiday classifier, mcp_viewer grant rule
+- [Realtime Quote](topics/realtime-quote.md) — `quote`: watchlist realtime via TWSE MIS; authoritative limit prices, serverless watchlist-only constraint, 試撮 indicative stamp
+- [Dividend Calendar](topics/dividend-calendar.md) — `dividend_calendar`: ex-dividend dates + amounts (TWT49U/TWT48U); "does a buyer today get the dividend?"; the 華碩 fix
 
 ## Log
 - [log.md](log.md) — append-only chronological record
