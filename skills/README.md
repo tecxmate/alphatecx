@@ -10,6 +10,12 @@ project's `docs/` directory is the shared memory across runs.
 | Skill | Purpose | Status |
 |---|---|---|
 | `decide-on-ticker` | Dual-agent (narrative-naive + narrative-aware) reasoning on one ticker; writes a thesis MD | Naive pass operational; aware pass pending Phase 2 (news) |
+| `tw-equity-alpha` | Sleeper-hunter & entry judge: screen/discover, deep-dive, time entry, judge a board. Routes to `flow_leaders_scan` / `scan_limit_board` / `dividend_calendar` / `quote` / `session_state` | Operational; **version-controlled mirror** of the live Claude Desktop skill (see note) |
+
+> **`tw-equity-alpha` note:** the live copy this repo mirrors is a Claude Desktop skill installed
+> under `~/Library/Application Support/Claude/.../skills/tw-equity-alpha/` — the app reads that copy,
+> not this one. Keep the two in sync: edit the repo copy as source, then copy it back over the app
+> copy (or vice-versa). This mirror exists so the skill survives an app-cache wipe and is diffable.
 
 ## Calling convention
 
