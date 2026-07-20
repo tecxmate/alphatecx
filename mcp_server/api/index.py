@@ -39,6 +39,9 @@ from mcp.server.transport_security import TransportSecuritySettings
 import db_v2
 import graph_view
 import limit_board
+import flow_leaders
+import session_state as session_state_mod
+import quote as quote_mod
 try:
     from security import is_authorized_path, token_matches
 except ModuleNotFoundError:  # package import path used by local tests
@@ -599,6 +602,386 @@ def _merge(hit: dict, ctx: dict) -> dict:
     if ctx.get("company_name"):
         merged["name"] = hit.get("name") or ctx["company_name"]
     return merged
+
+
+# ── Tool: Flow-Leaders Scanner (generative sleeper screen) ─────────────────
+
+_FLOW_SORT_KEYS = {
+    "sleeper_score", "foreign_net_sum", "buy_day_ratio",
+    "price_move_pct", "foreign_net_z20",
+}
+
+
+@mcp.tool()
+def flow_leaders_scan(
+    window_days: int = 20,
+    min_buy_day_ratio: float = 0.65,
+    max_price_move_pct: float = 8.0,
+    max_pe: float = 20.0,
+    max_foreign_held: float = 25.0,
+    min_turnover_twd: int = 10_000_000,
+    markets: Optional[list[str]] = None,
+    include_loss: bool = False,
+    min_foreign_z: Optional[float] = None,
+    sort_by: str = "sleeper_score",
+    date: Optional[str] = None,
+    limit: int = 50,
+) -> dict:
+    """Find quiet foreign accumulation into a still-cheap, still-flat price.
+
+    The generative counterpart to `scan_limit_board`: instead of triaging what
+    already moved, this screens the whole market for the pattern that *precedes*
+    a move — sustained institutional net buying (a high buy-day ratio over the
+    window) into a price that has not yet run, in a name that is still cheap
+    (low PE) and under-owned by foreigners. Each hit gets a `sleeper_score`
+    (0-100), `sleeper_flags`, and a `triage` verdict (sleeper / watch / chase).
+
+    Scoreable universe = names with both institutional-flow history (T86,
+    all-market) and a harvested price (TWSE BWIBBU close + the OHLCV top-500).
+    Most TPEX names have no price row and cannot be measured for flatness, so
+    they are not returned; TWSE coverage is ~1.1k names.
+
+    Flatness is median-anchored (latest vs the window-median close), which is
+    immune to the occasional corrupt exchange print. Note `min_foreign_z` is
+    OFF by default and should stay off for finding multi-week accumulators: a
+    slow grind has no closing-day z-spike (see the tool's module docstring).
+
+    Examples:
+      - default sleeper board: flow_leaders_scan()
+      - post-mortem / backtest a past day: date="2026-06-30"
+      - TWSE only, looser flatness: markets=["TWSE"], max_price_move_pct=12
+
+    Args:
+        window_days: Flow/price lookback in trading sessions (2-60, default 20).
+        min_buy_day_ratio: Fraction of window sessions with foreign net buying
+            required for the `accumulating` flag / sleeper verdict (default 0.65).
+        max_price_move_pct: |latest vs median| under which a name counts as
+            'flat' / not-yet-run (default 8.0).
+        max_pe: PE ceiling for full valuation credit (default 20.0).
+        max_foreign_held: Foreign-held % ceiling for under-owned credit (25.0).
+        min_turnover_twd: Liquidity floor (default 10M). Applied only where
+            turnover is known — a name with no OHLCV row is never dropped for it.
+        markets: Subset of ['TWSE','TPEX']. Default both (TPEX largely unpriced).
+        include_loss: Keep names with no positive earnings (PE null). Default
+            false — they are chases, not sleepers.
+        min_foreign_z: Optional hard floor on the single-day 20d z-score. Leave
+            null (default) to find grinders; a positive value finds fresh spikes.
+        sort_by: One of sleeper_score / foreign_net_sum / buy_day_ratio /
+            price_move_pct / foreign_net_z20 (default sleeper_score).
+        date: 'YYYY-MM-DD' as-of for a historical scan. Defaults to the latest
+            harvested session.
+        limit: Max hits returned (capped at 200).
+    """
+    wanted = [m.upper() for m in (markets or ["TWSE", "TPEX"])]
+    bad = [m for m in wanted if m not in ("TWSE", "TPEX")]
+    if bad:
+        return {"error": f"markets must be 'TWSE' and/or 'TPEX'; got {bad}"}
+    if sort_by not in _FLOW_SORT_KEYS:
+        return {"error": f"sort_by must be one of {sorted(_FLOW_SORT_KEYS)}"}
+
+    if date:
+        try:
+            parsed = datetime.strptime(date, "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return {"error": f"date must be 'YYYY-MM-DD'; got {date!r}"}
+        if parsed > datetime.now(_TPE).date():
+            return {"error": f"date {date} is in the future"}
+        as_of = parsed.isoformat()
+    else:
+        as_of = db_v2.latest_flow_date()
+        if not as_of:
+            return {"error": "no institutional-flow data has been harvested yet"}
+
+    try:
+        rows = db_v2.query_flow_leaders(as_of, window_days=window_days, markets=wanted)
+    except Exception as exc:  # noqa: BLE001 — surfaced, not swallowed
+        return {"error": f"flow-leaders query failed: {type(exc).__name__}: {exc}"}
+
+    scored = [
+        flow_leaders.score_row(
+            r,
+            window_days=window_days,
+            max_price_move_pct=max_price_move_pct,
+            max_pe=max_pe,
+            max_foreign_held=max_foreign_held,
+            min_buy_day_ratio=min_buy_day_ratio,
+        )
+        for r in rows
+    ]
+
+    def keep(h: dict) -> bool:
+        # Liquidity floor: only excludes a name whose turnover is known-and-below
+        # (cross-cutting rule — never silently drop a name for an enrichment miss).
+        turn = h.get("turnover_twd")
+        if min_turnover_twd and turn is not None and turn < min_turnover_twd:
+            return False
+        # No-earnings names are chases; drop unless explicitly included.
+        if not include_loss and h.get("pe_ratio") is None and h.get("valuation_known"):
+            return False
+        if min_foreign_z is not None:
+            z = h.get("foreign_net_z20")
+            if z is None or z < min_foreign_z:
+                return False
+        return True
+
+    hits = [h for h in scored if keep(h)]
+    hits.sort(key=lambda h: (h.get(sort_by) is None, -(h.get(sort_by) or 0)))
+    truncated = len(hits) > limit
+    hits = hits[: max(1, min(int(limit), 200))]
+
+    counts = {"sleeper": 0, "watch": 0, "chase": 0}
+    for h in hits:
+        counts[h["triage"]] = counts.get(h["triage"], 0) + 1
+
+    return _stamp(
+        {
+            "as_of": as_of,
+            "window_days": window_days,
+            "markets": wanted,
+            "sort_by": sort_by,
+            "universe_scanned": len(scored),
+            "count": len(hits),
+            "triage_counts": counts,
+            "truncated": truncated,
+            "hits": hits,
+            "errors": [],
+        },
+        source="raw_twse_t86+raw_twse_valuation+raw_twse_holdings",
+        as_of=as_of,
+        freshness="EOD",
+    )
+
+
+# ── Tool: Session State (Taipei market phase + trading calendar) ───────────
+
+@mcp.tool()
+def session_state(date: Optional[str] = None) -> dict:
+    """Report the Taipei market phase and whether the market is open.
+
+    Call this before quoting a price, or whenever the question is "is this
+    price real, or pre-open noise?". During 08:30–09:00 the market runs a 試撮
+    (pre-open simulated auction): the displayed price is *indicative* and can
+    swing violently on a thin book — `price_is_indicative` is true and a
+    `warning` is set. Regular continuous trading is 09:00–13:30.
+
+    `is_trading_day` combines the weekend check with the TWSE holiday calendar
+    (`market_holidays`, refreshed nightly, plus any manual typhoon inserts). If
+    the calendar can't be read, it degrades to a weekend-only answer and says so
+    via `calendar_source: "weekend_only"`.
+
+    Args:
+        date: 'YYYY-MM-DD' to ask about a specific day's trading status. Omit
+            for the live 'now' (the only case where `phase` is a live phase; for
+            another day only the calendar status is meaningful).
+    """
+    now = datetime.now(_TPE)
+    today_iso = now.date().isoformat()
+
+    if date:
+        try:
+            target = datetime.strptime(date, "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return {"error": f"date must be 'YYYY-MM-DD'; got {date!r}"}
+        target_iso = target.isoformat()
+    else:
+        target = now.date()
+        target_iso = today_iso
+
+    is_weekend = target.weekday() >= 5
+    calendar_source = "calendar"
+    closure = None
+    if is_weekend:
+        is_trading_day = False
+    else:
+        try:
+            closure = db_v2.market_closure(target_iso)
+            is_trading_day = closure is None
+        except Exception:  # noqa: BLE001 — degrade, don't fail the whole call
+            calendar_source = "weekend_only"
+            is_trading_day = True   # best effort: a weekday we can't disprove
+
+    if target_iso == today_iso:
+        state = session_state_mod.build_state(now, is_trading_day, calendar_source)
+    else:
+        # Not the live day — phase is not a live phase; report calendar status.
+        state = {
+            "taipei_time": now.isoformat(),
+            "date": target_iso,
+            "weekday": target.strftime("%A"),
+            "is_trading_day": is_trading_day,
+            "phase": "closed" if not is_trading_day else "not_live",
+            "price_is_indicative": False,
+            "phases_today": session_state_mod.PHASES_TODAY,
+            "calendar_source": calendar_source,
+            "warning": None,
+            "note": "phase is only a live phase for today; this is the calendar status for another day",
+        }
+
+    if closure:
+        state["closed_reason"] = closure.get("name")
+        state["closed_source"] = closure.get("source")
+
+    return _stamp(state, source="market_holidays+clock",
+                  as_of=today_iso, freshness="real_time")
+
+
+# ── Tool: Realtime Quote (watchlist, TWSE MIS) ─────────────────────────────
+
+def _current_phase() -> tuple[str, bool]:
+    """(phase, price_is_indicative) for the live Taipei moment, calendar-aware.
+    Falls back to a weekend check if the calendar can't be read."""
+    now = datetime.now(_TPE)
+    if now.weekday() >= 5:
+        is_trading = False
+    else:
+        try:
+            is_trading = db_v2.market_closure(now.date().isoformat()) is None
+        except Exception:  # noqa: BLE001
+            is_trading = True
+    phase, indicative, _ = session_state_mod.phase_for(now, is_trading)
+    return phase, indicative
+
+
+@mcp.tool()
+def quote(symbols: list[str]) -> dict:
+    """Realtime-ish quotes for a watchlist of Taiwan tickers (TWSE MIS).
+
+    For up to ~100 symbols, returns last/prev/open/high/low, best bid/ask, and
+    the authoritative **limit-up / limit-down** prices (`u`/`w`, already
+    tick-rounded by TWSE). This is a watchlist tool, not a market scanner —
+    MIS is rate-limited and needs a live session, so a full-market sweep is out
+    (use scan_limit_board / flow_leaders_scan for breadth).
+
+    The response carries the live session `phase` and `price_is_indicative`: in
+    the 08:30–09:00 pre-open auction the price is a 試撮 simulation, not a trade.
+    A symbol that has not printed yet returns `last_price: null` rather than a
+    fabricated price. Ask 'is this real?' via session_state if in doubt.
+
+    Args:
+        symbols: Ticker codes, e.g. ['2330','4536','6488']. Max 100.
+    """
+    codes = [str(s).strip() for s in (symbols or []) if str(s).strip()]
+    if not codes:
+        return {"error": "symbols is required (e.g. ['2330','4536'])"}
+    if len(codes) > quote_mod._MAX_SYMBOLS:
+        return {"error": f"at most {quote_mod._MAX_SYMBOLS} symbols per call; got {len(codes)}"}
+
+    try:
+        markets = db_v2.ticker_markets(codes)
+    except Exception:  # noqa: BLE001 — market lookup is best-effort
+        markets = {}
+
+    # Known market → the right prefix; unknown → probe both boards (MIS returns
+    # only the one that exists).
+    ex_ch: list[str] = []
+    for c in codes:
+        mk = markets.get(c)
+        if mk == "TWSE":
+            ex_ch.append(f"tse_{c}.tw")
+        elif mk == "TPEX":
+            ex_ch.append(f"otc_{c}.tw")
+        else:
+            ex_ch.extend([f"tse_{c}.tw", f"otc_{c}.tw"])
+
+    raw, err = quote_mod.fetch_quotes(ex_ch)
+    # MIS returns an empty-code row for an unknown symbol; drop those so a bad
+    # code shows up in `missing`, not as a blank quote.
+    quotes = [q for q in (quote_mod.parse_msg(m) for m in raw) if q["ticker_id"]]
+    found = {q["ticker_id"] for q in quotes}
+    missing = [c for c in codes if c not in found]
+
+    phase, indicative = _current_phase()
+    return _stamp(
+        {
+            "phase": phase,
+            "price_is_indicative": indicative,
+            "warning": (session_state_mod._INDICATIVE_WARNING if indicative else None),
+            "count": len(quotes),
+            "quotes": quotes,
+            "missing": missing,
+            "errors": [err] if err else [],
+        },
+        source="twse_mis",
+        as_of=(quotes[0].get("quote_time") if quotes else None),
+        freshness="realtime" if phase == "regular" else "delayed_or_closed",
+    )
+
+
+# ── Tool: Dividend Calendar (does a buyer today get the dividend?) ─────────
+
+@mcp.tool()
+def dividend_calendar(ticker_id: str, date: Optional[str] = None) -> dict:
+    """Answer 'does a buyer today still receive the dividend?' for a TWSE stock.
+
+    Returns the most-recent-past and next-upcoming ex-dividend/ex-rights event
+    relative to `date`, from the TWSE 除權除息 calendar. The ex trading date is
+    decisive: buy on or after it and you do NOT get that distribution. This is
+    the exact check that stops quoting an already-ex yield as if it were forward.
+
+    `most_recent.already_ex` is true once the stock has gone ex — its dividend
+    is not available to a new buyer. `upcoming` (if any) is a future ex date; a
+    buyer before it would receive that one (`buyer_today_receives_upcoming`).
+    `ex_type` is 息 (cash), 權 (stock rights), or 權息 (both); `cash_dividend`
+    is 元/股 (combined value for 權息).
+
+    Coverage is TWSE-listed names (the 除權除息 tables). Values are official
+    TWSE data — no forward estimate is ever synthesised here.
+
+    Args:
+        ticker_id: TWSE stock code, e.g. '2357'.
+        date: 'YYYY-MM-DD' as-of. Defaults to today (Asia/Taipei).
+    """
+    tid = str(ticker_id).strip()
+    if not tid:
+        return {"error": "ticker_id is required"}
+    if date:
+        try:
+            as_of = datetime.strptime(date, "%Y-%m-%d").date().isoformat()
+        except (TypeError, ValueError):
+            return {"error": f"date must be 'YYYY-MM-DD'; got {date!r}"}
+    else:
+        as_of = _today_iso()
+
+    try:
+        data = db_v2.query_dividend(tid, as_of)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"dividend query failed: {type(exc).__name__}: {exc}"}
+
+    recent = data["most_recent"]
+    upcoming = data["upcoming"]
+
+    def shape(row: Optional[dict]) -> Optional[dict]:
+        if not row:
+            return None
+        return {
+            "ex_dividend_date": row["ex_date"],
+            "ex_type": row.get("ex_type"),
+            "cash_dividend": row.get("cash_value"),
+            "pre_ex_close": row.get("pre_ex_close"),
+            "reference_price": row.get("reference_price"),
+            "record_status": row.get("status"),   # 'actual' | 'forecast'
+        }
+
+    recent_shaped = shape(recent)
+    if recent_shaped is not None:
+        recent_shaped["already_ex"] = recent["ex_date"] <= as_of  # always true here
+
+    return _stamp(
+        {
+            "ticker_id": tid,
+            "as_of": as_of,
+            "most_recent": recent_shaped,
+            "upcoming": shape(upcoming),
+            "buyer_today_receives_upcoming": bool(upcoming and as_of < upcoming["ex_date"]),
+            "note": (
+                None if recent_shaped or upcoming
+                else "No ex-dividend record found (TWSE-listed only; may not distribute)."
+            ),
+        },
+        source="twse_twt49u+twt48u",
+        as_of=as_of,
+        freshness="EOD",
+    )
 
 
 # ── Tool: Quant Indicators (per ticker) ────────────────────────────────────
@@ -1460,6 +1843,10 @@ def sc_capabilities() -> dict:
             {"name": "sc_accumulation_screen", "purpose": "Find tickers with sustained FINI buying"},
             {"name": "market_flow_screener", "purpose": "Full TWSE/TPEX flow screener across classified and unclassified tickers"},
             {"name": "scan_limit_board", "purpose": "Scan the TWSE/TPEX limit-up/limit-down board (EOD) and triage each hit as sleeper vs chase"},
+            {"name": "flow_leaders_scan", "purpose": "Market-wide screen for quiet foreign accumulation into a still-cheap, still-flat price (generative sleeper board)"},
+            {"name": "session_state", "purpose": "Taipei market phase + trading-calendar status; flags 試撮 pre-open indicative prices so a simulated quote is never read as real"},
+            {"name": "quote", "purpose": "Realtime-ish watchlist quotes (TWSE MIS) with authoritative limit-up/down prices; stamps 試撮 indicative prices"},
+            {"name": "dividend_calendar", "purpose": "Ex-dividend/ex-rights dates + amounts; answers whether a buyer today still receives the dividend (TWSE 除權除息)"},
             {"name": "sc_data_status", "purpose": "Pipeline health and data freshness"},
             {"name": "q_indicators", "purpose": "Latest technical + flow indicators for one ticker"},
             {"name": "beginner_stock_card", "purpose": "Beginner-friendly factual stock card with grouped numbers and chart-ready points"},

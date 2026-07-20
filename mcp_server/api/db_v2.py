@@ -253,6 +253,173 @@ def query_limit_board_enrichment(ticker_ids: list[str], as_of: str) -> dict[str,
     return {r["ticker_id"]: r for r in rows}
 
 
+def query_flow_leaders(
+    as_of: str,
+    window_days: int = 20,
+    markets: Optional[list[str]] = None,
+) -> list[dict]:
+    """Market-wide per-ticker aggregation for `flow_leaders_scan`.
+
+    One SQL pass computes, as-of `as_of`, everything the pure scorer in
+    ``flow_leaders.score_row`` needs. The scan's whole edge is finding
+    accumulation *before* the price moves, so this must cover the broad market,
+    not the ~58 classified names — hence flow comes straight from
+    ``raw_twse_t86`` (all-market, ~12.8k tickers) exactly as the limit-board
+    enrichment does.
+
+    The scoreable universe is bounded by where a **price** exists: TWSE BWIBBU
+    (``raw_twse_valuation``, ~1.1k TWSE names, carries close + PE/PB/yield)
+    unioned with the OHLCV top-500 harvest. Names with flow but no price (most
+    TPEX) can't be measured for flatness and are excluded here rather than
+    returned unscoreable. Driving the query off that priced set (~1.2k) instead
+    of all of T86 keeps the per-ticker LATERAL joins ~10× cheaper.
+
+    Price stats are **median-anchored** (median, p10, p90) rather than
+    min/max/first/last: a single corrupt TWSE print — e.g. 4536's 87.3 on
+    2026-05-13 between ~152 closes — otherwise wrecks every flatness metric.
+    See flow_leaders.price_move_pct.
+
+    z20 is the 20-day single-day z (same definition as
+    ``query_limit_board_enrichment`` and ``src/quant/indicators.zscore``);
+    ``buy_day_ratio`` and ``foreign_net_sum`` use the caller's `window_days`.
+    """
+    mkts = markets or ["TWSE", "TPEX"]
+    w = max(2, min(int(window_days), 60))
+
+    sql = """
+        WITH px_raw AS (
+          SELECT date, ticker_id, close FROM raw_twse_ohlcv
+          WHERE date <= %(d)s AND close > 0
+          UNION
+          SELECT date, ticker_id, close FROM raw_twse_valuation
+          WHERE date <= %(d)s AND close > 0
+        ),
+        px_win AS (
+          SELECT ticker_id, close,
+                 ROW_NUMBER() OVER (PARTITION BY ticker_id ORDER BY date DESC) AS rn
+          FROM px_raw
+        ),
+        px_stats AS (
+          -- Median-anchored + percentile range: robust to a lone bad tick.
+          SELECT ticker_id,
+                 (array_agg(close ORDER BY rn ASC))[1]              AS close_today,
+                 percentile_cont(0.5) WITHIN GROUP (ORDER BY close) AS med_close,
+                 percentile_cont(0.1) WITHIN GROUP (ORDER BY close) AS p10,
+                 percentile_cont(0.9) WITHIN GROUP (ORDER BY close) AS p90,
+                 count(*)                                           AS price_days
+          FROM px_win WHERE rn <= %(w)s GROUP BY ticker_id
+        ),
+        flow_win AS (
+          SELECT ticker_id, foreign_net,
+                 ROW_NUMBER() OVER (PARTITION BY ticker_id ORDER BY date DESC) AS rn
+          FROM raw_twse_t86 WHERE date <= %(d)s
+        ),
+        flow_stats AS (
+          SELECT ticker_id,
+                 sum(foreign_net) FILTER (WHERE rn <= %(w)s)                    AS foreign_net_sum,
+                 (count(*) FILTER (WHERE rn <= %(w)s AND foreign_net > 0))::float
+                   / NULLIF(count(*) FILTER (WHERE rn <= %(w)s), 0)             AS buy_day_ratio,
+                 count(*) FILTER (WHERE rn <= %(w)s)                            AS flow_days,
+                 CASE WHEN count(*) FILTER (WHERE rn <= 20) = 20 THEN
+                   (max(foreign_net) FILTER (WHERE rn = 1) - avg(foreign_net) FILTER (WHERE rn <= 20))
+                   / NULLIF(stddev_samp(foreign_net) FILTER (WHERE rn <= 20), 0)
+                 END                                                            AS foreign_net_z20
+          FROM flow_win GROUP BY ticker_id
+        )
+        SELECT dt.ticker_id, dt.company_name AS name, dt.market, dt.ai_pillar, dt.node,
+               ps.close_today, ps.med_close, ps.p10, ps.p90, ps.price_days,
+               fs.foreign_net_sum, fs.buy_day_ratio, fs.flow_days, fs.foreign_net_z20,
+               v.pe_ratio, v.pb_ratio, v.dividend_yield,
+               COALESCE(v.valuation_known, false) AS valuation_known,
+               h.foreign_held_pct, h.foreign_room_pct,
+               m.margin_balance, m.margin_limit, m.short_balance,
+               o.turnover_twd,
+               r.yoy_pct AS revenue_yoy_pct, r.mom_pct AS revenue_mom_pct
+        FROM px_stats ps
+        JOIN dim_ticker dt USING (ticker_id)
+        JOIN flow_stats fs USING (ticker_id)
+        LEFT JOIN LATERAL (
+          SELECT pe_ratio, pb_ratio, dividend_yield, true AS valuation_known
+          FROM raw_twse_valuation
+          WHERE ticker_id = ps.ticker_id AND date <= %(d)s ORDER BY date DESC LIMIT 1
+        ) v ON true
+        LEFT JOIN LATERAL (
+          SELECT foreign_held_pct, foreign_room_pct FROM raw_twse_holdings
+          WHERE ticker_id = ps.ticker_id AND date <= %(d)s ORDER BY date DESC LIMIT 1
+        ) h ON true
+        LEFT JOIN LATERAL (
+          SELECT margin_balance, margin_limit, short_balance FROM raw_twse_margin
+          WHERE ticker_id = ps.ticker_id AND date <= %(d)s ORDER BY date DESC LIMIT 1
+        ) m ON true
+        LEFT JOIN LATERAL (
+          SELECT turnover_twd FROM raw_twse_ohlcv
+          WHERE ticker_id = ps.ticker_id AND date <= %(d)s ORDER BY date DESC LIMIT 1
+        ) o ON true
+        LEFT JOIN LATERAL (
+          SELECT yoy_pct, mom_pct FROM raw_monthly_revenue
+          WHERE ticker_id = ps.ticker_id AND ym <= %(ym)s ORDER BY ym DESC LIMIT 1
+        ) r ON true
+        WHERE fs.flow_days >= 5 AND dt.market = ANY(%(markets)s)
+    """
+    params = {"d": as_of, "w": w, "ym": as_of[:7], "markets": mkts}
+    return _serialize(_fetch(sql, params))
+
+
+def latest_flow_date() -> Optional[str]:
+    """Most recent date with institutional-flow rows (the flow ETL's high-water
+    mark). `flow_leaders_scan` defaults its as-of to this so a scan always
+    reflects the freshest harvested session, not a half-loaded 'today'."""
+    rows = _fetch("SELECT MAX(date) AS d FROM raw_twse_t86")
+    d = rows[0]["d"] if rows else None
+    return d.isoformat() if hasattr(d, "isoformat") else d
+
+
+def query_dividend(ticker_id: str, as_of: str) -> dict:
+    """Most-recent-past and next-upcoming ex-dividend/ex-rights for a ticker,
+    relative to `as_of`. The ex trading date is decisive: a buyer on or after it
+    does NOT receive that distribution."""
+    cols = ("ex_date, ex_type, cash_value, pre_ex_close, reference_price, status")
+    recent = _fetch(
+        f"SELECT {cols} FROM raw_twse_dividend "
+        "WHERE ticker_id = %s AND ex_date <= %s ORDER BY ex_date DESC LIMIT 1",
+        (ticker_id, as_of),
+    )
+    upcoming = _fetch(
+        f"SELECT {cols} FROM raw_twse_dividend "
+        "WHERE ticker_id = %s AND ex_date > %s ORDER BY ex_date ASC LIMIT 1",
+        (ticker_id, as_of),
+    )
+    return {
+        "most_recent": _serialize(recent)[0] if recent else None,
+        "upcoming": _serialize(upcoming)[0] if upcoming else None,
+    }
+
+
+def ticker_markets(ticker_ids: list[str]) -> dict[str, str]:
+    """Map each ticker_id to its market ('TWSE'/'TPEX') from dim_ticker, for
+    building MIS `ex_ch` prefixes. Unknown ids are simply absent — the quote
+    tool then probes both boards for them."""
+    if not ticker_ids:
+        return {}
+    rows = _fetch(
+        "SELECT ticker_id, market FROM dim_ticker WHERE ticker_id = ANY(%s)",
+        (list(ticker_ids),),
+    )
+    return {r["ticker_id"]: r["market"] for r in rows}
+
+
+def market_closure(date_iso: str) -> Optional[dict]:
+    """Return the closure record for `date_iso` (YYYY-MM-DD) if the market is
+    shut that day per the calendar, else None. Weekends are handled by the
+    caller in code; this covers statutory holidays and manual typhoon inserts."""
+    rows = _fetch(
+        "SELECT name, source, note FROM market_holidays "
+        "WHERE cal_date = %s AND is_closed",
+        (date_iso,),
+    )
+    return rows[0] if rows else None
+
+
 def query_market_flow_screener(
     market: Optional[str] = None,
     classification: str = "all",

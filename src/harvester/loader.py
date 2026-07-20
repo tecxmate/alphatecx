@@ -377,3 +377,61 @@ def upsert_indices(df: pl.DataFrame, c=None) -> int:
         cc.executemany(sql, records)
     log.info("Upserted %d rows into raw_twse_index", len(records))
     return len(records)
+
+
+def upsert_dividends(rows: list[dict], c=None) -> int:
+    """Upsert ex-dividend/ex-rights rows (list of dicts, not a DataFrame).
+
+    A later 'actual' (TWT49U) row for a date must overwrite the earlier
+    'forecast' (TWT48U) placeholder; the reverse must not happen. So a forecast
+    upsert leaves an existing actual row untouched.
+    """
+    if not rows:
+        return 0
+    sql = """
+        INSERT INTO raw_twse_dividend (ex_date, ticker_id, name, ex_type,
+            cash_value, pre_ex_close, reference_price, status, source)
+        VALUES (%(ex_date)s, %(ticker_id)s, %(name)s, %(ex_type)s,
+            %(cash_value)s, %(pre_ex_close)s, %(reference_price)s,
+            %(status)s, 'twse')
+        ON CONFLICT (ex_date, ticker_id) DO UPDATE SET
+            name = EXCLUDED.name,
+            ex_type = EXCLUDED.ex_type,
+            cash_value = EXCLUDED.cash_value,
+            pre_ex_close = COALESCE(EXCLUDED.pre_ex_close, raw_twse_dividend.pre_ex_close),
+            reference_price = COALESCE(EXCLUDED.reference_price, raw_twse_dividend.reference_price),
+            status = EXCLUDED.status,
+            ingested_at = now()
+        WHERE raw_twse_dividend.status <> 'actual' OR EXCLUDED.status = 'actual'
+    """
+    with _cursor_or_default(c) as cc:
+        cc.executemany(sql, rows)
+    log.info("Upserted %d rows into raw_twse_dividend", len(rows))
+    return len(rows)
+
+
+def upsert_market_holidays(rows: list[dict], c=None) -> int:
+    """Upsert market-calendar rows (list of dicts, not a DataFrame).
+
+    A TWSE-sourced re-harvest must not clobber a `source='manual'` typhoon row
+    someone inserted by hand — the schedule endpoint never knows about those.
+    So an incoming `twse` row leaves an existing `manual` row for the same date
+    untouched; every other conflict updates in place.
+    """
+    if not rows:
+        return 0
+    sql = """
+        INSERT INTO market_holidays (cal_date, name, is_closed, note, source)
+        VALUES (%(cal_date)s, %(name)s, %(is_closed)s, %(note)s, %(source)s)
+        ON CONFLICT (cal_date) DO UPDATE SET
+            name = EXCLUDED.name,
+            is_closed = EXCLUDED.is_closed,
+            note = EXCLUDED.note,
+            source = EXCLUDED.source,
+            ingested_at = now()
+        WHERE market_holidays.source <> 'manual' OR EXCLUDED.source = 'manual'
+    """
+    with _cursor_or_default(c) as cc:
+        cc.executemany(sql, rows)
+    log.info("Upserted %d rows into market_holidays", len(rows))
+    return len(rows)

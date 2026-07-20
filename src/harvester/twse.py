@@ -19,6 +19,7 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+import re
 import time
 from datetime import date, timedelta
 from typing import Any
@@ -52,6 +53,15 @@ TWSE_MI_INDEX = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX"
 
 MOPS_TWSE_REV = "https://openapi.twse.com.tw/v1/opendata/t187ap05_L"
 MOPS_TPEX_REV = "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap05_O"
+
+TWSE_HOLIDAYS = "https://www.twse.com.tw/rwd/zh/holidaySchedule/holidaySchedule"
+TWSE_EX_DIVIDEND = "https://www.twse.com.tw/rwd/zh/exRight/TWT49U"   # 除權除息計算結果表 (actual)
+TWSE_EX_FORECAST = "https://www.twse.com.tw/rwd/zh/exRight/TWT48U"   # 除權除息預告表 (upcoming)
+
+# The published schedule lists both closures and the open reference days that
+# bracket a break ('開始交易日' after it, '最後交易日' before it). Only the former
+# close the market; these two substrings mark the latter.
+_OPEN_REFERENCE_MARKERS = ("開始交易", "最後交易")
 
 # ── Column indices (verified 2026-04) ───────────────────────────────────────
 
@@ -456,6 +466,114 @@ def fetch_twse_valuation(target_date: str) -> list[dict]:
             "fiscal_period": str(row[7]).strip() if row[7] else None,
         })
     log.info("TWSE BWIBBU_d %s: %d rows", target_date, len(rows))
+    return rows
+
+
+# ── Holiday schedule: trading calendar ──────────────────────────────────────
+
+def fetch_twse_holidays(year: int) -> list[dict]:
+    """Fetch the TWSE published market-holiday schedule for a Gregorian `year`.
+
+    Returns one dict per schedule entry with `is_closed` classified: a row is a
+    closure unless its name marks an open reference day (開始交易/最後交易) — the
+    schedule lists those alongside real closures. 市場無交易 (settlement-only)
+    days carry neither marker and are correctly kept as closures.
+
+    The endpoint expects a ROC query year (Gregorian − 1911).
+    """
+    roc = year - 1911
+    j = _get_json(TWSE_HOLIDAYS, {"response": "json", "queryYear": str(roc)})
+    if not j or str(j.get("stat", "")).lower() != "ok":
+        return []
+    rows = []
+    for row in j.get("data") or []:
+        if len(row) < 2:
+            continue
+        iso = str(row[0]).strip()
+        if len(iso) != 10 or iso[4] != "-":  # guard against schema drift
+            continue
+        name = str(row[1]).strip()
+        note = str(row[2]).strip() if len(row) > 2 and row[2] else None
+        is_closed = not any(m in name for m in _OPEN_REFERENCE_MARKERS)
+        rows.append({
+            "cal_date": iso,
+            "name": name,
+            "is_closed": is_closed,
+            "note": note,
+            "source": "twse",
+        })
+    log.info("TWSE holidays %d (ROC %d): %d rows", year, roc, len(rows))
+    return rows
+
+
+# ── Ex-dividend / ex-rights calendar (TWT49U actual, TWT48U forecast) ───────
+
+def _roc_cn_to_iso(s: str) -> str | None:
+    """Convert a ROC Chinese date '115年07月01日' -> '2026-07-01'."""
+    m = re.match(r"\s*(\d{2,3})年(\d{1,2})月(\d{1,2})日", str(s))
+    if not m:
+        return None
+    y = int(m.group(1)) + 1911
+    return f"{y:04d}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+
+
+def fetch_twse_ex_dividend(start: str, end: str) -> list[dict]:
+    """Actual ex-dividend/ex-rights results (TWT49U) over [start, end] (YYYYMMDD).
+
+    Each row is a stock's ex trading date, the 權/息 type, the combined
+    權值+息值 value, and the pre-ex close + reference price. `ex_date` is what
+    matters for 'does a buyer today get it?' — on/after it, they do not.
+    """
+    j = _get_json(TWSE_EX_DIVIDEND, {"response": "json", "startDate": start, "endDate": end})
+    if not j or str(j.get("stat", "")).upper() != "OK":
+        return []
+    rows = []
+    for r in j.get("data") or []:
+        if len(r) < 7:
+            continue
+        iso = _roc_cn_to_iso(r[0])
+        code = str(r[1]).strip()
+        if not iso or not code:
+            continue
+        rows.append({
+            "ex_date": iso,
+            "ticker_id": code,
+            "name": str(r[2]).strip(),
+            "pre_ex_close": _to_float(r[3]),
+            "reference_price": _to_float(r[4]),
+            "cash_value": _to_float(r[5]),
+            "ex_type": str(r[6]).strip() or None,
+            "status": "actual",
+        })
+    log.info("TWSE TWT49U %s-%s: %d ex-dividend rows", start, end, len(rows))
+    return rows
+
+
+def fetch_twse_ex_forecast() -> list[dict]:
+    """Upcoming ex-dividend/ex-rights forecast (TWT48U). No date args — TWSE
+    returns the current forward schedule."""
+    j = _get_json(TWSE_EX_FORECAST, {"response": "json"})
+    if not j or str(j.get("stat", "")).upper() != "OK":
+        return []
+    rows = []
+    for r in j.get("data") or []:
+        if len(r) < 8:
+            continue
+        iso = _roc_cn_to_iso(r[0])
+        code = str(r[1]).strip()
+        if not iso or not code:
+            continue
+        rows.append({
+            "ex_date": iso,
+            "ticker_id": code,
+            "name": str(r[2]).strip(),
+            "ex_type": str(r[3]).strip() or None,
+            "cash_value": _to_float(r[7]),   # 現金股利
+            "pre_ex_close": None,
+            "reference_price": None,
+            "status": "forecast",
+        })
+    log.info("TWSE TWT48U forecast: %d rows", len(rows))
     return rows
 
 

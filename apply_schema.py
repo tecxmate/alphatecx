@@ -46,6 +46,8 @@ sql_files = [
     "sql/011_valuation_indexes.sql",
     "sql/012_gemini_additions.sql",
     "sql/013_more_classifications.sql",
+    "sql/015_market_calendar.sql",
+    "sql/016_dividends.sql",
 ]
 if args.rls:
     pw = os.getenv("MCP_VIEWER_PASSWORD")

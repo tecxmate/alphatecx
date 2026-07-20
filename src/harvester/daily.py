@@ -224,6 +224,51 @@ def harvest_today() -> dict:
         results["errors"].append(f"indices: {e}")
     twse._rate_limit()
 
+    # ── 5c. Market calendar (holidays) — cheap; keeps session_state honest ──
+    # Current + next Gregorian year so forward dates near year-end resolve, and
+    # any typhoon closure TWSE adds to the schedule gets picked up daily.
+    try:
+        from datetime import date as _date
+        yr = _date.today().year
+        cal_rows = twse.fetch_twse_holidays(yr) + twse.fetch_twse_holidays(yr + 1)
+        if cal_rows:
+            with loader.atomic() as c:
+                count = loader.upsert_market_holidays(cal_rows, c=c)
+                loader.log_ingestion("twse_holidays", iso, count, c=c)
+            results["holidays"] = count
+        else:
+            loader.log_ingestion("twse_holidays", iso, 0, "empty")
+    except Exception as e:
+        log.error("Holiday calendar failed: %s", e)
+        results["errors"].append(f"holidays: {e}")
+    twse._rate_limit()
+
+    # ── 5d. Ex-dividend calendar — actual (this + prev month) + forecast ────
+    # TWT49U times out on wide ranges during peak ex-dividend season, so query
+    # per calendar month rather than one long span.
+    try:
+        from datetime import date as _d, timedelta as _td
+        today = _d.today()
+        prev_month_end = today.replace(day=1) - _td(days=1)
+        div_rows: list = []
+        for anchor in (prev_month_end, today):
+            m_start = anchor.replace(day=1).strftime("%Y%m%d")
+            m_end = anchor.strftime("%Y%m%d")
+            div_rows += twse.fetch_twse_ex_dividend(m_start, m_end)
+            twse._rate_limit()
+        div_rows += twse.fetch_twse_ex_forecast()
+        if div_rows:
+            with loader.atomic() as c:
+                count = loader.upsert_dividends(div_rows, c=c)
+                loader.log_ingestion("twse_dividend", iso, count, c=c)
+            results["dividends"] = count
+        else:
+            loader.log_ingestion("twse_dividend", iso, 0, "empty")
+    except Exception as e:
+        log.error("Dividend calendar failed: %s", e)
+        results["errors"].append(f"dividends: {e}")
+    twse._rate_limit()
+
     # ── 6. News ───────────────────────────────────────────────────────────
     try:
         news_summary = _harvest_news()
