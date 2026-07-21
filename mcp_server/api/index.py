@@ -42,6 +42,7 @@ import limit_board
 import flow_leaders
 import session_state as session_state_mod
 import quote as quote_mod
+import fugle as fugle_mod
 try:
     from security import is_authorized_path, token_matches
 except ModuleNotFoundError:  # package import path used by local tests
@@ -842,37 +843,12 @@ def _current_phase() -> tuple[str, bool]:
     return phase, indicative
 
 
-@mcp.tool()
-def quote(symbols: list[str]) -> dict:
-    """Realtime-ish quotes for a watchlist of Taiwan tickers (TWSE MIS).
-
-    For up to ~100 symbols, returns last/prev/open/high/low, best bid/ask, and
-    the authoritative **limit-up / limit-down** prices (`u`/`w`, already
-    tick-rounded by TWSE). This is a watchlist tool, not a market scanner —
-    MIS is rate-limited and needs a live session, so a full-market sweep is out
-    (use scan_limit_board / flow_leaders_scan for breadth).
-
-    The response carries the live session `phase` and `price_is_indicative`: in
-    the 08:30–09:00 pre-open auction the price is a 試撮 simulation, not a trade.
-    A symbol that has not printed yet returns `last_price: null` rather than a
-    fabricated price. Ask 'is this real?' via session_state if in doubt.
-
-    Args:
-        symbols: Ticker codes, e.g. ['2330','4536','6488']. Max 100.
-    """
-    codes = [str(s).strip() for s in (symbols or []) if str(s).strip()]
-    if not codes:
-        return {"error": "symbols is required (e.g. ['2330','4536'])"}
-    if len(codes) > quote_mod._MAX_SYMBOLS:
-        return {"error": f"at most {quote_mod._MAX_SYMBOLS} symbols per call; got {len(codes)}"}
-
+def _quote_via_mis(codes: list[str]) -> tuple[list[dict], list[str]]:
+    """MIS path: resolve tse_/otc_ prefixes and batch-fetch."""
     try:
         markets = db_v2.ticker_markets(codes)
     except Exception:  # noqa: BLE001 — market lookup is best-effort
         markets = {}
-
-    # Known market → the right prefix; unknown → probe both boards (MIS returns
-    # only the one that exists).
     ex_ch: list[str] = []
     for c in codes:
         mk = markets.get(c)
@@ -880,28 +856,87 @@ def quote(symbols: list[str]) -> dict:
             ex_ch.append(f"tse_{c}.tw")
         elif mk == "TPEX":
             ex_ch.append(f"otc_{c}.tw")
-        else:
+        else:  # unknown → probe both; MIS returns only the one that exists
             ex_ch.extend([f"tse_{c}.tw", f"otc_{c}.tw"])
-
     raw, err = quote_mod.fetch_quotes(ex_ch)
-    # MIS returns an empty-code row for an unknown symbol; drop those so a bad
-    # code shows up in `missing`, not as a blank quote.
+    # MIS returns an empty-code row for an unknown symbol — drop those.
     quotes = [q for q in (quote_mod.parse_msg(m) for m in raw) if q["ticker_id"]]
+    return quotes, ([err] if err else [])
+
+
+def _quote_via_fugle(codes: list[str], key: str) -> tuple[list[dict], list[str]]:
+    """Fugle path: one call per symbol, limit prices computed from reference."""
+    raw, errors = fugle_mod.fetch_quotes(codes, key)
+    quotes = [q for q in (fugle_mod.parse_quote(j) for j in raw) if q["ticker_id"]]
+    return quotes, errors
+
+
+@mcp.tool()
+def quote(symbols: list[str], source: str = "auto") -> dict:
+    """Realtime-ish quotes for a watchlist of Taiwan tickers.
+
+    Returns last/prev/open/high/low, best bid/ask, and the authoritative
+    **limit-up / limit-down** prices per symbol. A watchlist tool, not a market
+    scanner — use scan_limit_board / flow_leaders_scan for breadth.
+
+    Two sources: **Fugle** (keyed realtime feed, preferred — richer book, lower
+    latency) and **TWSE MIS** (no key, but throttled). `source="auto"` uses
+    Fugle when FUGLE_API_KEY is configured and falls back to MIS otherwise (or
+    if Fugle returns nothing). `response._quote_source` says which answered.
+
+    The response carries the live session `phase` and `price_is_indicative`: in
+    the 08:30–09:00 pre-open auction the price is a 試撮 simulation, not a trade.
+    A symbol that has not printed yet returns `last_price: null`, never a
+    fabricated price. Ask 'is this real?' via session_state if in doubt.
+
+    Args:
+        symbols: Ticker codes, e.g. ['2330','4536','6488'].
+        source: 'auto' (default) | 'fugle' | 'mis'.
+    """
+    codes = [str(s).strip() for s in (symbols or []) if str(s).strip()]
+    if not codes:
+        return {"error": "symbols is required (e.g. ['2330','4536'])"}
+    src = (source or "auto").lower()
+    if src not in ("auto", "fugle", "mis"):
+        return {"error": "source must be 'auto', 'fugle', or 'mis'"}
+
+    key = fugle_mod.api_key()
+    if src == "fugle" and not key:
+        return {"error": "source='fugle' needs FUGLE_API_KEY to be configured"}
+
+    use_fugle = key is not None if src == "auto" else src == "fugle"
+    cap = fugle_mod._MAX_SYMBOLS if use_fugle else quote_mod._MAX_SYMBOLS
+    if len(codes) > cap:
+        return {"error": f"at most {cap} symbols per call for source '{'fugle' if use_fugle else 'mis'}'; got {len(codes)}"}
+
+    if use_fugle:
+        quotes, errors = _quote_via_fugle(codes, key)
+        used = "fugle"
+        # Auto-fallback: if Fugle produced nothing, try MIS rather than return empty.
+        if src == "auto" and not quotes:
+            mis_quotes, mis_errors = _quote_via_mis(codes)
+            if mis_quotes:
+                quotes, errors, used = mis_quotes, errors + mis_errors, "twse_mis"
+    else:
+        quotes, errors = _quote_via_mis(codes)
+        used = "twse_mis"
+
     found = {q["ticker_id"] for q in quotes}
     missing = [c for c in codes if c not in found]
 
     phase, indicative = _current_phase()
     return _stamp(
         {
+            "_quote_source": used,
             "phase": phase,
             "price_is_indicative": indicative,
             "warning": (session_state_mod._INDICATIVE_WARNING if indicative else None),
             "count": len(quotes),
             "quotes": quotes,
             "missing": missing,
-            "errors": [err] if err else [],
+            "errors": errors,
         },
-        source="twse_mis",
+        source=used,
         as_of=(quotes[0].get("quote_time") if quotes else None),
         freshness="realtime" if phase == "regular" else "delayed_or_closed",
     )
@@ -1845,7 +1880,7 @@ def sc_capabilities() -> dict:
             {"name": "scan_limit_board", "purpose": "Scan the TWSE/TPEX limit-up/limit-down board (EOD) and triage each hit as sleeper vs chase"},
             {"name": "flow_leaders_scan", "purpose": "Market-wide screen for quiet foreign accumulation into a still-cheap, still-flat price (generative sleeper board)"},
             {"name": "session_state", "purpose": "Taipei market phase + trading-calendar status; flags 試撮 pre-open indicative prices so a simulated quote is never read as real"},
-            {"name": "quote", "purpose": "Realtime-ish watchlist quotes (TWSE MIS) with authoritative limit-up/down prices; stamps 試撮 indicative prices"},
+            {"name": "quote", "purpose": "Realtime-ish watchlist quotes (Fugle preferred, TWSE MIS fallback) with authoritative limit-up/down prices; stamps 試撮 indicative prices"},
             {"name": "dividend_calendar", "purpose": "Ex-dividend/ex-rights dates + amounts; answers whether a buyer today still receives the dividend (TWSE 除權除息)"},
             {"name": "sc_data_status", "purpose": "Pipeline health and data freshness"},
             {"name": "q_indicators", "purpose": "Latest technical + flow indicators for one ticker"},

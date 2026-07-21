@@ -25,12 +25,15 @@ Every response carries `_source` / `_as_of` / `_freshness`.
   most-recent-past and next-upcoming ex date + cash amount, and `already_ex`. **Run before quoting a
   yield or citing an ex-div catalyst:** if `already_ex` is true, a new buyer does NOT get it and the
   yield is historical, not forward. Official TWSE data; never synthesise a forward yield.
-- **`session_state(date)`** + **`quote(symbols[])`** — the realtime layer. `session_state` gives the
-  live Taipei `phase` and `price_is_indicative` (true during the 08:30–09:00 試撮 auction — the
-  displayed price is simulated, not a trade). `quote` returns realtime-ish last/bid/ask + the
-  authoritative limit-up/down prices for a **watchlist (≤100 codes)**; a name with no print yet
-  returns `last_price: null` (not a fake price). Use these instead of asking for a screenshot when
-  you need the current print — but confirm `price_is_indicative` is false before treating it as real.
+- **`session_state(date)`** + **`quote(symbols[], source)`** — the realtime layer. `session_state`
+  gives the live Taipei `phase` and `price_is_indicative` (true during the 08:30–09:00 試撮 auction —
+  the displayed price is simulated, not a trade). `quote` returns realtime-ish last/bid/ask + the
+  authoritative limit-up/down prices for a **watchlist**; a name with no print yet returns
+  `last_price: null` (not a fake price). It draws from **Fugle** (keyed realtime, preferred, richer
+  book) or **TWSE MIS** (fallback) — `source="auto"` picks Fugle when configured, and
+  `_quote_source` in the response says which answered. Use these instead of asking for a screenshot
+  when you need the current print — but confirm `price_is_indicative` is false before treating it as
+  real.
 
 ## Which tool for which datum
 

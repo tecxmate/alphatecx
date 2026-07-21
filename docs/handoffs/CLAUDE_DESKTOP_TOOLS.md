@@ -54,9 +54,11 @@ present the number as a real trade or a fill.**
 **Use for a watchlist** (≤100 codes), not for scanning the market (use the two scanners for
 breadth).
 
-`quote(symbols=["2330","4536","6488"])` → per-symbol last/prev/open/high/low, best bid/ask, and
-the **authoritative limit-up/limit-down prices** (`limit_up_price`/`limit_down_price`,
-already tick-rounded by TWSE). Response carries the session `phase` + `price_is_indicative`.
+`quote(symbols=["2330","4536","6488"], source="auto")` → per-symbol last/prev/open/high/low, best
+bid/ask, and the **authoritative limit-up/limit-down prices** (`limit_up_price`/`limit_down_price`,
+tick-rounded). Draws from **Fugle** (keyed realtime, preferred) or **TWSE MIS** (fallback);
+`source="auto"` picks Fugle when the key is configured, and `_quote_source` reports which answered.
+Response carries the session `phase` + `price_is_indicative`.
 
 - A symbol with no trade yet returns `last_price: null` — that is correct, not an error; do not
   substitute prev close as if it were a trade.
