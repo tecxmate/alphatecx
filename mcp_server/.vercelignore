@@ -1,3 +1,4 @@
+# Vercel deploy ignore (build root = mcp_server). Keeps secrets/logs out of the bundle.
 .env
 .env.*
 *.log
