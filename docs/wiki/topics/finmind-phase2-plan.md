@@ -3,25 +3,44 @@ title: FinMind integration (Tool Review v2 Phase 2)
 type: topic
 slug: finmind-phase2-plan
 date: 2026-07-26
-updated: 2026-07-26
+updated: 2026-07-27
 belongs_to: [flow-leaders-scan, system-architecture]
 source: synthesis
-status: proposed
-tags: [finmind, dividend, news, roadmap, tool-review, deferred]
-related: [2026-07-26-flow-leaders-dividend-enrichment, flow-leaders-scan, dividend-calendar]
+status: active
+tags: [finmind, dividend, news, roadmap, tool-review]
+related: [2026-07-26-flow-leaders-dividend-enrichment, 2026-07-27-finmind-phase2-build, flow-leaders-scan, dividend-calendar]
 ---
 
+## Status: #1 + #2 (reframed) + #4 BUILT 2026-07-27 — see [[2026-07-27-finmind-phase2-build]]
+Free-tier token wired; nightly ETL live. Cash/stock split, honest ex-date `dividend_trap`, and the
+governance-news overlay ship. Only the true 5y 填息 metric + dividend-adjusted flatness remain
+blocked (need paid `TaiwanStockPriceAdj`). Read the fill-probability reality section below — it is
+why `dividend_trap` is ex-date-based, not probability-based.
+
 ## Summary
-The Tool Review v2 items that **cannot** be done with TWSE-native data and are deferred until a
-FinMind token exists. Phase 1 (TWSE-native) shipped forward-cash yield, ex-div proximity, the
-stale-price guard, and the revenue numeric guard — see
-[[2026-07-26-flow-leaders-dividend-enrichment]]. This page is the not-yet-built remainder.
+The Tool Review v2 items that need FinMind (not TWSE-native). Phase 1 shipped forward-cash yield,
+ex-div proximity, the stale-price guard, and the revenue numeric guard — see
+[[2026-07-26-flow-leaders-dividend-enrichment]]. Phase 2 (this page) added the FinMind-backed
+dividend/news enrichment.
 
 ## Prerequisite (blocker)
 - **`FINMIND_TOKEN`** in `.env` (gitignored) **and** on the `alphatecx-v2-mcp` Vercel project.
-  FinMind free tier ≈ 600 req/hr — the ETL needs a central limiter + cache; the MCP read path must
-  never call FinMind synchronously (serverless budget). Wire it as a nightly harvester into Neon,
-  same shape as the TWSE ETL, then the scanner reads from Neon.
+  The ETL needs a central limiter + cache; the MCP read path must never call FinMind synchronously
+  (serverless budget). Wire it as a nightly harvester into Neon, same shape as the TWSE ETL, then
+  the scanner reads from Neon.
+
+## FinMind tiers (verified 2026-07-27, finmind.github.io/login + quickstart)
+- **Anonymous / no token:** 300 req/hr.
+- **Free registered** (sign up + verify email → token from account page): **600 req/hr**.
+- **Paid "sponsor"** (2 tiers): higher hourly limits **and** a few paid-only datasets/features.
+- **Free tier unblocks 3 of the 4 deferred items** (nightly ETL, not request-time):
+  - #1 `TaiwanStockDividend` (cash/stock split) — **free**.
+  - #2 `TaiwanStockDividendResult` (填息 → dividend_trap) — **free**.
+  - #4 `TaiwanStockNews` (governance overlay) — **free**.
+  - #5 `TaiwanStockPriceAdj` / `taiwan_stock_daily_adj` (dividend-adjusted flatness) — **PAID-only**.
+- Free-tier caveat: per-ticker fetch at 600/hr (the "all stocks for one date" call is paid). ≤50
+  board hits = trivial; a full ~1.2k nightly backfill ≈ 2h throttled — fine overnight, or enrich
+  hits on-demand. So a **free token gets Phase 2 #1/#2/#4**; only #5 needs a paid plan.
 
 ## Deferred work items
 1. **`dividend_trap` + `fill_probability_5y` (review #2, highest deferred priority).** Compute the
@@ -46,8 +65,25 @@ stale-price guard, and the revenue numeric guard — see
   let `recently_ex` catch names like 晶華 (ex 2026-04-16) that are currently invisible. Cheap; does
   NOT need FinMind. Still won't give fill probability.
 
+## Fill-probability data reality (discovered 2026-07-27 during backfill)
+`TaiwanStockDividendResult.max_price` is the **ex-day limit-up band** (2812: before 21.9, max 24.05
+= +9.8%, min 19.7 = −10%), **not** a post-ex recovery high. So `max_price >= before_price` is
+trivially true → a naive fill metric reads ~1.0 for everything (computed 1.0 for 晶華, which the
+review said never fills). A real 5-year 填息 probability needs a multi-year **adjusted** price
+series = `TaiwanStockPriceAdj`, which is **paid-only**. Conclusion: **do not fabricate
+`fill_probability_5y`.** The `finmind_fill_stats` table + pure `fill_probability()` are retained
+(the function is correct given a proper price series; wire it if we ever get paid adj-price), but
+they do **not** drive triage.
+
+`dividend_trap` was therefore reframed to an honest, computable condition that hits the same
+acceptance cases: **already went ex within ~250 days AND no upcoming ex** (dividend spent, buyer
+waits ~a year) → downgrade sleeper→watch + strip yield. FinMind's full-history ex-dates make this
+work for 晶華 (ex 2026-04-16, which TWSE's June-onward window lacked). 台中銀 has an upcoming ex →
+not a trap.
+
 ## Open questions
-- FinMind adj-price endpoint is paid-tier on some plans — verify before relying on #4.
+- **Resolved:** the adj-price endpoint (`taiwan_stock_daily_adj`) IS paid-only — the true 5y 填息
+  metric (#5-adjacent) needs a paid plan; #1/#4 + the reframed #2 do not. (Verified 2026-07-27.)
 - Proxy FinMind through the Alpha MCP vs. run FinMind's own MCP — see `CLAUDE_CODE_HANDOFF.md` M1.
 
 ## History

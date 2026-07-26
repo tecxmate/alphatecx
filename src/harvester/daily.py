@@ -21,9 +21,9 @@ Pipeline (each step failure-isolated; one bad step doesn't kill the rest):
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 
-from src.harvester import twse, transform, loader
+from src.harvester import twse, transform, loader, finmind
 from src.alerts.telegram import send_daily_summary
 
 logging.basicConfig(
@@ -35,6 +35,60 @@ log = logging.getLogger("daily")
 
 # Benchmark for relative-strength calculation. Same as src/quant/compute_signals.py.
 _BENCHMARK = "0050"
+
+
+def _finmind_nightly_universe(c) -> list[str]:
+    """Bounded universe for the nightly FinMind harvest — kept well under the
+    free tier's 600 req/hr (3 calls/ticker). Covers the classified names plus any
+    name with an upcoming ex-date (where dividend_trap / news matter most now).
+    A full-market backfill is scripts/backfill_finmind.py, not this."""
+    c.execute(
+        """
+        SELECT DISTINCT ticker_id FROM (
+            SELECT ticker_id FROM dim_supply_chain
+            UNION
+            SELECT ticker_id FROM raw_twse_dividend WHERE ex_date >= CURRENT_DATE
+        ) u ORDER BY ticker_id
+        """
+    )
+    return [r[0] for r in c.fetchall()]
+
+
+def harvest_finmind(tickers: list[str], news_days: int = 45,
+                    as_of: str | None = None) -> dict:
+    """Harvest FinMind dividend policy + result + news for `tickers` into Neon.
+
+    Reused by both the nightly step and scripts/backfill_finmind.py. Skips
+    cleanly (no error) when no token is configured. Per-ticker: 3 rate-limited
+    calls; fill_probability is computed here (pure) and stored.
+    """
+    if not finmind.token_configured():
+        log.info("FinMind token not configured — skipping FinMind harvest")
+        return {"skipped": "no_token"}
+    as_of = as_of or date.today().isoformat()
+    news_start = (date.today() - timedelta(days=news_days)).isoformat()
+    div_rows: list = []
+    res_rows: list = []
+    fill_rows: list = []
+    news_rows: list = []
+    for t in tickers:
+        pol = finmind.fetch_dividend_policy(t)
+        finmind._rate_limit()
+        res = finmind.fetch_dividend_result(t)
+        finmind._rate_limit()
+        news = finmind.fetch_news(t, news_start)
+        finmind._rate_limit()
+        div_rows += pol
+        res_rows += res
+        fill_rows.append(finmind.fill_stats_record(t, res, as_of))
+        news_rows += news
+    with loader.atomic() as c:
+        loader.upsert_finmind_dividend(div_rows, c=c)
+        loader.upsert_finmind_dividend_result(res_rows, c=c)
+        loader.upsert_finmind_fill_stats(fill_rows, c=c)
+        loader.upsert_finmind_news(news_rows, c=c)
+    return {"tickers": len(tickers), "dividend": len(div_rows),
+            "result": len(res_rows), "news": len(news_rows)}
 
 
 def _harvest_ohlcv_current_month(target: str) -> int:
@@ -268,6 +322,19 @@ def harvest_today() -> dict:
         log.error("Dividend calendar failed: %s", e)
         results["errors"].append(f"dividends: {e}")
     twse._rate_limit()
+
+    # ── 5e. FinMind enrichment — cash/stock split, 填息 prob, governance news ──
+    # Bounded universe (classified + upcoming-ex) to stay under the free tier's
+    # 600 req/hr. Full-market coverage is scripts/backfill_finmind.py.
+    try:
+        with loader.cur() as c:
+            fm_universe = _finmind_nightly_universe(c)
+        fm_res = harvest_finmind(fm_universe, as_of=iso)
+        results["finmind"] = fm_res
+        loader.log_ingestion("finmind", iso, fm_res.get("dividend", 0))
+    except Exception as e:
+        log.error("FinMind harvest failed: %s", e)
+        results["errors"].append(f"finmind: {e}")
 
     # ── 6. News ───────────────────────────────────────────────────────────
     try:

@@ -755,7 +755,7 @@ def flow_leaders_scan(
             "hits": hits,
             "errors": [],
         },
-        source="raw_twse_t86+raw_twse_valuation+raw_twse_holdings+raw_twse_dividend",
+        source="raw_twse_t86+raw_twse_valuation+raw_twse_holdings+raw_twse_dividend+raw_finmind_*",
         as_of=as_of,
         freshness="EOD",
     )

@@ -28,6 +28,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [2026-07-21 — flow_leaders_scan](decisions/2026-07-21-flow-leaders-scan.md) — median-anchored flatness (survives corrupt prints), single-day z demoted from a gate to optional; valuation.close is the price source since ohlcv misses the acceptance names
 - [2026-07-21 — session_state calendar](decisions/2026-07-21-session-state-calendar.md) — holiday classifier, manual typhoon overrides, and the mcp_viewer GRANT/RLS every new MCP-read table needs
 - [2026-07-26 — Flow-leaders dividend enrichment](decisions/2026-07-26-flow-leaders-dividend-enrichment.md) — Tool Review v2 Phase 1 (TWSE-native): forward-cash yield flag, ex-div proximity, stale-price guard, revenue numeric guard; FinMind items deferred
+- [2026-07-27 — FinMind Phase 2 built](decisions/2026-07-27-finmind-phase2-build.md) — cash/stock split + honest ex-date dividend_trap (fill-probability isn't computable free) + governance-news overlay; nightly FinMind ETL
 
 ## Topics
 *Areas, products, events, and synthesised concepts. Topics don't make decisions; stakeholders do.*

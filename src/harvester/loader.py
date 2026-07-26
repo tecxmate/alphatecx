@@ -435,3 +435,92 @@ def upsert_market_holidays(rows: list[dict], c=None) -> int:
         cc.executemany(sql, rows)
     log.info("Upserted %d rows into market_holidays", len(rows))
     return len(rows)
+
+
+def upsert_finmind_dividend(rows: list[dict], c=None) -> int:
+    """Upsert FinMind dividend-policy rows (cash/stock split per fiscal year)."""
+    if not rows:
+        return 0
+    sql = """
+        INSERT INTO raw_finmind_dividend (ticker_id, year, cash_dividend,
+            stock_dividend, cash_ex_date, stock_ex_date, announcement_date)
+        VALUES (%(ticker_id)s, %(year)s, %(cash_dividend)s, %(stock_dividend)s,
+            %(cash_ex_date)s, %(stock_ex_date)s, %(announcement_date)s)
+        ON CONFLICT (ticker_id, year) DO UPDATE SET
+            cash_dividend = EXCLUDED.cash_dividend,
+            stock_dividend = EXCLUDED.stock_dividend,
+            cash_ex_date = EXCLUDED.cash_ex_date,
+            stock_ex_date = EXCLUDED.stock_ex_date,
+            announcement_date = EXCLUDED.announcement_date,
+            ingested_at = now()
+    """
+    with _cursor_or_default(c) as cc:
+        cc.executemany(sql, rows)
+    log.info("Upserted %d rows into raw_finmind_dividend", len(rows))
+    return len(rows)
+
+
+def upsert_finmind_dividend_result(rows: list[dict], c=None) -> int:
+    """Upsert FinMind dividend-result rows (per-ex before/after/max prices)."""
+    if not rows:
+        return 0
+    sql = """
+        INSERT INTO raw_finmind_dividend_result (ticker_id, ex_date, before_price,
+            after_price, reference_price, max_price, min_price)
+        VALUES (%(ticker_id)s, %(ex_date)s, %(before_price)s, %(after_price)s,
+            %(reference_price)s, %(max_price)s, %(min_price)s)
+        ON CONFLICT (ticker_id, ex_date) DO UPDATE SET
+            before_price = EXCLUDED.before_price,
+            after_price = EXCLUDED.after_price,
+            reference_price = EXCLUDED.reference_price,
+            max_price = EXCLUDED.max_price,
+            min_price = EXCLUDED.min_price,
+            ingested_at = now()
+    """
+    with _cursor_or_default(c) as cc:
+        cc.executemany(sql, rows)
+    log.info("Upserted %d rows into raw_finmind_dividend_result", len(rows))
+    return len(rows)
+
+
+def upsert_finmind_fill_stats(rows: list[dict], c=None) -> int:
+    """Upsert precomputed 填息 stats (one row per ticker)."""
+    if not rows:
+        return 0
+    sql = """
+        INSERT INTO finmind_fill_stats (ticker_id, fill_probability_5y,
+            events_5y, last_ex_date, computed_as_of)
+        VALUES (%(ticker_id)s, %(fill_probability_5y)s, %(events_5y)s,
+            %(last_ex_date)s, %(computed_as_of)s)
+        ON CONFLICT (ticker_id) DO UPDATE SET
+            fill_probability_5y = EXCLUDED.fill_probability_5y,
+            events_5y = EXCLUDED.events_5y,
+            last_ex_date = EXCLUDED.last_ex_date,
+            computed_as_of = EXCLUDED.computed_as_of,
+            ingested_at = now()
+    """
+    with _cursor_or_default(c) as cc:
+        cc.executemany(sql, rows)
+    log.info("Upserted %d rows into finmind_fill_stats", len(rows))
+    return len(rows)
+
+
+def upsert_finmind_news(rows: list[dict], c=None) -> int:
+    """Upsert FinMind news rows (stable title_hash PK; governance flag precomputed)."""
+    if not rows:
+        return 0
+    sql = """
+        INSERT INTO raw_finmind_news (ticker_id, news_date, title, title_hash,
+            news_source, url, is_governance)
+        VALUES (%(ticker_id)s, %(news_date)s, %(title)s, %(title_hash)s,
+            %(news_source)s, %(url)s, %(is_governance)s)
+        ON CONFLICT (ticker_id, news_date, title_hash) DO UPDATE SET
+            news_source = EXCLUDED.news_source,
+            url = EXCLUDED.url,
+            is_governance = EXCLUDED.is_governance,
+            ingested_at = now()
+    """
+    with _cursor_or_default(c) as cc:
+        cc.executemany(sql, rows)
+    log.info("Upserted %d rows into raw_finmind_news", len(rows))
+    return len(rows)

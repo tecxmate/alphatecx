@@ -337,7 +337,12 @@ def query_flow_leaders(
                r.yoy_pct AS revenue_yoy_pct, r.mom_pct AS revenue_mom_pct,
                du.ex_date AS upcoming_ex_date, du.cash_value AS upcoming_cash_value,
                du.ex_type AS upcoming_ex_type,
-               dr.ex_date AS recent_ex_date, dr.ex_type AS recent_ex_type
+               dr.ex_date AS recent_ex_date, dr.ex_type AS recent_ex_type,
+               fd.cash_dividend AS fm_cash_dividend, fd.stock_dividend AS fm_stock_dividend,
+               fx.finmind_recent_ex,
+               COALESCE(fn.recent_news_count, 0) AS recent_news_count,
+               COALESCE(fn.governance_news_count, 0) AS governance_news_count,
+               fn.news_headlines
         FROM px_stats ps
         JOIN dim_ticker dt USING (ticker_id)
         JOIN flow_stats fs USING (ticker_id)
@@ -373,6 +378,32 @@ def query_flow_leaders(
           SELECT ex_date, ex_type FROM raw_twse_dividend
           WHERE ticker_id = ps.ticker_id AND ex_date <= %(d)s ORDER BY ex_date DESC LIMIT 1
         ) dr ON true
+        -- FinMind dividend policy (latest fiscal year): cash/stock split (v2 #1).
+        LEFT JOIN LATERAL (
+          SELECT cash_dividend, stock_dividend FROM raw_finmind_dividend
+          WHERE ticker_id = ps.ticker_id ORDER BY year DESC LIMIT 1
+        ) fd ON true
+        -- FinMind's most recent *past* ex across cash+stock legs. Fuller history
+        -- than TWT49U (which only starts mid-2026) — it is what catches 晶華's
+        -- April ex for the dividend_trap check (v2 #2).
+        LEFT JOIN LATERAL (
+          SELECT max(ex) AS finmind_recent_ex FROM (
+            SELECT cash_ex_date AS ex FROM raw_finmind_dividend
+              WHERE ticker_id = ps.ticker_id AND cash_ex_date <= %(d)s
+            UNION ALL
+            SELECT stock_ex_date FROM raw_finmind_dividend
+              WHERE ticker_id = ps.ticker_id AND stock_ex_date <= %(d)s
+          ) e
+        ) fx ON true
+        -- Material/governance news in the trailing 30d (v2 #4). Headlines capped
+        -- at 3 for the agent to surface; governance flag precomputed at load.
+        LEFT JOIN LATERAL (
+          SELECT count(*) AS recent_news_count,
+                 count(*) FILTER (WHERE is_governance) AS governance_news_count,
+                 (array_agg(title ORDER BY news_date DESC))[1:3] AS news_headlines
+          FROM raw_finmind_news
+          WHERE ticker_id = ps.ticker_id AND news_date >= (%(d)s::date - 30)
+        ) fn ON true
         WHERE fs.flow_days >= 5 AND dt.market = ANY(%(markets)s)
     """
     params = {"d": as_of, "w": w, "ym": as_of[:7], "markets": mkts}

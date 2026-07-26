@@ -560,3 +560,28 @@ attributed_to: [niko]   belongs_to: [flow-leaders-scan]
   docs/wiki/topics/finmind-phase2-plan.md.
 - Pages: decisions/2026-07-26-flow-leaders-dividend-enrichment.md, topics/finmind-phase2-plan.md,
   updated topics/flow-leaders-scan.md.
+
+## [2026-07-27] external | FinMind free tier confirmed — unblocks Phase 2 #1/#2/#4
+attributed_to: [niko]   belongs_to: [finmind-phase2-plan]
+- Verified FinMind tiers (finmind.github.io): anon 300/hr, free registered 600/hr, paid sponsor
+  (2 tiers) higher + some paid-only datasets. A **free** token covers #1 (TaiwanStockDividend),
+  #2 (TaiwanStockDividendResult/填息), #4 (TaiwanStockNews). Only #5 (TaiwanStockPriceAdj,
+  taiwan_stock_daily_adj) is paid-only. Nightly ETL fits 600/hr; hits-only enrichment trivial.
+- Updated topics/finmind-phase2-plan.md (tiers + free/paid split; resolved the adj-price question).
+
+## [2026-07-27] decision | FinMind Phase 2 built — cash/stock split, honest dividend_trap, governance news
+attributed_to: [niko]   belongs_to: [flow-leaders-scan]
+- [niko] supplied a free-tier FinMind token (600/hr; TaiwanStockDividend/DividendResult/News OK,
+  PriceAdj paid-blocked) and chose v2 #1+#2+#4. Wired a nightly FinMind ETL → Neon (sql/017: 4
+  tables) joined into flow_leaders_scan. Read path never calls FinMind.
+- KEY INTEGRITY FINDING: TaiwanStockDividendResult.max_price is the ex-DAY limit band, not a post-ex
+  recovery high — a naive 填息 metric reads ~1.0 for everything (1.0 for 晶華, which the review said
+  never fills). Real 5y 填息 needs paid adj-price. So did NOT fabricate fill_probability; reframed
+  dividend_trap to honest ex-date logic: went ex within ~250d AND no upcoming → strip yield,
+  sleeper→watch. FinMind's full ex-history catches 晶華's April ex that TWT49U lacked.
+- Live-verified @2026-07-24: 晶華 2707 → dividend_trap → watch; 台中銀 2812 → no trap (upcoming 8/4),
+  cash 0.39/stock 0.67; governance keyword flags real 違約交割 news (3037). Tests +18 → suite 117.
+- FINMIND_TOKEN in .env + GH Actions secret (harvester runs in CI, not Vercel). daily.py step 5e.
+- New: src/harvester/finmind.py, scripts/backfill_finmind.py, sql/017_finmind.sql,
+  decisions/2026-07-27-finmind-phase2-build.md; updated finmind-phase2-plan + flow-leaders-scan.
+- Still blocked (paid): true 5y 填息 + dividend-adjusted flatness (v2 #5) via TaiwanStockPriceAdj.

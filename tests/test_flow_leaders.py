@@ -198,6 +198,55 @@ class RevenueGuardTests(unittest.TestCase):
         self.assertIn("rev_inflecting", out["sleeper_flags"])
 
 
+class DividendTrapTests(unittest.TestCase):
+    """v2 #2 (honest, ex-date based) + #4 governance overlay."""
+
+    AS_OF = "2026-07-24"
+
+    def test_already_ex_no_upcoming_is_a_trap_and_downgrades(self):
+        # 晶華-style: went ex 2026-04-16 (FinMind), nothing upcoming → the annual
+        # dividend is spent. A cheap+accumulating+flat sleeper drops to watch.
+        out = fl.score_row(
+            tuo_kai(finmind_recent_ex="2026-04-16", fm_cash_dividend=10.75), as_of=self.AS_OF
+        )
+        self.assertTrue(out["dividend_trap"])
+        self.assertEqual(out["triage"], "watch")
+        self.assertNotIn("yield", out["sleeper_flags"])
+        self.assertIn("dividend_trap", out["sleeper_flags"])
+
+    def test_upcoming_ex_is_not_a_trap(self):
+        # 台中銀-style: has an upcoming ex → dividend is still capturable.
+        out = fl.score_row(
+            tuo_kai(finmind_recent_ex="2025-08-13", upcoming_ex_date="2026-08-04"),
+            as_of=self.AS_OF,
+        )
+        self.assertFalse(out["dividend_trap"])
+        self.assertEqual(out["triage"], "sleeper")
+
+    def test_trap_does_not_override_a_chase(self):
+        out = fl.score_row(
+            tuo_kai(finmind_recent_ex="2026-04-16", pe_ratio=None, valuation_known=True),
+            as_of=self.AS_OF,
+        )
+        self.assertEqual(out["triage"], "chase")
+
+    def test_cash_yield_ttm_from_finmind(self):
+        out = fl.score_row(tuo_kai(fm_cash_dividend=10.75, close_today=179.0), as_of=self.AS_OF)
+        self.assertAlmostEqual(out["cash_yield_ttm"], 6.01, places=1)
+
+    def test_governance_risk_surfaces_without_downgrade(self):
+        out = fl.score_row(tuo_kai(governance_news_count=2, recent_news_count=5), as_of=self.AS_OF)
+        self.assertIn("governance_risk", out["sleeper_flags"])
+        self.assertEqual(out["governance_news_count"], 2)
+        self.assertEqual(out["triage"], "sleeper")   # surface-only
+
+    def test_no_finmind_fields_no_trap_no_governance(self):
+        out = fl.score_row(tuo_kai(), as_of=self.AS_OF)
+        self.assertFalse(out["dividend_trap"])
+        self.assertNotIn("governance_risk", out["sleeper_flags"])
+        self.assertEqual(out["recent_material_news_count"], 0)
+
+
 class RobustnessTests(unittest.TestCase):
     def test_fully_null_enrichment_degrades_to_watch_without_raising(self):
         out = fl.score_row({"ticker_id": "9999"})

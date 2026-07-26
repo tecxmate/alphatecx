@@ -48,6 +48,7 @@ sql_files = [
     "sql/013_more_classifications.sql",
     "sql/015_market_calendar.sql",
     "sql/016_dividends.sql",
+    "sql/017_finmind.sql",
 ]
 if args.rls:
     pw = os.getenv("MCP_VIEWER_PASSWORD")

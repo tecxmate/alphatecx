@@ -36,6 +36,18 @@ Market-wide screen for sustained foreign net buying into a still-cheap, still-fl
   price may partly be the ex-drop, not weakness). Informational, not anti-flags.
 - **`stale_price_warning` (v2 #6):** true when the scan's `as_of` isn't today — re-quote via
   `quote()` before acting on any level (the scan is EOD).
+- **Cash/stock split (FinMind, v2 #1):** `fm_cash_dividend` / `fm_stock_dividend` (latest year) and
+  `cash_yield_ttm` (cash-only trailing yield — context, not forward; the `yield` flag still gates on
+  forward cash).
+- **`dividend_trap` flag (v2 #2):** the name went ex within ~250 days and has no upcoming ex — the
+  annual dividend is spent, a buyer waits ~a year. It **strips the `yield` flag and downgrades a
+  sleeper to watch** (晶華 2707: ex 2026-04-16, no upcoming → watch). NOTE: this is ex-date-based,
+  **not** a 填息 (fill) probability — that needs FinMind's paid adjusted-price tier, so do not read
+  `dividend_trap`'s absence as "it reliably refills."
+- **Governance overlay (v2 #4):** `recent_material_news_count` (30d), `governance_news_count`,
+  `news_headlines` (≤3), and a `governance_risk` flag when recent headlines match 洗錢/掏空/內線/
+  違約交割/起訴/… — **surface it in prose for human judgement; it never auto-changes triage** (false
+  positives likely). Coverage is the harvested universe; 0 can mean "no news" or "not harvested".
 - **Do not raise `min_foreign_z` to gate** — it's off by default on purpose. A multi-week
   grinder has no closing-day z-spike, so gating on z drops exactly the names you want.
 - Coverage: needs a harvested price, so effectively TWSE (~1.1k names). Most TPEX names are

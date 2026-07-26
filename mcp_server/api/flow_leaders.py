@@ -64,6 +64,13 @@ RECENTLY_EX_DAYS = 20
 # real inflection — it must not earn `rev_inflecting` (Tool Review v2 #7).
 REV_YOY_SANE_MAX = 200.0
 
+# A name that went ex within this many days AND has no upcoming ex has spent its
+# annual dividend — a buyer today waits ~a year (Tool Review v2 #2, dividend_trap).
+# This is the honest, computable half of the trap: FinMind's max_price is the
+# ex-day limit band, not a fill outcome, so a true 5y 填息 probability needs paid
+# adjusted-price history — see docs/wiki/topics/finmind-phase2-plan.md.
+ALREADY_EX_WINDOW_DAYS = 250
+
 
 def clip(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
@@ -101,6 +108,16 @@ def cash_yield_fwd(row: dict) -> Optional[float]:
     ~1.9 real cash). None when there is no upcoming ex record or no price.
     """
     cash = _f(row.get("upcoming_cash_value"))
+    close = _f(row.get("close_today"))
+    if cash is not None and close:
+        return cash / close * 100.0
+    return None
+
+
+def cash_yield_ttm(row: dict) -> Optional[float]:
+    """Trailing cash yield = latest FinMind cash dividend / close, in %. Cash-only
+    (never the blended 殖利率); context, not a forward promise. None if unknown."""
+    cash = _f(row.get("fm_cash_dividend"))
     close = _f(row.get("close_today"))
     if cash is not None and close:
         return cash / close * 100.0
@@ -186,6 +203,18 @@ def score_row(
     days_to_ex = (up_ex - asof_d).days if (asof_d and up_ex) else None
     days_since_ex = (asof_d - rec_ex).days if (asof_d and rec_ex) else None
 
+    # ── FinMind enrichment (Tool Review v2 #1/#2/#4) ────────────────────────
+    ttm_yield = cash_yield_ttm(row)
+    news_count = int(_f(row.get("recent_news_count")) or 0)
+    gov_count = int(_f(row.get("governance_news_count")) or 0)
+    # dividend_trap: went ex within the window AND nothing upcoming → the annual
+    # dividend is spent. FinMind's fuller ex history (fm_recent) beats TWT49U.
+    fm_recent = _as_date(row.get("finmind_recent_ex"))
+    eff_recent = fm_recent or rec_ex
+    days_since_any_ex = (asof_d - eff_recent).days if (asof_d and eff_recent) else None
+    already_ex = days_since_any_ex is not None and 0 <= days_since_any_ex <= ALREADY_EX_WINDOW_DAYS
+    dividend_trap = bool(already_ex and up_ex is None)
+
     is_flat = move is not None and abs(move) <= max_price_move_pct
     accumulation_into_flat = bool(
         fnet_sum is not None and fnet_sum > 0
@@ -265,6 +294,9 @@ def score_row(
         flags.append("ex_div_imminent")
     if days_since_ex is not None and 0 <= days_since_ex <= RECENTLY_EX_DAYS:
         flags.append("recently_ex")
+    # Governance overlay (v2 #4): surface only — never auto-downgrades triage.
+    if gov_count > 0:
+        flags.append("governance_risk")
 
     anti: list[str] = []
     if pe is None and valuation_known:
@@ -287,6 +319,17 @@ def score_row(
     else:
         triage = "watch"
 
+    # Dividend trap (v2 #2): the annual dividend is already spent and nothing is
+    # upcoming, so the income thesis is not capturable now. Strip the yield flag
+    # and knock a sleeper down to watch — but never override a chase anti-flag.
+    if dividend_trap:
+        flags = [f for f in flags if f != "yield"]
+        if "dividend_trap" not in flags:
+            flags.append("dividend_trap")
+        if triage == "sleeper":
+            triage = "watch"
+
+    headlines = row.get("news_headlines")
     return {
         **row,
         "price_move_pct": round(move, 2) if move is not None else None,
@@ -295,8 +338,14 @@ def score_row(
         "is_flat": is_flat,
         "accumulation_into_flat": accumulation_into_flat,
         "cash_yield_fwd": round(cash_fwd, 2) if cash_fwd is not None else None,
+        "cash_yield_ttm": round(ttm_yield, 2) if ttm_yield is not None else None,
         "days_to_ex": days_to_ex,
         "days_since_ex": days_since_ex,
+        "already_ex": already_ex,
+        "dividend_trap": dividend_trap,
+        "recent_material_news_count": news_count,
+        "governance_news_count": gov_count,
+        "news_headlines": list(headlines) if headlines else [],
         "sleeper_score": sleeper_score,
         "sleeper_flags": flags,
         "triage": triage,

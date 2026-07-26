@@ -50,8 +50,19 @@ shared rubric vocabulary.
   `recently_ex` (≤20 days) flags (informational).
 - **`stale_price_warning`** top-level when the scan `as_of` isn't today (re-quote before acting).
 - **`rev_inflecting` suppressed** when `|yoy| >= 200` (營建/建設 project-completion noise).
-- FinMind-gated remainder (true `dividend_trap`/填息 probability, governance news, adj-price
-  flatness) deferred → [[finmind-phase2-plan]].
+## FinMind enrichment (2026-07-27, [[2026-07-27-finmind-phase2-build]])
+Nightly FinMind ETL → Neon (`raw_finmind_*`, `sql/017`), joined into the scan. The read path never
+calls FinMind. New per-hit fields/flags:
+- **Cash/stock split (#1):** `fm_cash_dividend` / `fm_stock_dividend` (latest year) + `cash_yield_ttm`
+  (cash-only trailing, context — the `yield` flag still gates on forward cash from Phase 1).
+- **`dividend_trap` (#2, honest):** went ex within ~250d AND no upcoming ex → dividend spent →
+  strip `yield`, downgrade sleeper→watch (never overrides a chase). Uses FinMind's full-history
+  ex-dates (catches 晶華's April ex that TWT49U lacked). **Not** fill-probability based — FinMind's
+  `max_price` is the ex-day limit band, so a real 5y 填息 metric needs paid adj-price. See the plan.
+- **Governance overlay (#4):** `recent_material_news_count`, `governance_news_count`,
+  `news_headlines` (≤3); `governance_risk` flag (洗錢/掏空/… keyword) — surface-only, no downgrade.
+- **Blocked (paid):** true 填息 probability + dividend-adjusted flatness → [[finmind-phase2-plan]].
+- Coverage: nightly = classified + upcoming-ex; wider = `scripts/backfill_finmind.py`.
 
 ## Non-obvious behaviour (see [[2026-07-21-flow-leaders-scan]] for full rationale)
 - **Flatness is median-anchored** (latest vs window median; range = (p90−p10)/median) to

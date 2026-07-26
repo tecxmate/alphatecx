@@ -22,6 +22,11 @@ TWSE_BACKFILL_DAYS = int(os.getenv("TWSE_BACKFILL_DAYS", "90"))
 HTTP_TIMEOUT = int(os.getenv("HTTP_TIMEOUT", "20"))
 USER_AGENT = "Mozilla/5.0 alphatecx/0.2"
 
+# FinMind open financial data API (free tier = 600 req/hr). Empty ⇒ FinMind
+# enrichment (dividend split / 填息 / news) is simply skipped by the harvester.
+FINMIND_TOKEN = os.getenv("FINMIND_TOKEN", "")
+FINMIND_REQUEST_DELAY = float(os.getenv("FINMIND_REQUEST_DELAY", "0.35"))
+
 
 def telegram_configured() -> bool:
     return (

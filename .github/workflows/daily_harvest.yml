@@ -29,6 +29,8 @@ env:
   TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
   TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
   TWSE_REQUEST_DELAY: '3.0'
+  # FinMind enrichment (nightly step 5e). Empty ⇒ the step self-skips.
+  FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
 
 jobs:
   harvest:
