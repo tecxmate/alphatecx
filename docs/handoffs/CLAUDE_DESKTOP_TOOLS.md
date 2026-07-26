@@ -26,6 +26,16 @@ Market-wide screen for sustained foreign net buying into a still-cheap, still-fl
 - Read `triage` first: **`sleeper`** = cheap + accumulating + flat, no anti-flag; **`chase`** =
   any anti-flag (no earnings, story premium, distributing, already ran); **`watch`** = neither.
 - `accumulation_into_flat` is the boolean signature; `sleeper_score` is the ranking.
+- **Yield is forward-cash-gated (v2 #1).** The `yield` flag now keys off `cash_yield_fwd`
+  (next scheduled *cash* dividend ÷ close, from the TWT48U forecast) — **not** the blended TWSE
+  殖利率, which sums cash + stock-implied value and overstates income (台中銀 read 5.18 blended vs
+  ~1.9 real cash). No forecast row ⇒ `cash_yield_fwd: null` and no `yield` flag (absence is *not* a
+  claim of zero yield — just that we have no forward cash figure to stand behind).
+- **Ex-dividend proximity (v2 #3):** `days_to_ex` / `days_since_ex`, plus flags `ex_div_imminent`
+  (≤14 cal days to ex — buyer takes the drop soon) and `recently_ex` (≤20 days since ex — a "flat"
+  price may partly be the ex-drop, not weakness). Informational, not anti-flags.
+- **`stale_price_warning` (v2 #6):** true when the scan's `as_of` isn't today — re-quote via
+  `quote()` before acting on any level (the scan is EOD).
 - **Do not raise `min_foreign_z` to gate** — it's off by default on purpose. A multi-week
   grinder has no closing-day z-spike, so gating on z drops exactly the names you want.
 - Coverage: needs a harvested price, so effectively TWSE (~1.1k names). Most TPEX names are

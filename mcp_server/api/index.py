@@ -706,6 +706,7 @@ def flow_leaders_scan(
             max_pe=max_pe,
             max_foreign_held=max_foreign_held,
             min_buy_day_ratio=min_buy_day_ratio,
+            as_of=as_of,
         )
         for r in rows
     ]
@@ -734,9 +735,16 @@ def flow_leaders_scan(
     for h in hits:
         counts[h["triage"]] = counts.get(h["triage"], 0) + 1
 
+    # Scan prices are EOD; if the as-of is not today the caller must re-quote
+    # before acting on any level (Tool Review v2 #6 — 晶華 close 179 in a scan
+    # while the live quote was 192).
+    stale_price = as_of != datetime.now(_TPE).date().isoformat()
+
     return _stamp(
         {
             "as_of": as_of,
+            "price_as_of": as_of,
+            "stale_price_warning": stale_price,
             "window_days": window_days,
             "markets": wanted,
             "sort_by": sort_by,
@@ -747,7 +755,7 @@ def flow_leaders_scan(
             "hits": hits,
             "errors": [],
         },
-        source="raw_twse_t86+raw_twse_valuation+raw_twse_holdings",
+        source="raw_twse_t86+raw_twse_valuation+raw_twse_holdings+raw_twse_dividend",
         as_of=as_of,
         freshness="EOD",
     )

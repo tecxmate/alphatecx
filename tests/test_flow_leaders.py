@@ -112,6 +112,92 @@ class TriageRubricTests(unittest.TestCase):
         self.assertEqual(out["triage"], "chase")
 
 
+def tai_zhong_bank(**over):
+    """台中銀 (2812) as of 2026-07-24 — the yield-conflation case.
+
+    TWSE 殖利率 (blended, cash+stock-implied) reads 5.18, but the forward *cash*
+    dividend is only 0.39 on a 20.45 close → ~1.9% real cash yield. Goes ex 8/4.
+    """
+    row = dict(
+        ticker_id="2812", name="台中銀", market="TWSE",
+        close_today=20.45, med_close=20.3, p10=19.9, p90=20.6,
+        foreign_net_sum=500000, buy_day_ratio=0.7, foreign_net_z20=0.2,
+        pe_ratio=13.19, pb_ratio=1.32, dividend_yield=5.18, valuation_known=True,
+        foreign_held_pct=18.0, revenue_yoy_pct=5.0, turnover_twd=200_000_000,
+        upcoming_ex_date="2026-08-04", upcoming_cash_value=0.39, upcoming_ex_type="權息",
+    )
+    row.update(over)
+    return row
+
+
+class DividendYieldTests(unittest.TestCase):
+    """#1/#3 from Tool Review v2 — the yield flag must key off forward *cash*
+    yield (from the TWT48U forecast), not the blended TWSE 殖利率."""
+
+    AS_OF = "2026-07-24"
+
+    def test_blended_yield_does_not_earn_the_yield_flag(self):
+        out = fl.score_row(tai_zhong_bank(), as_of=self.AS_OF)
+        self.assertAlmostEqual(out["cash_yield_fwd"], 1.907, places=2)
+        self.assertNotIn("yield", out["sleeper_flags"])
+
+    def test_real_forward_cash_yield_earns_the_flag(self):
+        out = fl.score_row(
+            tai_zhong_bank(upcoming_cash_value=1.0, close_today=20.0), as_of=self.AS_OF
+        )
+        self.assertAlmostEqual(out["cash_yield_fwd"], 5.0, places=2)
+        self.assertIn("yield", out["sleeper_flags"])
+
+    def test_no_forecast_means_no_yield_flag_even_if_blended_high(self):
+        # 晶華-style: valuation shows 6% but there is no upcoming ex record at all.
+        out = fl.score_row(
+            tuo_kai(dividend_yield=6.01, upcoming_ex_date=None, upcoming_cash_value=None),
+            as_of=self.AS_OF,
+        )
+        self.assertIsNone(out["cash_yield_fwd"])
+        self.assertNotIn("yield", out["sleeper_flags"])
+
+    def test_ex_div_imminent_when_forecast_is_close(self):
+        out = fl.score_row(tai_zhong_bank(), as_of=self.AS_OF)  # ex 8/4, 11 cal days out
+        self.assertEqual(out["days_to_ex"], 11)
+        self.assertIn("ex_div_imminent", out["sleeper_flags"])
+
+    def test_recently_ex_when_just_went_ex(self):
+        # 華碩-style: went ex 7/1, asked on 7/10 → 9 days since.
+        out = fl.score_row(
+            tuo_kai(recent_ex_date="2026-07-01"), as_of="2026-07-10"
+        )
+        self.assertEqual(out["days_since_ex"], 9)
+        self.assertIn("recently_ex", out["sleeper_flags"])
+
+    def test_no_ex_flags_without_dividend_rows(self):
+        out = fl.score_row(tuo_kai(), as_of=self.AS_OF)
+        self.assertIsNone(out["days_to_ex"])
+        self.assertIsNone(out["days_since_ex"])
+        self.assertNotIn("ex_div_imminent", out["sleeper_flags"])
+        self.assertNotIn("recently_ex", out["sleeper_flags"])
+
+    def test_tuokai_score_survives_the_yield_flag_move(self):
+        # 拓凱 has no forecast row, so it loses the yield flag but must stay a
+        # high-scoring sleeper (valuation sub-score still credits trailing yield).
+        out = fl.score_row(tuo_kai(), as_of="2026-06-30")
+        self.assertEqual(out["triage"], "sleeper")
+        self.assertGreater(out["sleeper_score"], 65)
+
+
+class RevenueGuardTests(unittest.TestCase):
+    """#7 — project-completion revenue noise must not earn `rev_inflecting`."""
+
+    def test_absurd_yoy_is_suppressed(self):
+        # 順天 +4,115% (construction project completion) — not a real inflection.
+        out = fl.score_row(tuo_kai(revenue_yoy_pct=4115.0))
+        self.assertNotIn("rev_inflecting", out["sleeper_flags"])
+
+    def test_sane_yoy_still_flags(self):
+        out = fl.score_row(tuo_kai(revenue_yoy_pct=12.0))
+        self.assertIn("rev_inflecting", out["sleeper_flags"])
+
+
 class RobustnessTests(unittest.TestCase):
     def test_fully_null_enrichment_degrades_to_watch_without_raising(self):
         out = fl.score_row({"ticker_id": "9999"})

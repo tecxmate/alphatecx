@@ -27,6 +27,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [2026-07-17 — scan_limit_board ships EOD-only](decisions/2026-07-17-limit-board-scanner-eod-only.md) — realtime MIS sweep doesn't fit the stateless Vercel function; board fetched live from the exchanges since Neon can't serve full-market
 - [2026-07-21 — flow_leaders_scan](decisions/2026-07-21-flow-leaders-scan.md) — median-anchored flatness (survives corrupt prints), single-day z demoted from a gate to optional; valuation.close is the price source since ohlcv misses the acceptance names
 - [2026-07-21 — session_state calendar](decisions/2026-07-21-session-state-calendar.md) — holiday classifier, manual typhoon overrides, and the mcp_viewer GRANT/RLS every new MCP-read table needs
+- [2026-07-26 — Flow-leaders dividend enrichment](decisions/2026-07-26-flow-leaders-dividend-enrichment.md) — Tool Review v2 Phase 1 (TWSE-native): forward-cash yield flag, ex-div proximity, stale-price guard, revenue numeric guard; FinMind items deferred
 
 ## Topics
 *Areas, products, events, and synthesised concepts. Topics don't make decisions; stakeholders do.*
@@ -46,6 +47,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [Session State + Market Calendar](topics/session-state.md) — `session_state`: Taipei market phase + trading calendar; 試撮 indicative-price guard, holiday classifier, mcp_viewer grant rule
 - [Realtime Quote](topics/realtime-quote.md) — `quote`: watchlist realtime via TWSE MIS; authoritative limit prices, serverless watchlist-only constraint, 試撮 indicative stamp
 - [Dividend Calendar](topics/dividend-calendar.md) — `dividend_calendar`: ex-dividend dates + amounts (TWT49U/TWT48U); "does a buyer today get the dividend?"; the 華碩 fix
+- [FinMind integration (Phase 2)](topics/finmind-phase2-plan.md) — deferred Tool Review v2 items needing a FinMind token: dividend_trap/填息 probability, governance news overlay, dividend-adjusted flatness
 
 ## Log
 - [log.md](log.md) — append-only chronological record

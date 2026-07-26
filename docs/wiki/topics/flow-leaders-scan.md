@@ -3,13 +3,13 @@ title: Flow-Leaders Scan (flow_leaders_scan)
 type: topic
 slug: flow-leaders-scan
 date: 2026-07-21
-updated: 2026-07-21
+updated: 2026-07-26
 attributed_to: [antigravity-agent]
 belongs_to: [system-architecture]
 source: code
 status: active
-tags: [mcp, scanner, twse, flow, accumulation, sleeper, generative]
-related: [2026-07-21-flow-leaders-scan, limit-board-scanner, system-architecture, alphatecx]
+tags: [mcp, scanner, twse, flow, accumulation, sleeper, generative, dividend]
+related: [2026-07-21-flow-leaders-scan, 2026-07-26-flow-leaders-dividend-enrichment, finmind-phase2-plan, limit-board-scanner, dividend-calendar, system-architecture, alphatecx]
 ---
 
 ## Summary
@@ -28,7 +28,8 @@ shared rubric vocabulary.
   market-wide SQL pass) and `latest_flow_date()` (default as-of).
 - `mcp_server/api/index.py` — the `@mcp.tool() flow_leaders_scan(...)` wrapper (validation,
   filters, sort, `_stamp`) + the `sc_capabilities` entry.
-- `tests/test_flow_leaders.py` — 15 tests pinning the two acceptance verdicts + robustness.
+- `tests/test_flow_leaders.py` — 24 tests: the two acceptance verdicts, robustness, and the
+  dividend-enrichment / revenue-guard cases.
 
 ## Data model (why these tables)
 - **Flow** — `raw_twse_t86` (all-market, ~12.8k tickers, per-day `foreign_net`). The scan's
@@ -37,7 +38,20 @@ shared rubric vocabulary.
   PE/PB/dividend_yield with history. Unioned with `raw_twse_ohlcv.close` (~513 names) for the
   price series. **Most TPEX names are unpriced → not returned** (documented gap).
 - **Enrichment** — `raw_twse_holdings` (foreign_held/room), `raw_twse_margin`
-  (balance/limit → froth), `raw_monthly_revenue` (YoY inflection), as-of `as_of`.
+  (balance/limit → froth), `raw_monthly_revenue` (YoY inflection), and `raw_twse_dividend`
+  (next/last ex-date + forecast cash), as-of `as_of`.
+
+## Dividend enrichment (2026-07-26, [[2026-07-26-flow-leaders-dividend-enrichment]])
+- **`yield` flag is forward-cash-gated.** `cash_yield_fwd` = next scheduled *cash* dividend
+  (TWT48U forecast) ÷ close; the flag needs `>= 3.0`. The blended TWSE 殖利率 (`dividend_yield`)
+  no longer earns it — it conflated cash + stock (台中銀 read 5.18 vs ~1.9 real cash). No forecast
+  ⇒ `cash_yield_fwd: null`, no flag (not a claim of zero yield).
+- **Ex-div proximity:** `days_to_ex` / `days_since_ex` + `ex_div_imminent` (≤14 cal days) /
+  `recently_ex` (≤20 days) flags (informational).
+- **`stale_price_warning`** top-level when the scan `as_of` isn't today (re-quote before acting).
+- **`rev_inflecting` suppressed** when `|yoy| >= 200` (營建/建設 project-completion noise).
+- FinMind-gated remainder (true `dividend_trap`/填息 probability, governance news, adj-price
+  flatness) deferred → [[finmind-phase2-plan]].
 
 ## Non-obvious behaviour (see [[2026-07-21-flow-leaders-scan]] for full rationale)
 - **Flatness is median-anchored** (latest vs window median; range = (p90−p10)/median) to

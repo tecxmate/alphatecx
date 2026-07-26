@@ -34,6 +34,7 @@ Two deliberate deviations from the handoff spec, both forced by 拓凱:
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Optional
 
 # ── Score weights (0-100), per handoff §3a ──────────────────────────────────
@@ -54,6 +55,15 @@ STORY_PREMIUM_PE = 40.0
 RAN_HARD_PCT = 30.0
 NO_FROTH_MARGIN_USAGE_PCT = 5.0
 
+# Dividend-context thresholds (Tool Review v2 #1/#3). Days are *calendar* days;
+# EX_IMMINENT_DAYS=14 ≈ 10 trading days — 台中銀 (ex 8/4, 11 cal days out on
+# 2026-07-24) must trip `ex_div_imminent`. `recently_ex` uses the review's 20d.
+EX_IMMINENT_DAYS = 14
+RECENTLY_EX_DAYS = 20
+# Revenue YoY above this is project-completion noise (營建/建設 lumpiness), not a
+# real inflection — it must not earn `rev_inflecting` (Tool Review v2 #7).
+REV_YOY_SANE_MAX = 200.0
+
 
 def clip(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
@@ -67,6 +77,34 @@ def _f(v: Any) -> Optional[float]:
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def _as_date(v: Any) -> Optional[date]:
+    """Coerce an ISO string or date to a date, or None. Used for the ex-dividend
+    day math, which must stay pure (no clock reads) so score_row is testable."""
+    if v is None:
+        return None
+    if isinstance(v, date):
+        return v
+    try:
+        return date.fromisoformat(str(v)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def cash_yield_fwd(row: dict) -> Optional[float]:
+    """Forward *cash* yield = next scheduled cash dividend / latest close, in %.
+
+    Keys off the TWT48U forecast's cash-only figure (``upcoming_cash_value``),
+    never the blended TWSE 殖利率, which sums cash + stock-implied value and so
+    overstates the income thesis (Tool Review v2 #1 — 台中銀 read 5.18 blended vs
+    ~1.9 real cash). None when there is no upcoming ex record or no price.
+    """
+    cash = _f(row.get("upcoming_cash_value"))
+    close = _f(row.get("close_today"))
+    if cash is not None and close:
+        return cash / close * 100.0
+    return None
 
 
 def price_move_pct(row: dict) -> Optional[float]:
@@ -109,6 +147,7 @@ def score_row(
     max_pe: float = 20.0,
     max_foreign_held: float = 25.0,
     min_buy_day_ratio: float = 0.65,
+    as_of: Optional[str] = None,
 ) -> dict:
     """Score one aggregated ticker row and attach the derived signature.
 
@@ -136,6 +175,16 @@ def score_row(
     move = price_move_pct(row)
     rng = price_range_pct(row)
     usage = margin_usage_pct(row)
+    cash_fwd = cash_yield_fwd(row)
+
+    # Ex-dividend proximity (Tool Review v2 #3). Calendar-day deltas vs the scan's
+    # as-of; a buyer near an ex-date takes the price drop soon (imminent) or a
+    # recent ex-drop may be masquerading as price weakness (recently_ex).
+    asof_d = _as_date(as_of)
+    up_ex = _as_date(row.get("upcoming_ex_date"))
+    rec_ex = _as_date(row.get("recent_ex_date"))
+    days_to_ex = (up_ex - asof_d).days if (asof_d and up_ex) else None
+    days_since_ex = (asof_d - rec_ex).days if (asof_d and rec_ex) else None
 
     is_flat = move is not None and abs(move) <= max_price_move_pct
     accumulation_into_flat = bool(
@@ -202,14 +251,20 @@ def score_row(
         flags.append("flat")
     if pe is not None and 0 < pe < CHEAP_PE_MAX:
         flags.append("cheap")
-    if yld is not None and yld >= YIELD_MIN:
+    # Income thesis keys off *forward cash* yield, not the blended 殖利率 (#1).
+    if cash_fwd is not None and cash_fwd >= YIELD_MIN:
         flags.append("yield")
     if held is not None and held < UNDER_OWNED_PCT:
         flags.append("under_owned")
     if usage is not None and usage < NO_FROTH_MARGIN_USAGE_PCT:
         flags.append("no_froth")
-    if rev_yoy is not None and rev_yoy > 0:
+    # Suppress project-completion noise (營建/建設 lumpiness) from the flag (#7).
+    if rev_yoy is not None and 0 < rev_yoy < REV_YOY_SANE_MAX:
         flags.append("rev_inflecting")
+    if days_to_ex is not None and 0 < days_to_ex <= EX_IMMINENT_DAYS:
+        flags.append("ex_div_imminent")
+    if days_since_ex is not None and 0 <= days_since_ex <= RECENTLY_EX_DAYS:
+        flags.append("recently_ex")
 
     anti: list[str] = []
     if pe is None and valuation_known:
@@ -239,6 +294,9 @@ def score_row(
         "margin_pct_of_limit": round(usage, 2) if usage is not None else None,
         "is_flat": is_flat,
         "accumulation_into_flat": accumulation_into_flat,
+        "cash_yield_fwd": round(cash_fwd, 2) if cash_fwd is not None else None,
+        "days_to_ex": days_to_ex,
+        "days_since_ex": days_since_ex,
         "sleeper_score": sleeper_score,
         "sleeper_flags": flags,
         "triage": triage,

@@ -545,3 +545,18 @@ attributed_to: [antigravity-agent, niko]   belongs_to: [system-architecture, inf
 ## [2026-07-21] external | Repo moved back to personal — auto-deploy restored
 attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture, infrastructure-accounts]
 - Resolution to the Hobby/org-repo block: Niko transferred the GitHub repo from the `tecxmate` org back to his personal account. It is now **`nikolasdoan/alphatecx`** (private, personal). Reconnected the Vercel git integration (`vercel git connect` now succeeds — no 409) and **verified push-to-deploy end to end**: a commit touching `mcp_server/` triggered a production build that went Ready in ~34s. Local `origin` repointed to the new URL. Only commits touching the `mcp_server/` build root auto-deploy; docs/sql/src-only commits don't.
+
+## [2026-07-26] decision | Flow-leaders dividend enrichment — Tool Review v2 Phase 1 (TWSE-native)
+attributed_to: [niko]   belongs_to: [flow-leaders-scan]
+- Tool Review v2 flagged the `flow_leaders_scan` labelling layer (not the engine): #1 blended
+  殖利率 overstated income (台中銀 5.18 vs ~1.9 cash), #3 no ex-div proximity, #6 no stale guard,
+  #7 project-completion revenue noise. Review assumed FinMind was wired — it isn't.
+- [niko] chose "TWSE-native now, FinMind next". Shipped: forward-cash `yield` flag
+  (`cash_yield_fwd`), `ex_div_imminent`/`recently_ex` + `days_to/since_ex`, `stale_price_warning`,
+  `|yoy|>=200` rev-guard. `score_row` gains a pure `as_of`; +2 LATERAL joins on `raw_twse_dividend`.
+- Live-verified @2026-07-24: 2812 → cash_yield_fwd 1.91, no yield flag, ex_div_imminent; 2707 → no
+  yield flag; 2357 → recently_ex @7/10. Tests 15→24, suite 100 green.
+- Deferred (needs FinMind token): dividend_trap/填息 prob, governance news, adj-price flatness →
+  docs/wiki/topics/finmind-phase2-plan.md.
+- Pages: decisions/2026-07-26-flow-leaders-dividend-enrichment.md, topics/finmind-phase2-plan.md,
+  updated topics/flow-leaders-scan.md.

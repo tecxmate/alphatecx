@@ -334,7 +334,10 @@ def query_flow_leaders(
                h.foreign_held_pct, h.foreign_room_pct,
                m.margin_balance, m.margin_limit, m.short_balance,
                o.turnover_twd,
-               r.yoy_pct AS revenue_yoy_pct, r.mom_pct AS revenue_mom_pct
+               r.yoy_pct AS revenue_yoy_pct, r.mom_pct AS revenue_mom_pct,
+               du.ex_date AS upcoming_ex_date, du.cash_value AS upcoming_cash_value,
+               du.ex_type AS upcoming_ex_type,
+               dr.ex_date AS recent_ex_date, dr.ex_type AS recent_ex_type
         FROM px_stats ps
         JOIN dim_ticker dt USING (ticker_id)
         JOIN flow_stats fs USING (ticker_id)
@@ -359,6 +362,17 @@ def query_flow_leaders(
           SELECT yoy_pct, mom_pct FROM raw_monthly_revenue
           WHERE ticker_id = ps.ticker_id AND ym <= %(ym)s ORDER BY ym DESC LIMIT 1
         ) r ON true
+        -- Next scheduled ex-dividend (forecast or actual) — carries the cash-only
+        -- figure that gates the forward-yield flag + ex-div proximity (v2 #1/#3).
+        LEFT JOIN LATERAL (
+          SELECT ex_date, cash_value, ex_type FROM raw_twse_dividend
+          WHERE ticker_id = ps.ticker_id AND ex_date > %(d)s ORDER BY ex_date ASC LIMIT 1
+        ) du ON true
+        -- Most recent past ex (for recently_ex — a fresh ex-drop can look 'flat').
+        LEFT JOIN LATERAL (
+          SELECT ex_date, ex_type FROM raw_twse_dividend
+          WHERE ticker_id = ps.ticker_id AND ex_date <= %(d)s ORDER BY ex_date DESC LIMIT 1
+        ) dr ON true
         WHERE fs.flow_days >= 5 AND dt.market = ANY(%(markets)s)
     """
     params = {"d": as_of, "w": w, "ym": as_of[:7], "markets": mkts}
