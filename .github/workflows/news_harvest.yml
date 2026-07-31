@@ -41,7 +41,8 @@ on:
 
 env:
   # Append gssencmode=disable — GH runner libpq hangs on Kerberos GSS
-  # negotiation against Neon's pooler. Forces straight TLS.
+  # negotiation. NOTE the `&`: the DATABASE_URL secret must already carry a
+  # query string (it ends with ?sslmode=disable) or this lands in the db name.
   DATABASE_URL: ${{ secrets.DATABASE_URL }}&gssencmode=disable
   TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
   TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -60,21 +61,6 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-
-      - name: Pin Neon hostname to IPv4 in /etc/hosts
-        # GH runners advertise IPv6 but the path is dead. /etc/hosts
-        # entry forces getaddrinfo to return only the IPv4 address.
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          ENTRY=$(python <<'PY'
-          import os, socket, urllib.parse as u
-          host = u.urlparse(os.environ['DATABASE_URL']).hostname
-          ipv4 = sorted({sa[0] for fam,_,_,_,sa in socket.getaddrinfo(host, None) if fam == socket.AF_INET})[0]
-          print(f"{ipv4}  {host}")
-          PY
-          )
-          echo "$ENTRY" | sudo tee -a /etc/hosts
 
       - name: Install dependencies
         run: pip install -r requirements.txt

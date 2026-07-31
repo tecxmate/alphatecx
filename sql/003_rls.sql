@@ -19,8 +19,14 @@ BEGIN
 END
 $$;
 
--- Grant connect
-GRANT CONNECT ON DATABASE postgres TO mcp_viewer;
+-- Grant connect. The database name differs per host (neondb on Neon, zeabur on
+-- the self-hosted box) and GRANT takes no parameter, so resolve it at runtime.
+-- The hardcoded `postgres` that used to be here errored on every host we've run.
+DO $$
+BEGIN
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO mcp_viewer', current_database());
+END
+$$;
 GRANT USAGE ON SCHEMA public TO mcp_viewer;
 
 -- Read-only on materialized views (what Claude should query)

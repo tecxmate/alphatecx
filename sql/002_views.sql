@@ -137,8 +137,14 @@ WITH
   )
 SELECT
   f.ticker_id,
-  f.company_name,
-  f.market,
+  -- Name/market come from raw_twse_t86, which records whatever TWSE published on
+  -- that date, so an issuer rename inside the 20-day window yields two spellings
+  -- for one ticker. Grouping by them emits two rows and breaks the unique index
+  -- on ticker_id alone (009805 新光→台新, 2026-07-13). Take the latest spelling.
+  -- dim_ticker isn't the source because its LEFT JOIN would NULL out names for
+  -- tickers it doesn't classify.
+  (ARRAY_AGG(f.company_name ORDER BY f.date DESC))[1] AS company_name,
+  (ARRAY_AGG(f.market       ORDER BY f.date DESC))[1] AS market,
   f.ai_pillar,
   f.node,
   -- Latest day
@@ -161,7 +167,7 @@ SELECT
   now() AS refreshed_at
 FROM flows f
 LEFT JOIN streaks s ON s.ticker_id = f.ticker_id
-GROUP BY f.ticker_id, f.company_name, f.market, f.ai_pillar, f.node
+GROUP BY f.ticker_id, f.ai_pillar, f.node
 ORDER BY foreign_5d DESC;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vtm_ticker
