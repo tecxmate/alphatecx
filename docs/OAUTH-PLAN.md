@@ -1,6 +1,42 @@
 # OAuth for the MCP server — implementation plan
 
-**Status:** not started. Written 2026-07-31 so a fresh session can execute without re-deriving.
+**Status: SHIPPED 2026-07-31** — `23f1bc1` (implementation) + `af4c8c6` (the
+trailing-slash fix that actually made connectors work). Live on
+`https://alphatecx-mcp.zeabur.app`, confirmed working on mobile.
+
+**The build diverged from this plan in one important way, and the divergence is
+what unblocked it: it is stateless.** No `oauth_clients` / `oauth_tokens`
+tables, no `sql/019_oauth.sql`, no migration. Tokens are HMAC-signed and carry
+their own claims; `client_id` is derived from the registered redirect URIs. The
+only state is a process-local set of consumed authorization-code ids, because a
+signature cannot make a code single-use.
+
+That killed prerequisite 1 below — with nothing written to Postgres, it stops
+mattering which instance is authoritative. **Prerequisite 2 (rotate the exposed
+credentials) still stands and is unrelated to OAuth.** The `OAUTH_SIGNING_KEY`
+and `OAUTH_PASSWORD` are freshly generated and were never exposed.
+
+The storage section further down is kept for the record, struck through in
+spirit — **do not implement it.** Everything else (endpoint list, discovery
+documents, `redirect_uri` exact-match being the whole boundary, the
+regression guard) matched what shipped.
+
+Two things learned the hard way, not in the original plan:
+
+- **Deploy `mcp` from `cd mcp_server`, never the repo root.** Zeabur picks the
+  Dockerfile from the build context; a root-context deploy builds the
+  supercronic worker instead and the MCP service boots running cron. That
+  caused a ~10 minute outage.
+- **Bare `/mcp` must not 307.** Starlette's mount redirects `/mcp` → `/mcp/`,
+  and a connector that has just finished authorizing does not reliably re-issue
+  its POST against the redirect target. The symptom is "your account was
+  authorized, but the server returned an error when connecting" — the OAuth half
+  is fine and the handshake after it is what fails. Fixed by rewriting the
+  request scope path.
+
+---
+
+**Original plan follows, written before implementation.**
 
 **Why:** mobile and claude.ai-web can only reach the MCP server through a *cloud
 connector*, and Anthropic's connector flow now requires OAuth. Claude Code and
