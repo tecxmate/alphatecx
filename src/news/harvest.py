@@ -19,9 +19,8 @@ import hashlib
 import logging
 import re
 import time
-from datetime import datetime, timezone
-from typing import Optional
-from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
+from datetime import UTC, datetime
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import feedparser
 import requests
@@ -78,7 +77,7 @@ def _title_hash(title: str) -> str:
     return hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
 
 
-def _parse_published(entry) -> Optional[datetime]:
+def _parse_published(entry) -> datetime | None:
     """Extract a UTC-aware datetime from a feedparser entry. Returns None
     if the feed doesn't expose a parseable date.
 
@@ -89,7 +88,7 @@ def _parse_published(entry) -> Optional[datetime]:
     for attr in ("published_parsed", "updated_parsed", "created_parsed"):
         t = getattr(entry, attr, None)
         if t:
-            return datetime(*t[:6], tzinfo=timezone.utc)
+            return datetime(*t[:6], tzinfo=UTC)
     # Fallback: dc_date / dcterms_modified come through as strings.
     for attr in ("dc_date", "dcterms_modified", "date"):
         s = getattr(entry, attr, None)
@@ -99,13 +98,13 @@ def _parse_published(entry) -> Optional[datetime]:
                 # avoiding the dep — fromisoformat handles "2026-05-07T08:30:00+00:00".
                 s = s.replace("Z", "+00:00")
                 dt = datetime.fromisoformat(s)
-                return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+                return dt.astimezone(UTC) if dt.tzinfo else dt.replace(tzinfo=UTC)
             except ValueError:
                 continue
     return None
 
 
-def _summary(entry) -> Optional[str]:
+def _summary(entry) -> str | None:
     """Best-effort extraction of a description string. Strip HTML tags
     crudely — content sanitisation is downstream's job."""
     raw = getattr(entry, "summary", None) or getattr(entry, "description", None)
@@ -116,19 +115,46 @@ def _summary(entry) -> Optional[str]:
     return text[:2000] if text else None  # cap to avoid huge rows
 
 
-def _fetch_feed(source: dict) -> list[dict]:
+def _fetch_feed(source: dict, cache: dict | None = None) -> list[dict] | None:
     """Fetch a single source. Returns a list of (already-shaped) row dicts.
 
     Network errors are caught and logged — one bad source shouldn't stop
     the whole harvester. The empty list propagates and the source's
-    counter goes to zero, which downstream `n_*` tools will surface."""
+    counter goes to zero, which downstream `n_*` tools will surface.
+
+    Pass `cache` — a `{source_key: {"etag", "last_modified"}}` dict — to do a
+    conditional GET. Returns **None**, distinct from `[]`, when the server
+    answers 304: nothing changed, so there is nothing to upsert. That
+    distinction is what makes minute-scale polling viable; without it every
+    cycle re-upserts every unchanged row. `src.news.watch` owns such a cache.
+    `harvest()` passes none and behaves exactly as it always did.
+    """
     url = source["url"]
+    headers = {"User-Agent": UA}
+    validators = (cache or {}).get(source["key"], {})
+    if validators.get("etag"):
+        headers["If-None-Match"] = validators["etag"]
+    if validators.get("last_modified"):
+        headers["If-Modified-Since"] = validators["last_modified"]
+
     try:
-        r = requests.get(url, headers={"User-Agent": UA}, timeout=HTTP_TIMEOUT)
+        r = requests.get(url, headers=headers, timeout=HTTP_TIMEOUT)
+        # 304 must be checked before raise_for_status(), which does not raise
+        # on 3xx. The body is empty, so falling through would hand b"" to
+        # feedparser and log the healthy path as an unparseable feed.
+        if r.status_code == 304:
+            return None
         r.raise_for_status()
     except Exception as e:
         log.error("  %s: HTTP failure — %s", source["key"], e)
         return []
+
+    if cache is not None:
+        resp_headers = r.headers or {}
+        etag = resp_headers.get("ETag")
+        last_modified = resp_headers.get("Last-Modified")
+        if etag or last_modified:
+            cache[source["key"]] = {"etag": etag, "last_modified": last_modified}
 
     feed = feedparser.parse(r.content)
     if feed.bozo and not feed.entries:
@@ -154,8 +180,12 @@ def _fetch_feed(source: dict) -> list[dict]:
     return rows
 
 
-def _upsert(c, rows: list[dict]) -> tuple[int, int]:
-    """Insert new rows; return (n_inserted, n_skipped_duplicates).
+def _upsert(c, rows: list[dict]) -> tuple[list[dict], int]:
+    """Insert new rows; return (inserted_rows, n_skipped_duplicates).
+
+    The inserted rows come back rather than just a count because
+    `src.news.watch` alerts on them — a fresh insert is the only reliable
+    "we have never seen this article" signal available.
 
     Two-stage dedup:
     1. Canonical URL is the PK — same URL across runs collapses.
@@ -168,9 +198,10 @@ def _upsert(c, rows: list[dict]) -> tuple[int, int]:
     the case where two feeds in this batch surface the same headline.
     """
     if not rows:
-        return 0, 0
+        return [], 0
     seen_titles: set[str] = set()
-    inserted = skipped = 0
+    inserted: list[dict] = []
+    skipped = 0
 
     # ON CONFLICT: don't overwrite content (title, summary) — first
     # ingestion wins. But DO fill in published_at if it was null and we
@@ -195,13 +226,13 @@ def _upsert(c, rows: list[dict]) -> tuple[int, int]:
         c.execute(sql, row)
         result = c.fetchone()
         if result and result[0]:
-            inserted += 1
+            inserted.append(row)
         else:
             skipped += 1
     return inserted, skipped
 
 
-def harvest(only: Optional[str] = None) -> dict:
+def harvest(only: str | None = None) -> dict:
     sources = [s for s in all_sources() if only is None or s["key"] == only]
     if not sources:
         raise ValueError(f"No source matches key '{only}'")
@@ -213,19 +244,21 @@ def harvest(only: Optional[str] = None) -> dict:
         c.execute("SET search_path TO public, neon_auth")
         for src in sources:
             t0 = time.time()
-            rows = _fetch_feed(src)
-            n_in, n_skip = _upsert(c, rows)
+            # No cache is passed, so this never returns None (304 only happens
+            # on a conditional request).
+            rows = _fetch_feed(src) or []
+            new_rows, n_skip = _upsert(c, rows)
             dur = time.time() - t0
             log.info("  %s: %d items, %d new, %d dup, %.1fs",
-                     src["key"], len(rows), n_in, n_skip, dur)
-            total_in += n_in
+                     src["key"], len(rows), len(new_rows), n_skip, dur)
+            total_in += len(new_rows)
             total_skip += n_skip
             if not rows:
                 total_err += 1
 
         log_ingestion(
             "news_harvest",
-            datetime.now(timezone.utc).date().isoformat(),
+            datetime.now(UTC).date().isoformat(),
             total_in,
             "ok" if total_err == 0 else "partial",
             f"sources={len(sources)} new={total_in} dup={total_skip} errors={total_err}",

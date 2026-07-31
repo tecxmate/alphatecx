@@ -24,7 +24,13 @@ repos:
     hooks:
       - id: pytest
         name: pytest -q
-        entry: python3 -m pytest -q
+        # Prefer the project venv. `tests/test_news_watch.py` imports
+        # src/news/harvest.py, which needs feedparser and — via
+        # harvester/loader — polars. Neither is installable into a Homebrew
+        # python, which is PEP-668 externally-managed. Bare `python3` only ever
+        # worked because nothing under src/ had tests. Falls back to python3 so
+        # a clone without .venv still runs whatever it can.
+        entry: sh -c 'exec "$(test -x .venv/bin/python && echo .venv/bin/python || echo python3)" -m pytest -q'
         language: system
         # The suite needs no network and no DB, and runs in well under a second,
         # so gating every commit on all of it is cheap. pass_filenames is off
