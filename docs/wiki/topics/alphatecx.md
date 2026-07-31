@@ -3,12 +3,12 @@ title: alphatecx
 type: topic
 slug: alphatecx
 date: 2026-05-07
-updated: 2026-05-07
+updated: 2026-07-31
 belongs_to: [niko]
 source: synthesis
 status: active
 tags: [product, trading, taiwan, ai]
-related: [taiwan-ai-supply-chain, system-architecture, alphatecx-v1]
+related: [taiwan-ai-supply-chain, system-architecture, alphatecx-v1, risk-guard, web-frontend]
 ---
 
 ## Summary
@@ -23,17 +23,23 @@ alphatecx is a Taiwan stock market analysis and trading support system focused o
 
 ## Current State
 
-Two workspaces exist:
-- `/Users/niko/antigravity/alphatecx` — v1 (running): hourly screening via APScheduler, yfinance + TWSE data, Telegram notifications, MCP server deployed on Vercel
-- `/Users/niko/antigravity/alphatecx-2` — v2 (this repo, planning): wiki-first project template, architecture being defined
+v2 is live and running daily. This repo is the v2 system, not a plan for one.
+
+- **Ingest** — `.github/workflows/daily_harvest.yml` at 16:30 Taipei, weekdays: T86 flow, foreign holdings, margin, monthly revenue, OHLCV, news, FinMind enrichment → Neon, then matview refresh + quant signal compute.
+- **Serve** — FastMCP on Vercel, 44 tools, mounted at `/mcp/<token>`. `sc_capabilities` is the live catalog.
+- **Surfaces** — Telegram alerts; static dashboards at `/d/<token>/`; correlation graph at `/g/<token>/`; [web-frontend](web-frontend.md) Next.js chat client; `skills/` for agent-driven research.
+- **Risk** — [risk-guard](risk-guard.md) Phase 1 (market light, stop alerts, settlement check) is built; later phases pending.
+- **In flight** — Postgres migrating Neon → self-hosted Zeabur, cutover not yet done.
+
+v1 (the separate `alphatecx` workspace) remains its own system; v2 did not fold it in.
 
 ## Open Questions
 
-- Will v2 replace v1 entirely, or run alongside it?
-- Polars extraction logic and SQL schema refinement
-- Handover timeline to tech team?
-- Exact TWSE endpoints to ingest beyond T86 (MI_QFIIS, BFI82U, margin data)?
+The 2026-05-07 open questions are resolved: v2 runs alongside v1 rather than replacing it; the Polars/SQL layer shipped (`sql/001`–`018`, `src/harvester/`); ingest extends well past T86 to holdings, margin, revenue, OHLCV, news, and FinMind. The "handover to tech team" question was answered by the working model itself — LLM agents are the tech team, with [niko](../stakeholders/niko.md) directing.
+
+Current open threads live on their own pages: true 5y 填息 and dividend-adjusted flatness remain blocked behind FinMind's paid tier ([finmind-phase2-plan](finmind-phase2-plan.md)).
 
 ## History
 
 - 2026-05-07: Wiki bootstrapped from Gemini chat transcript. See [2026-05-07-stateful-upgrade](../decisions/2026-05-07-stateful-upgrade.md).
+- 2026-07-31: Refreshed after 12 weeks of drift — page still described v2 as "planning" and cited workspace paths that no longer apply. Replaced Current State with the live system, closed out the answered Open Questions, linked risk-guard and web-frontend. [niko, antigravity-agent]

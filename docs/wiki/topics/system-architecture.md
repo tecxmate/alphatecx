@@ -3,7 +3,7 @@ title: System Architecture (v2 Stateful Upgrade)
 type: topic
 slug: system-architecture
 date: 2026-05-07
-updated: 2026-07-05
+updated: 2026-07-31
 belongs_to: [niko]
 source: chat
 status: active
@@ -18,24 +18,36 @@ The v2 architecture upgrades alphatecx from stateless per-query TWSE API calls t
 ## Architecture Overview
 
 ```
-TWSE/TPEX APIs ──→ GitHub Actions (Python + Polars) ──→ Neon (PostgreSQL)
-                         (daily @ 16:30 CST)                    │
-                                                                 ├─ dim_supply_chain (static)
-                                                                 ├─ raw_twse_t86, holdings, margin, revenue, ohlcv
-                                                                 └─ view_sector_momentum / view_ticker_momentum
-                                                                          │
-                                              Telegram Alert ─────────────┤
-                                              (daily summary)             │
-                                                                          │
-                                              Claude ←── FastMCP (v2) ────┘
+TWSE/TPEX/MOPS/FinMind ──→ GitHub Actions (Python + Polars) ──→ Neon (PostgreSQL)
+                                (daily @ 16:30 CST)                   │
+                                        │                             ├─ dim_supply_chain (static)
+                                        │                             ├─ raw_twse_t86, holdings, margin,
+                                        │                             │  revenue, ohlcv, news, finmind_*
+                                        │                             ├─ rg_* (Risk Guard)
+                                        │                             └─ view_sector_momentum /
+                                        │                                view_ticker_momentum /
+                                        │                                view_latest_signals
+                                        │                                       │
+                            Telegram ←──┤ (briefs, risk alerts)                  │
+                            static/  ←──┘ (dashboard, graph, ticker pages,       │
+                              │            committed back to main)               │
+                              │                                                  │
+                              └──→ Vercel (Root Directory = mcp_server/) ←────────┘
+                                          │
+                          ┌───────────────┼────────────────┐
+                    FastMCP /mcp/<token>  │          /d/ /g/ /h/ /t/
+                          │               │           (token-gated HTML)
+                    Claude Desktop    web/ (Next.js chat)
 ```
+
+**Deployment split.** Vercel's Root Directory is `mcp_server/`, so nothing at the repo root is in the deployed bundle. Code is therefore placed by *reachability*, not by taste: `src/` and `riskguard/` run on GitHub Actions (network + DB writes); `mcp_server/api/` runs on Vercel and in tests (DB reads + pure logic). `src/quant/` is mirrored into `mcp_server/api/quant/` for the same reason. See [risk-guard](risk-guard.md) for the case that forced this to be written down.
 
 ## Tech Stack
 
 | Layer | Tool | Rationale |
 |-------|------|-----------|
 | Data Ingestion | GitHub Actions + Python (Polars) | Scheduled via `daily_harvest.yml`, idempotent upserts |
-| Storage | Neon (PostgreSQL) | Chosen over Supabase to reuse v1 pooler string and reduce friction |
+| Storage | Neon (PostgreSQL) — **migrating to self-hosted Zeabur** | Chosen over Supabase to reuse v1 pooler string and reduce friction. Data is restored and verified on Zeabur; cutover is pending, Neon remains the live store and the rollback. See [2026-07-31-migrate-neon-to-zeabur](../decisions/2026-07-31-migrate-neon-to-zeabur.md) |
 | AI Bridge | Custom FastMCP Server (Python) | 7 specialized tools mounted at `/mcp/<secret>` endpoint |
 | Alerting | Python `src/alerts/telegram.py` | Daily sector momentum summaries |
 
@@ -54,16 +66,20 @@ Absolute volume (e.g., FINI buying 210M shares of Foxconn) shows where the weigh
 
 ## MCP Tools (v2)
 
-The `alphatecx-v2` server exposes MCP tools across supply-chain flow, broad-market flow, quant indicators, news, digests, watchlists, and status:
-1. `sc_capabilities`: System metadata and AI pillar/node definitions.
-2. `sc_sector_momentum`: Sector-level capital flows across pillars.
-3. `sc_ticker_momentum`: Per-ticker flow with consecutive buy streak tracking.
-4. `sc_compare_nodes`: Side-by-side node flow comparison (detects "trickle-down").
-5. `sc_accumulation_screen`: Finds tickers with sustained FINI buying (e.g., min streak).
-6. `sc_supply_chain_map`: Look up ticker → pillar/node/US partner.
-7. `raw_flow_history`: Daily flow time series for any ticker.
-8. `market_flow_screener`: Full TWSE/TPEX flow screen across classified and unclassified tickers.
-9. `q_screener`: Technical/flow signal screen over signal-covered tickers; defaults to classified names, with `all_with_signals` for broader signal rows when available.
+The `alphatecx-v2` server exposes **44 tools** (as of 2026-07-31), organised by prefix:
+
+| Prefix | Domain |
+|---|---|
+| `sc_` | Supply chain — sector/ticker momentum, node comparison, accumulation screen, the pillar map, capabilities, data status |
+| `raw_` | Raw drill-down into historical flow/holdings |
+| `q_` | Quant — screener, indicators, valuation, backtest, regime, quality, cointegration, PCA, factor alpha, lead-lag |
+| `n_` | News — recent, per-ticker, source status |
+| `d_` | Daily digests |
+| `w_` / `u_` | Watchlist and universe |
+| `rg_` | Risk Guard — status, positions, alerts, checklist, journal |
+| *(unprefixed)* | `quote`, `ticker_lookup`, `price_history`, `session_state`, `scan_limit_board`, `flow_leaders_scan`, `dividend_calendar`, `market_flow_screener`, `beginner_stock_card` |
+
+**Do not maintain a tool-by-tool list here** — it goes stale within weeks. `sc_capabilities` returns the live catalog and is the source of truth. Every tool response is wrapped by `_stamp()` with `_source` / `_as_of` / `_freshness`.
 
 ## Daily Systematic Workflow
 
@@ -88,3 +104,4 @@ The `alphatecx-v2` server exposes MCP tools across supply-chain flow, broad-mark
 - 2026-05-11: Ticker management moved from the graph viewer to a dedicated Home-linked `/t/{token}/` directory. The page renders 20 rows by default, supports search/paging, keeps inline pillar/node edits, and stores user folders/lists in `dim_ticker.tags`. [niko, antigravity-agent]
 - 2026-05-13: Go-to-market note: Claude Desktop/iOS remains the simplest MCP customer install path, while ChatGPT distribution should be planned as a remote MCP/app integration with workspace/admin/developer-mode requirements or via a custom OpenAI API chat product. [niko, antigravity-agent]
 - 2026-07-05: Added `market_flow_screener` for all-market TWSE/TPEX institutional-flow discovery outside the AI classification, and expanded `q_screener` with below-threshold filters plus an `all_with_signals` mode. Full-market technical screening remains bounded by which tickers have OHLCV-derived signal rows. [niko, codex-agent]
+- 2026-07-31: Doc sweep. The MCP tool section still listed 9 tools against a live surface of 44 — replaced with the prefix taxonomy and a standing instruction to treat `sc_capabilities` as the catalog rather than re-enumerating here. Diagram extended with the Vercel/dashboard/web-frontend and Risk Guard branches, and the deployment-split rule (Vercel Root Directory = `mcp_server/`) written down explicitly for the first time. Storage row flagged for the in-progress Neon → Zeabur migration. [niko, antigravity-agent]

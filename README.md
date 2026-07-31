@@ -1,56 +1,56 @@
-# tecxproj — project template
+# alphatecx v2
 
-A starter template for any new project that should ship with a persistent, LLM-curated wiki from day one. Copy this folder, rename, point your agent at it, and start working — the structure for capturing decisions, stakeholders, and topics is already in place.
+Taiwan equity (TWSE/TPEX) supply-chain and institutional-flow intelligence.
 
-Born from the [tecxwork](../tecxwork) project, where the wiki was retrofitted in mid-stride. The lesson: doing this on day one costs a few minutes and pays back every session afterwards.
+A scheduled Python harvester pulls TWSE, MOPS, and FinMind data into Neon Postgres. A FastMCP server on Vercel exposes 44 read-only MCP tools over pre-computed materialized views, so a Claude agent queries a warm database instead of rate-limited exchange APIs. Telegram carries alerts; static dashboards and a Next.js chat app are the human surfaces.
 
----
-
-## What's inside
-
-- **`AGENTS.md`** — the rules every Claude Code / Codex / OpenCode agent reads at session start. Tells them they own the wiki and must maintain it on every meaningful turn.
-- **`CLAUDE.md`** — symlinks/aliases `AGENTS.md` so Anthropic's tooling picks it up too.
-- **`docs/wiki/`** — the wiki itself.
-  - `llm-wiki-guide.md` — the schema and the portable pattern. The agent reads this before writing any wiki page.
-  - `index.md` — flat catalog of every page. Updated on every create/rename.
-  - `log.md` — append-only chronological log of every meaningful turn.
-  - `stakeholders/` — things that can make decisions (people, teams, orgs, regulators, LLM agents, automations).
-  - `decisions/` — decision records, one per decision, dated.
-  - `topics/` — areas, products, events, syntheses, concepts. Topics don't decide; stakeholders do.
-  - `templates/` — fill-in-the-blank starters for new pages.
-- **`BOOTSTRAP.md`** — the **first-run checklist** for the next agent. Hand them this and step away.
+The investment frame is a 4-pillar Taiwan AI supply chain map (semiconductor, equipment, infrastructure, energy) — see [`docs/wiki/topics/taiwan-ai-supply-chain.md`](docs/wiki/topics/taiwan-ai-supply-chain.md).
 
 ---
 
-## How to use this template
+## Layout
 
-1. **Copy the folder.** `cp -r tecxproj <new-project-name>`. Or `git init` inside a fresh copy if you want a clean history.
-2. **Rename references.** Inside `docs/wiki/llm-wiki-guide.md` and `AGENTS.md`, the language is generic; you usually don't need to edit. Edit `README.md` to describe your project.
-3. **Hand it to the agent.** Open the project in Claude Code (or your tool of choice) and say:
+| Path | What runs there |
+|---|---|
+| `src/` | Harvesters, quant compute, cron briefs, dashboard builders — GitHub Actions |
+| `mcp_server/api/` | FastMCP tools + FastAPI routes — Vercel (Root Directory is `mcp_server/`) |
+| `riskguard/` | Risk Guard fetch/write/cron half — GitHub Actions |
+| `sql/` | Numbered migrations, applied by `apply_schema.py` |
+| `web/` | Next.js 16 + assistant-ui chat client (separate app, pnpm + biome) |
+| `skills/` | Claude Skills for ticker research and entry timing |
+| `docs/wiki/` | Project memory — decisions, stakeholders, topics. See `AGENTS.md` |
+| `docs/theses/`, `docs/journals/`, `docs/digests/` | Agent-written analysis output |
 
-   > Read `BOOTSTRAP.md` and follow it.
+`CLAUDE.md` is the working guide for agents: commands, architecture, and the non-obvious constraints (deployment split, import paths, Neon/CI quirks).
 
-   The agent will: read the guide, seed the owner stakeholder (you), seed itself as the agent stakeholder, ask 4–6 framing questions, and start filing decisions / topics from your conversation.
-4. **Work normally.** Every meaningful turn — decision, stakeholder input, scope change, bug rationale — the agent will file it without being asked. If you ever want it to skip the wiki for a turn, say so.
+## Quick start
 
----
+```bash
+pip install -r requirements.txt        # harvester deps
+pytest -q                              # 191 tests, no network or DB needed
 
-## What makes this different from a generic README + `docs/`
+# local MCP server (needs mcp_server/requirements.txt + uvicorn; pin mcp<2)
+cd mcp_server && MCP_BEARER_TOKEN=devtoken uvicorn api.index:app --port 8787
+```
 
-- **Stakeholder tagging.** Every claim is tagged with `attributed_to` (who said it) and `belongs_to` (whose domain it is). You can answer "who decided X?" and "what has the client asked for so far?" without re-reading chats.
-- **Decisions as a first-class object.** A `decisions/` folder with dated records is the antidote to "we discussed this six weeks ago, what did we land on?". Decisions get superseded, not deleted.
-- **Stakeholder vs topic.** Crisp distinction: stakeholders decide; topics are decided about. This separation prevents the wiki from collapsing into a single bucket of "things".
-- **Agent owns the bookkeeping.** The wiki is a compounding artifact maintained by LLMs. Humans curate sources, ask questions, and direct the analysis.
+Copy `.env.example` to `.env` and fill in `DATABASE_URL` at minimum. `TELEGRAM_*` enables alerts; `FUGLE_API_KEY` and `FINMIND_TOKEN` are optional — the code self-skips when they're absent.
 
----
+## How data gets in
 
-## Recommended companions
+`.github/workflows/daily_harvest.yml` runs at 16:30 Taipei on weekdays: TWSE institutional flow (T86), foreign holdings, margin balance, monthly revenue, OHLCV, news, FinMind enrichment, then matview refresh and quant signal compute. Downstream steps (briefs, dashboards, correlation snapshot) are `continue-on-error` — the data is already committed, the rest is presentation.
 
-- **Obsidian** opened on `docs/wiki/` is a fantastic IDE for browsing the wiki the agent writes. Graph view shows orphans and hubs.
-- **`grep "^## \[" docs/wiki/log.md | tail -10`** gives you the last ten turns at a glance.
+`news_harvest.yml` runs the news feeds on a separate, more frequent cadence.
 
----
+## MCP surface
 
-## Origin
+Tools are prefixed by domain: `sc_` supply chain, `raw_` raw drill-down, `q_` quant, `n_` news, `d_` digests, `w_` watchlist, `u_` universe, `rg_` risk guard. Call `sc_capabilities` for the live catalog — it is the source of truth, not this file.
 
-The pattern is adapted from the public LLM-wiki idea (RAG → persistent compounding wiki). The concrete schema, stakeholder taxonomy, and agent workflow were instantiated for tecxwork in 2026-05 and generalized into this template.
+Auth is URL-as-secret: the server mounts at `/mcp/<MCP_BEARER_TOKEN>`, and the same token gates the graph (`/g/`), dashboard (`/d/`), hub (`/h/`), and ticker (`/t/`) routes. Only `/` and `/health` are public.
+
+## Status
+
+Live and running daily.
+
+**Risk Guard Phase 1** is built — a post-close risk system (market risk light, stop-loss alerts, T+2 settlement check) whose enforced non-goal is that it never emits a buy signal. See [`docs/wiki/topics/risk-guard.md`](docs/wiki/topics/risk-guard.md).
+
+**Postgres is migrating** from Neon to a self-hosted Zeabur instance. Data is restored and verified; cutover is not complete, so `.env`, CI secrets, and the deployment still point at Neon. See [`docs/wiki/decisions/2026-07-31-migrate-neon-to-zeabur.md`](docs/wiki/decisions/2026-07-31-migrate-neon-to-zeabur.md) — it also records the open TLS exposure on the Zeabur endpoint.

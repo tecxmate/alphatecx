@@ -1,20 +1,27 @@
-This is the [assistant-ui](https://github.com/assistant-ui/assistant-ui) MCP starter project. It connects the chat to a Model Context Protocol server for tools and renders [MCP Apps](https://apps.extensions.modelcontextprotocol.io/) (sandboxed UI widgets attached to tool calls) inline.
+Chat client for the alphatecx v2 MCP server, built on the [assistant-ui](https://github.com/assistant-ui/assistant-ui) MCP starter. It connects to the Python FastMCP server in `../mcp_server/api/index.py` for tools and renders [MCP Apps](https://apps.extensions.modelcontextprotocol.io/) (sandboxed UI widgets attached to tool calls) inline.
+
+Separate app from the Python project: pnpm, and **biome** for lint/format (`pnpm lint` → `biome check .`), not eslint. It is not covered by the repo's `pytest` suite.
 
 ## Getting Started
 
-Add your OpenAI API key to `.env.local`:
+Create `.env.local`:
 
 ```
-OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# Full MCP URL including the URL-as-secret token. Required — the client
+# throws at startup if unset. Local: http://localhost:8787/mcp/<TOKEN>/mcp
+MCP_SERVER_URL=https://<host>/mcp/<MCP_BEARER_TOKEN>/mcp
+
+# Provider defaults to anthropic. Set the key for whichever you use.
+ANTHROPIC_API_KEY=...
+# LLM_PROVIDER=anthropic | openai | google | deepseek | moonshot | nvidia
+# LLM_MODEL=<model-id>
 ```
 
-Point the MCP client at your server in `app/api/mcp-client.ts` (default: `http://localhost:8000/mcp`).
+Other providers read `OPENAI_API_KEY`, `GOOGLE_*`, `DEEPSEEK_API_KEY`, `KIMI_API_KEY` (or `MOONSHOT_API_KEY`), and `NVIDIA_API_KEY`. Note `deepseek-reasoner` does not support tool calling and is served without tools.
 
 Run the dev server:
 
 ```bash
-npm run dev
-# or
 pnpm dev
 ```
 
