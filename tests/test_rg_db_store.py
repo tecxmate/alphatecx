@@ -292,9 +292,28 @@ class RgDbTests(unittest.TestCase):
         self.fetch.assert_not_called()
 
     def test_latest_closes_skips_null_prices(self):
-        self.fetch.return_value = [{"ticker_id": "2344", "close": 51.5},
-                                   {"ticker_id": "8299", "close": None}]
+        import datetime as _dt
+        day = _dt.date(2026, 7, 31)
+        self.fetch.side_effect = [
+            [{"ticker_id": "2344", "close": 51.5, "date": day},
+             {"ticker_id": "8299", "close": None, "date": day}],
+            [{"d": day}],
+        ]
         self.assertEqual(rg_db.latest_closes(["2344", "8299"]), {"2344": 51.5})
+
+    def test_latest_closes_suppresses_a_stale_session(self):
+        # raw_twse_ohlcv covers a fraction of the market, so a ticker's newest
+        # row can be months old. 2324 showed a 2026-05-08 close of 29.65 against
+        # a real 36.0 — and the stop engine judges lines against this number.
+        # Absent beats wrong: rg_stops.distances degrades to "no quote".
+        import datetime as _dt
+        latest, stale = _dt.date(2026, 7, 31), _dt.date(2026, 5, 8)
+        self.fetch.side_effect = [
+            [{"ticker_id": "2344", "close": 130.0, "date": latest},
+             {"ticker_id": "2324", "close": 29.65, "date": stale}],
+            [{"d": latest}],
+        ]
+        self.assertEqual(rg_db.latest_closes(["2344", "2324"]), {"2344": 130.0})
 
     def test_gain_5d_needs_six_closes(self):
         self.fetch.return_value = [{"close": 100.0}] * 5

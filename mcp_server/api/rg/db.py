@@ -9,6 +9,10 @@ function is a single process and Neon's pooler charges for every connection.
 """
 from __future__ import annotations
 
+import logging
+
+log = logging.getLogger("rg.db")
+
 try:
     import db_v2
 except ModuleNotFoundError:  # package import path used by local tests
@@ -52,16 +56,44 @@ def latest_closes(ticker_ids: list[str]) -> dict[str, float]:
 
     DISTINCT ON is the cheap way to get "latest row per ticker" on Postgres and
     keeps this a single round trip regardless of list length.
+
+    Only the market's most recent session is returned. `raw_twse_ohlcv` covers a
+    fraction of the market — 51 tickers had a 2026-07-31 row against 1,334 that
+    traded — so "latest row per ticker" silently served prices months out of
+    date. 2324's newest row was 2026-05-08 at 29.65, and that is exactly what
+    the stop view showed against a real close of 36.0, 84 sessions later, with
+    nothing marking it. Stop lines are judged against this number.
+
+    Suppressing beats reporting: `rg_stops.distances` already degrades to "no
+    quote" when a close is absent, so a stale price cannot reach a stop decision
+    at all. Freshness is measured against the table's own max date, so weekends
+    and holidays need no special case.
+
+    Mirrors `bot._rg_closes` — the Telegram and MCP surfaces read prices through
+    separate paths, and fixing only one leaves the other lying.
     """
     if not ticker_ids:
         return {}
     rows = _fetch(
-        "SELECT DISTINCT ON (ticker_id) ticker_id, close "
+        "SELECT DISTINCT ON (ticker_id) ticker_id, close, date "
         "  FROM raw_twse_ohlcv WHERE ticker_id = ANY(%s) "
         " ORDER BY ticker_id, date DESC",
         (list(ticker_ids),),
     )
-    return {r["ticker_id"]: float(r["close"]) for r in rows if r["close"] is not None}
+    if not rows:
+        return {}
+    latest_rows = _fetch("SELECT max(date) AS d FROM raw_twse_ohlcv", ())
+    latest = latest_rows[0].get("d") if latest_rows else None
+    out: dict[str, float] = {}
+    for r in rows:
+        if r["close"] is None:
+            continue
+        if latest is not None and r.get("date") != latest:
+            log.warning("stale close suppressed: %s @ %s (market latest %s)",
+                        r["ticker_id"], r["date"], latest)
+            continue
+        out[r["ticker_id"]] = float(r["close"])
+    return out
 
 
 def gain_5d_pct(ticker_id: str) -> float | None:
