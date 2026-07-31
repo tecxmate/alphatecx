@@ -2123,6 +2123,16 @@ async def auth_gate(request: Request, call_next):
     # 404-ing, so /g, /d, /h, /t and /mcp/<token> stay hidden.
     if path == "/mcp" or path.startswith("/mcp/"):
         if bearer_token_valid(request.headers.get("authorization", "")):
+            # Serve /mcp as if it were /mcp/ rather than letting Starlette's
+            # mount emit a 307. Connectors that have just completed the OAuth
+            # dance do not reliably re-issue a POST (with body and
+            # Authorization) against the redirect target, so the handshake
+            # fails right after a successful authorization — which is exactly
+            # what "your account was authorized, but the server returned an
+            # error" looks like from the client side.
+            if path == "/mcp":
+                request.scope["path"] = "/mcp/"
+                request.scope["raw_path"] = b"/mcp/"
             return await call_next(request)
         return JSONResponse(
             status_code=401,
