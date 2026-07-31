@@ -17,12 +17,13 @@ The wiki under `docs/wiki/` is the project's memory (decisions, stakeholders, to
 ## Commands
 
 ```bash
-pytest -q                                   # full suite (211 tests, no network/DB needed)
+.venv/bin/python -m pytest -q               # full suite (326 tests, no network/DB needed)
 pytest tests/test_flow_leaders.py::test_x   # single test
 ruff check <changed files>                  # see lint convention below
 
 python -m src.harvester.daily               # nightly pipeline (what CI runs)
-python -m src.news.harvest                  # news feeds only
+python -m src.news.harvest                  # news feeds only, one batch
+python -m src.news.watch --once             # news poller, one cycle (loops without --once)
 python -m src.cron.brief --mode post_close  # pre_market | intraday | post_close
 python -m src.backfill.run --days 90 --only t86
 python -m src.dashboard.build               # regenerates static/ dashboard
@@ -33,8 +34,13 @@ python apply_schema.py [--rls]              # apply sql/ to whatever DATABASE_UR
 # api.app = MCP + Telegram bot composed (what Zeabur runs); api.index = MCP only
 cd mcp_server && MCP_BEARER_TOKEN=devtoken uvicorn api.app:app --port 8787
 docker build -t alphatecx-mcp . && docker run -p 8080:8080 -e MCP_BEARER_TOKEN=devtoken alphatecx-mcp
+
+# news poller image — build context is the REPO ROOT, not mcp_server/
+docker build -f Dockerfile.newswatch -t alphatecx-news-watch . && docker run --env-file .env alphatecx-news-watch
 cd web && pnpm dev                          # Next.js chat (pnpm lint = biome)
 ```
+
+**`pytest` needs the venv.** `tests/test_news_watch.py` imports `src/news/harvest.py`, which pulls in feedparser and — via `harvester/loader` — polars. A Homebrew `python3` is PEP-668 externally-managed, so neither installs there and bare `pytest -q` fails at collection. Bare `python3` only ever worked because nothing under `src/` had tests. `.pre-commit-config.yaml` prefers `.venv/bin/python` and falls back to `python3`.
 
 Local-server gotchas, all verified by hitting `/health`:
 - `uvicorn` and the `mcp<2` ceiling are now both in `mcp_server/requirements.txt` — the Zeabur image builds from that file, so it had to stop depending on what happened to be installed. Root `requirements.txt` still has neither.
@@ -88,6 +94,20 @@ Dates are `Asia/Taipei`, not UTC. TWSE publishes on Taipei wall-clock; UTC misla
 - `sql/NNN_*.sql` migrations applied by `apply_schema.py`, which has a **hardcoded file list**. A new `sql/` file does nothing until you add it there. `003` and `014` sit in the `--rls` branch, not the default list, because they GRANT to `mcp_viewer` and fail where that role doesn't exist.
 - `db_v2.py` uses a psycopg3 `ConnectionPool` with a per-connection `SET search_path`. The rationale was Neon's pooler (it clears session settings on reset and rejects `options=-csearch_path` at startup); harmless against Zeabur, left in place.
 - Reads target materialized views (`view_sector_momentum`, `view_ticker_momentum`, `view_latest_signals`). New MCP-read tables need a `mcp_viewer` GRANT + RLS policy (see `sql/003_rls.sql`).
+
+### News ingestion runs on two cadences
+
+`news_harvest.yml` (6 slots/day) is the backstop. `src/news/watch.py` is a long-running poller — its own Zeabur service, built from `Dockerfile.newswatch`, polling every feed on `NEWS_POLL_SECONDS` (default 180) and pushing watchlist matches to Telegram. GitHub Actions cannot do this job: scheduled workflows floor at 5 minutes and are routinely queue-delayed past it. Both paths share `harvest._fetch_feed` / `_upsert` and are idempotent on the canonical-URL PK, so the overlap is free.
+
+Things that look like details but are load-bearing — see [`docs/wiki/decisions/2026-07-31-near-realtime-news-poller.md`](docs/wiki/decisions/2026-07-31-near-realtime-news-poller.md):
+- **Conditional GET is not politeness.** Without a 304 the poller re-upserts every unchanged row 480×/day, and `ON CONFLICT DO UPDATE` writes a new row version even when the value is identical. The ETag cache is in-memory on purpose; a restart costs one full fetch.
+- `_fetch_feed` returns `None` for 304, `[]` for failure. `raise_for_status()` does **not** raise on 3xx and a 304 body is empty, so dropping that check logs the healthy path as an unparseable feed.
+- **A fresh DB insert is not new news.** The first cycle primes (ingests, announces nothing) because on cold start every article is a fresh insert, and a 6h recency gate drops items feeds re-surface.
+- Alert matching needs `watchlist.company_name` (English, bot-written) **and** `dim_ticker.company_name` (Chinese, TWSE's). Half the feeds are zh-Hant; one alone silently under-alerts.
+- It writes `ingestion_log` under `source='news_watch'`, never `'news_harvest'` — sharing the key would bury the cron's own staleness signal in `n_source_status`.
+- Point it at `postgresql.zeabur.internal:5432`. It holds **write** credentials and that Postgres has TLS disabled.
+
+Deliberate non-goal, same as Risk Guard: it never emits a buy signal. And it speeds up news only — T86 publishes once a day near 15:00, so institutional-flow signals are structurally end-of-day no matter what transport is used.
 
 ### Scheduling (GitHub Actions, not Vercel Cron)
 

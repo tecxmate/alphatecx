@@ -1,0 +1,40 @@
+# Build context for the repo-root worker image. The repo is ~653 MB, almost all
+# of it .git (49 MB) and web/node_modules — none of which the worker needs.
+# Secrets belong in Zeabur service variables, never in a layer.
+.env
+.env.*
+*.log
+.git
+.github
+__pycache__
+**/__pycache__
+.venv
+venv
+.DS_Store
+.vercel
+
+# Next.js chat app — separate surface, not part of the harvester.
+web/
+
+# The MCP server has its own image built from mcp_server/Dockerfile — but the
+# worker still needs part of this tree, and not for a cosmetic reason:
+# riskguard/{pipeline,store,replay}.py import the PURE decision logic from
+# mcp_server/api/rg/, and rg/db.py falls back to mcp_server/api/db_v2.py.
+# That split is deliberate (see riskguard/__init__.py), so the worker image
+# carries the read/decide half even though it never serves HTTP.
+# Excluded: the 5 MB of generated dashboards, which the worker never reads.
+mcp_server/api/static/
+mcp_server/Dockerfile
+mcp_server/.dockerignore
+mcp_server/.vercelignore
+mcp_server/vercel.json
+mcp_server/requirements.txt
+
+# Docs are not runtime inputs — except docs/theses/, which IS one:
+# brief.py:180 and thesis_status.py read thesis frontmatter from there, and
+# excluding it makes both silently report zero active theses rather than fail.
+docs/*
+!docs/theses/
+
+# Version-controlled mirror of a Claude Desktop skill; not a runtime input.
+skills/

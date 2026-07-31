@@ -208,6 +208,15 @@ def _upsert(c, rows: list[dict]) -> tuple[list[dict], int]:
     # now have a value (catches feedparser quirks fixed retroactively).
     # RETURNING (xmax = 0) tells us if the row was a fresh insert (true)
     # or an existing-row update (false) — needed for accurate counts.
+    #
+    # The WHERE is what keeps `src.news.watch` from churning the table.
+    # Without it, a conflict rewrites published_at to the value it already
+    # holds — and Postgres writes a new row version regardless, so a poller
+    # re-seeing ~600 unchanged articles every few minutes would produce dead
+    # tuples and index bloat all day. Conditional GET only covers the feeds
+    # that send validators; measured live, that is 5 of 12. With the WHERE, a
+    # genuinely-unchanged conflict updates nothing, returns no row, and
+    # `fetchone()` yields None — already counted as a duplicate below.
     sql = """
         INSERT INTO raw_news (url, source, feed_name, lang, title,
                               title_hash, raw_summary, published_at)
@@ -215,6 +224,7 @@ def _upsert(c, rows: list[dict]) -> tuple[list[dict], int]:
                 %(title_hash)s, %(raw_summary)s, %(published_at)s)
         ON CONFLICT (url) DO UPDATE SET
             published_at = COALESCE(raw_news.published_at, EXCLUDED.published_at)
+        WHERE raw_news.published_at IS NULL
         RETURNING (xmax = 0) AS is_fresh_insert
     """
     for row in rows:

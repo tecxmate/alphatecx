@@ -1,0 +1,44 @@
+# Zeabur build for the news poller — NOT the same service as the root
+# Dockerfile, which is the supercronic batch worker. This one is the continuous
+# poller and is the ONLY worker that should carry TELEGRAM_TOKEN.
+#
+# Zeabur build for the news poller (`src.news.watch`).
+#
+# Deliberately NOT the mcp_server/ image. That one is the read-only side — no
+# polars, no feedparser, and it carries read credentials. This service fetches
+# from the public internet and writes to raw_news, so it gets its own
+# container and its own env vars.
+#
+# Build context is the repo root, not mcp_server/: the poller imports
+# `src.harvester.loader`, which lives outside that folder.
+#
+#   docker build -f Dockerfile.newswatch -t alphatecx-news-watch .
+#   docker run --env-file .env alphatecx-news-watch
+#
+# 3.12 to match mcp_server/Dockerfile; polars and psycopg[binary] both ship
+# wheels there well ahead of the newest release.
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Root requirements.txt, not mcp_server/requirements.txt. The chain
+# `src.news.watch` → `src.harvester.loader` → `import polars` is module-level,
+# so polars is a hard dependency even though the poller never builds a
+# DataFrame. plotly/kaleido come along for the ride; splitting that file is its
+# own piece of work, not a side effect of adding this service.
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src ./src
+
+RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app
+USER appuser
+
+# No port: this is a worker, not a server. `exec` matters — without it python
+# is a child of sh, never receives SIGTERM, and every redeploy waits out the
+# kill timeout instead of shutting down cleanly.
+CMD ["sh", "-c", "exec python -m src.news.watch"]

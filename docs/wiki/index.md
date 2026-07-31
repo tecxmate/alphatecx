@@ -32,6 +32,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [2026-07-27 — FinMind Phase 2 built](decisions/2026-07-27-finmind-phase2-build.md) — cash/stock split + honest ex-date dividend_trap (fill-probability isn't computable free) + governance-news overlay; nightly FinMind ETL
 - [2026-07-31 — Migrate Neon → Zeabur Postgres](decisions/2026-07-31-migrate-neon-to-zeabur.md) — dump/restore onto self-hosted PG 18.4; roles don't travel so `mcp_viewer` must pre-exist; Zeabur has TLS disabled
 - [2026-07-31 — MCP server moved Vercel → Zeabur](decisions/2026-07-31-mcp-server-vercel-to-zeabur.md) — co-locating with Postgres puts the read path on the private network, deleting the cleartext exposure rather than fixing it; `mcp<2` pin; new bearer token; harvesters still exposed
+- [2026-07-31 — Near-real-time news poller](decisions/2026-07-31-near-realtime-news-poller.md) — no Redis, no SSE/WebSocket: ingestion cadence was the constraint, so a Zeabur worker polls feeds every 3 min and pushes to Telegram; conditional GET is load-bearing, and T86's once-a-day publish caps "real-time signals" regardless
 - [2026-07-31 — Risk Guard Phase 1 built](decisions/2026-07-31-risk-guard-phase1.md) — M1 light as a hysteresis state machine, M2 stops, M2b T+2 settlement, five `rg_*` tools; TAIEX-only scoring provably fails the 7/07 acceptance row, so breadth + TAIFEX feeds were added; cron on GH Actions, not Vercel
 
 ## Topics

@@ -1,0 +1,32 @@
+# supercronic schedule for the Zeabur worker.
+#
+# Times are Asia/Taipei (the container sets TZ), NOT UTC. The GitHub Actions
+# workflows express the same schedule in UTC because GH runners are UTC-only;
+# writing them in Taipei time here removes the standing conversion bug where
+# someone "fixes" 08:30 UTC thinking it is the Taipei morning slot.
+#
+# These run IN PARALLEL with the GitHub Actions workflows, by explicit choice.
+# Safe because every writer upserts on composite primary keys, so a double run
+# is a no-op rather than a duplicate. The one thing that is NOT idempotent is
+# the Telegram message layer — which is why TELEGRAM_TOKEN is intentionally
+# unset on this service. Setting it makes every alert arrive twice.
+
+# ── Post-close pipeline — 16:30 Taipei, weekdays ────────────────────────────
+# Market closes 13:30; the buffer is for TWSE/MOPS to publish closing data.
+30 16 * * 1-5 /app/deploy/daily-chain.sh
+
+# ── Risk Guard pre-market restatement — 08:30 Taipei, weekdays ──────────────
+# The 試撮 window, before the 09:00 open. Has to land before the operator can
+# place an order — that is the only moment a restatement is worth anything.
+30 8 * * 1-5 python -m riskguard.pipeline --mode pre_market
+
+# ── News harvest ────────────────────────────────────────────────────────────
+# Idempotent: re-runs are no-ops on unchanged feeds. Scheduled Telegram briefs
+# were switched off upstream on 2026-06-17, so these are harvest-only — do not
+# "restore" a brief here without checking that decision first.
+30 7  * * 1-5 python -m src.news.harvest
+0  10 * * 1-5 python -m src.news.harvest
+0  12 * * 1-5 python -m src.news.harvest
+30 14 * * 1-5 python -m src.news.harvest
+0  21 * * *   python -m src.news.harvest
+0  6  * * *   python -m src.news.harvest
