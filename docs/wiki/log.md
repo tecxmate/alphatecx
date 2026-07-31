@@ -741,3 +741,19 @@ attributed_to: [niko]   belongs_to: [system-architecture]
 - The `zeabur variable` subcommand is the path to the still-open item from the cutover — the Vercel
   deployment env — but note Vercel env vars are set with the *Vercel* CLI; Zeabur's only covers
   Zeabur-hosted services.
+
+## [2026-07-31] decision | Pre-commit lint gate adopted from Lucky_vibes
+attributed_to: [niko]   belongs_to: [system-architecture]
+- Niko: "add check lint python before commit, like lucky vibes". Copied that repo's pattern
+  (`pre-commit` + `ruff-pre-commit`) into `.pre-commit-config.yaml`, with two deviations.
+- **Dropped `ruff-format`.** It would reformat 66 of 84 files (~11k lines). Because pre-commit only
+  hands hooks the *staged* files, that churn would arrive one file at a time forever, burying real
+  diffs in style noise. Enabling it should follow a single repo-wide format commit, not precede one.
+- **Kept the gate viable** only because pre-commit is staged-files-scoped: `ruff check .` reports 344
+  pre-existing errors here, so a full-repo hook would reject every commit. This is the same reasoning
+  already recorded in CLAUDE.md's lint convention.
+- Added `pytest -q` as a local hook (`pass_filenames: false`, `always_run: true`) — the suite needs no
+  network or DB and finishes in ~0.1s, so gating every commit on all of it is free.
+- Used hook id `ruff-check`; plain `ruff` is now a legacy alias (Lucky_vibes still pins the old one).
+- Verified by probe: a file with unused imports + an unused local is rejected, imports auto-fixed,
+  F841 reported. `pre-commit install` is required once per clone — the hook lives in `.git/hooks/`.

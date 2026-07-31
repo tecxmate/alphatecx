@@ -39,7 +39,9 @@ Local-server gotchas, all verified by hitting `/health`:
 - `requirements.txt` pins `mcp>=1.2.0`, but **mcp 2.0.0 removed `mcp.server.fastmcp`**. A fresh unpinned install fails at import. Use `mcp<2` until the server is ported.
 - `index.py` refuses to start without `MCP_BEARER_TOKEN` (an empty token would make the URL-as-secret mount path silently 404 everything).
 
-**Lint convention:** full-repo `ruff check .` fails on pre-existing debt. The working gate is focused ruff on files you touched, plus `pytest -q`. Don't open a repo-wide lint cleanup unless asked.
+**Lint convention:** full-repo `ruff check .` fails on pre-existing debt (344 errors). The working gate is focused ruff on files you touched, plus `pytest -q`. Don't open a repo-wide lint cleanup unless asked.
+
+`.pre-commit-config.yaml` enforces exactly that gate — `pre-commit` passes the ruff hook only *staged* files, so the debt never blocks you. Run `pre-commit install` once per clone. `ruff-format` is deliberately absent: it would reformat 66 of 84 files, arriving one file at a time and burying real diffs. Enabling it needs a repo-wide format commit first.
 
 ## Architecture
 
