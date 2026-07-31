@@ -28,6 +28,19 @@ BREADTH_WEAK = 0.45
 PTS_BREADTH_BAD = 2
 PTS_BREADTH_WEAK = 1
 
+# Same-session breadth shock. The 5-day mean measures regime and is deliberately
+# slow, which means it cannot see a one-day collapse: 2026-07-07 printed
+# 128↑/892↓ — a ratio of 0.126, one of the worst sessions of the correction —
+# while its 5-day mean sat at 0.517 because 07-01…07-06 had been strong. Under
+# the mean alone that session scored zero on breadth.
+#
+# Subitem 2 takes the WORSE of the two readings, never their sum, so the
+# subitem keeps the maximum weight of 2 that PRD §5 assigns it. Thresholds are
+# read off the 2026-06/07 distribution: crash sessions printed 0.08–0.13,
+# ordinary weak days 0.35–0.45, rallies 0.85+.
+BREADTH_DAY_BAD = 0.15
+BREADTH_DAY_WEAK = 0.25
+
 # 3. Margin — retail leverage still climbing into a falling index is the
 #    "everyone is still holding" signal, so both halves must be true.
 MARGIN_WINDOW = 5

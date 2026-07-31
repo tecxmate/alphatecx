@@ -56,19 +56,53 @@ def _score_trend(m: dict) -> dict:
     return _subitem(1, "trend", pts, "、".join(parts) or "站上均線", inputs, missing)
 
 
+def _day_ratio(m: dict) -> float | None:
+    """Today's advance ratio, adv / (adv + dec)."""
+    adv, dec = _f(m, "adv_count"), _f(m, "dec_count")
+    if adv is None or dec is None or (adv + dec) <= 0:
+        return None
+    return adv / (adv + dec)
+
+
 def _score_breadth(m: dict) -> dict:
-    """2. Five-day mean advance ratio across TWSE common stock."""
-    ratio = _f(m, "adv_ratio_5d")
-    inputs = {"adv_ratio_5d": ratio, "window": cfg.BREADTH_WINDOW}
-    if ratio is None:
+    """2. Market breadth — the worse of the 5-day regime and today's shock.
+
+    The mean alone is too slow to see a one-session collapse (2026-07-07's
+    0.126 against a 0.517 mean); today's ratio alone would fire on any noisy
+    session. Taking the worse of the two catches both without letting the
+    subitem exceed the weight of 2 that PRD §5 gives it.
+    """
+    mean, day = _f(m, "adv_ratio_5d"), _day_ratio(m)
+    inputs = {"adv_ratio_5d": mean, "adv_ratio_today": day,
+              "window": cfg.BREADTH_WINDOW}
+    if mean is None and day is None:
         return _subitem(2, "breadth", 0, "漲跌家數資料缺漏", inputs, missing=True)
-    if ratio < cfg.BREADTH_BAD:
-        return _subitem(2, "breadth", cfg.PTS_BREADTH_BAD,
-                        f"5日均上漲比 {ratio:.2f} < {cfg.BREADTH_BAD}", inputs)
-    if ratio < cfg.BREADTH_WEAK:
-        return _subitem(2, "breadth", cfg.PTS_BREADTH_WEAK,
-                        f"5日均上漲比 {ratio:.2f} < {cfg.BREADTH_WEAK}", inputs)
-    return _subitem(2, "breadth", 0, f"5日均上漲比 {ratio:.2f} 尚可", inputs)
+
+    mean_pts, mean_note = 0, None
+    if mean is not None:
+        if mean < cfg.BREADTH_BAD:
+            mean_pts, mean_note = cfg.PTS_BREADTH_BAD, f"5日均上漲比 {mean:.2f}"
+        elif mean < cfg.BREADTH_WEAK:
+            mean_pts, mean_note = cfg.PTS_BREADTH_WEAK, f"5日均上漲比 {mean:.2f}"
+
+    day_pts, day_note = 0, None
+    if day is not None:
+        if day < cfg.BREADTH_DAY_BAD:
+            day_pts, day_note = cfg.PTS_BREADTH_BAD, f"當日上漲比 {day:.2f} 崩breadth"
+        elif day < cfg.BREADTH_DAY_WEAK:
+            day_pts, day_note = cfg.PTS_BREADTH_WEAK, f"當日上漲比 {day:.2f} 偏弱"
+
+    if day_pts > mean_pts:
+        detail = day_note
+    elif mean_pts > 0:
+        detail = mean_note
+    else:
+        parts = [f"5日均 {mean:.2f}" if mean is not None else None,
+                 f"當日 {day:.2f}" if day is not None else None]
+        detail = "、".join(p for p in parts if p) + " 尚可"
+
+    return _subitem(2, "breadth", max(mean_pts, day_pts), detail, inputs,
+                    missing=mean is None or day is None)
 
 
 def _score_margin(m: dict) -> dict:

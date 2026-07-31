@@ -5,6 +5,7 @@ tested against captured real responses rather than mocks of our own assumptions.
 The fixtures below are trimmed copies of live 2026-07-30 responses.
 """
 import unittest
+from unittest import mock
 
 from riskguard import sources
 
@@ -90,6 +91,92 @@ class TaifexParserTests(unittest.TestCase):
 
     def test_empty_body_returns_none(self):
         self.assertIsNone(sources.parse_taifex_oi(""))
+
+
+def _resp(*, json_body=None, content=b"", status_ok=True):
+    r = mock.Mock()
+    r.json.return_value = json_body
+    r.content = content
+    r.raise_for_status.side_effect = None if status_ok else RuntimeError("HTTP 500")
+    return r
+
+
+class FetchBreadthTests(unittest.TestCase):
+    """A dead source must degrade to None, never raise — PRD §7."""
+
+    def setUp(self):
+        # The real fetcher sleeps TWSE_REQUEST_DELAY (3s) before every call.
+        patcher = mock.patch.object(sources, "_rate_limit")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_returns_counts_on_a_good_response(self):
+        with mock.patch.object(sources._SESSION, "get",
+                               return_value=_resp(json_body=MI_INDEX_MS)):
+            self.assertEqual(sources.fetch_breadth("20260730"),
+                             {"adv_count": 224, "dec_count": 775})
+
+    def test_network_error_returns_none(self):
+        with mock.patch.object(sources._SESSION, "get", side_effect=OSError("boom")):
+            self.assertIsNone(sources.fetch_breadth("20260730"))
+
+    def test_http_error_returns_none(self):
+        with mock.patch.object(sources._SESSION, "get",
+                               return_value=_resp(json_body={}, status_ok=False)):
+            self.assertIsNone(sources.fetch_breadth("20260730"))
+
+    def test_non_ok_stat_returns_none(self):
+        # TWSE answers 200 with stat != OK for dates it has no data for.
+        with mock.patch.object(sources._SESSION, "get",
+                               return_value=_resp(json_body={"stat": "很抱歉,沒有符合條件的資料!"})):
+            self.assertIsNone(sources.fetch_breadth("20260101"))
+
+    def test_rate_limit_is_applied_before_the_call(self):
+        with mock.patch.object(sources, "_rate_limit") as limiter, \
+             mock.patch.object(sources._SESSION, "get",
+                               return_value=_resp(json_body=MI_INDEX_MS)):
+            sources.fetch_breadth("20260730")
+        limiter.assert_called_once()
+
+
+class FetchFuturesTests(unittest.TestCase):
+    BODY = TAIFEX_CSV.encode("big5", errors="replace")
+
+    def test_single_day_fetch_returns_the_level(self):
+        with mock.patch.object(sources._SESSION, "post",
+                               return_value=_resp(content=self.BODY)):
+            self.assertEqual(sources.fetch_foreign_futures_oi("2026-07-30"), -81017)
+
+    def test_series_fetch_keys_by_iso_date(self):
+        with mock.patch.object(sources._SESSION, "post",
+                               return_value=_resp(content=self.BODY)):
+            series = sources.fetch_foreign_futures_oi_series("2026-07-30", "2026-07-30")
+        self.assertEqual(series, {"2026-07-30": -81017})
+
+    def test_series_returns_empty_dict_on_failure_rather_than_raising(self):
+        with mock.patch.object(sources._SESSION, "post", side_effect=OSError("boom")):
+            self.assertEqual(
+                sources.fetch_foreign_futures_oi_series("2026-07-01", "2026-07-30"), {})
+
+    def test_single_day_returns_none_on_failure(self):
+        with mock.patch.object(sources._SESSION, "post", side_effect=OSError("boom")):
+            self.assertIsNone(sources.fetch_foreign_futures_oi("2026-07-30"))
+
+    def test_dates_are_sent_slash_separated_for_the_index_future_only(self):
+        post = mock.Mock(return_value=_resp(content=self.BODY))
+        with mock.patch.object(sources._SESSION, "post", post):
+            sources.fetch_foreign_futures_oi_series("2026-07-01", "2026-07-30")
+        sent = post.call_args.kwargs["data"]
+        self.assertEqual(sent["queryStartDate"], "2026/07/01")
+        self.assertEqual(sent["queryEndDate"], "2026/07/30")
+        self.assertEqual(sent["commodityId"], "TXF")
+
+    def test_header_only_body_yields_an_empty_series(self):
+        header = (TAIFEX_CSV.split("\n")[0] + "\n").encode("big5")
+        with mock.patch.object(sources._SESSION, "post",
+                               return_value=_resp(content=header)):
+            self.assertEqual(
+                sources.fetch_foreign_futures_oi_series("2026-01-01", "2026-01-01"), {})
 
 
 if __name__ == "__main__":

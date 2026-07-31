@@ -18,7 +18,10 @@ def metrics(**over):
     base = {
         "taiex_close": 45000.0, "taiex_pct": 0.5,
         "ma20": 44000.0, "ma60": 43000.0, "taiex_ret_5d_pct": 1.0,
-        "adv_ratio_5d": 0.55, "margin_chg_5d_pct": 0.5,
+        # Real metrics always carry both the 5-day mean and today's raw counts;
+        # subitem 2 reads the worse of the two.
+        "adv_ratio_5d": 0.55, "adv_count": 550, "dec_count": 450,
+        "margin_chg_5d_pct": 0.5,
         # Deeply net short is the normal resting state, so a calm day carries a
         # big negative level and a near-zero change.
         "fut_foreign_net_oi": -70_000, "fut_net_oi_chg_5d": -500,
@@ -49,6 +52,37 @@ class SubitemTests(unittest.TestCase):
         self.assertEqual(scoring.score_day(metrics(adv_ratio_5d=0.39))[1][1]["points"], 2)
         self.assertEqual(scoring.score_day(metrics(adv_ratio_5d=0.44))[1][1]["points"], 1)
         self.assertEqual(scoring.score_day(metrics(adv_ratio_5d=0.46))[1][1]["points"], 0)
+
+    def test_single_day_breadth_collapse_scores_despite_a_calm_mean(self):
+        # 2026-07-07: 128 up / 892 down = 0.126 on the day, but a 5-day mean of
+        # 0.517 because 07-01…07-06 were strong. The mean alone scored zero and
+        # the row failed acceptance; the shock term is what catches it.
+        _, reasons = scoring.score_day(
+            metrics(adv_ratio_5d=0.517, adv_count=128, dec_count=892))
+        self.assertEqual(reasons[1]["points"], 2)
+
+    def test_breadth_takes_the_worse_reading_and_never_sums_them(self):
+        # Both halves bad must still cap at the weight PRD §5 gives subitem 2.
+        _, reasons = scoring.score_day(
+            metrics(adv_ratio_5d=0.10, adv_count=87, dec_count=960))
+        self.assertEqual(reasons[1]["points"], 2)
+
+    def test_a_strong_session_inside_a_weak_regime_still_scores_the_regime(self):
+        # 2026-07-15 rallied (893/125) while the 5-day mean was still poor.
+        _, reasons = scoring.score_day(
+            metrics(adv_ratio_5d=0.39, adv_count=893, dec_count=125))
+        self.assertEqual(reasons[1]["points"], 2)
+
+    def test_ordinary_weak_day_is_not_a_shock(self):
+        # 2026-07-24 printed 0.34 — weak, but nowhere near a panic print.
+        _, reasons = scoring.score_day(
+            metrics(adv_ratio_5d=0.50, adv_count=333, dec_count=645))
+        self.assertEqual(reasons[1]["points"], 0)
+
+    def test_zero_counts_do_not_divide_by_zero(self):
+        _, reasons = scoring.score_day(
+            metrics(adv_ratio_5d=0.55, adv_count=0, dec_count=0))
+        self.assertEqual(reasons[1]["points"], 0)
 
     def test_margin_needs_both_rising_leverage_and_falling_index(self):
         rising_in_up_market = scoring.score_day(
