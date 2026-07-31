@@ -2,7 +2,7 @@
 
 Taiwan equity (TWSE/TPEX) supply-chain and institutional-flow intelligence.
 
-A scheduled Python harvester pulls TWSE, MOPS, and FinMind data into Neon Postgres. A FastMCP server on Vercel exposes 44 read-only MCP tools over pre-computed materialized views, so a Claude agent queries a warm database instead of rate-limited exchange APIs. Telegram carries alerts; static dashboards and a Next.js chat app are the human surfaces.
+A scheduled Python harvester pulls TWSE, MOPS, and FinMind data into a self-hosted Zeabur Postgres. A FastMCP server, also on Zeabur, exposes 44 read-only MCP tools over pre-computed materialized views, so a Claude agent queries a warm database instead of rate-limited exchange APIs. Telegram carries alerts; static dashboards and a Next.js chat app are the human surfaces.
 
 The investment frame is a 4-pillar Taiwan AI supply chain map (semiconductor, equipment, infrastructure, energy) — see [`docs/wiki/topics/taiwan-ai-supply-chain.md`](docs/wiki/topics/taiwan-ai-supply-chain.md).
 
@@ -13,7 +13,7 @@ The investment frame is a 4-pillar Taiwan AI supply chain map (semiconductor, eq
 | Path | What runs there |
 |---|---|
 | `src/` | Harvesters, quant compute, cron briefs, dashboard builders — GitHub Actions |
-| `mcp_server/api/` | FastMCP tools + FastAPI routes — Vercel (Root Directory is `mcp_server/`) |
+| `mcp_server/api/` | FastMCP tools + FastAPI routes — Zeabur (Docker build context is `mcp_server/`) |
 | `riskguard/` | Risk Guard fetch/write/cron half — GitHub Actions |
 | `sql/` | Numbered migrations, applied by `apply_schema.py` |
 | `web/` | Next.js 16 + assistant-ui chat client (separate app, pnpm + biome) |
@@ -27,10 +27,10 @@ The investment frame is a 4-pillar Taiwan AI supply chain map (semiconductor, eq
 
 ```bash
 pip install -r requirements.txt        # harvester deps
-pytest -q                              # 191 tests, no network or DB needed
+pytest -q                              # 211 tests, no network or DB needed
 
-# local MCP server (needs mcp_server/requirements.txt + uvicorn; pin mcp<2)
-cd mcp_server && MCP_BEARER_TOKEN=devtoken uvicorn api.index:app --port 8787
+# local MCP server (deps come from mcp_server/requirements.txt)
+cd mcp_server && MCP_BEARER_TOKEN=devtoken uvicorn api.app:app --port 8787
 ```
 
 Copy `.env.example` to `.env` and fill in `DATABASE_URL` at minimum. `TELEGRAM_*` enables alerts; `FUGLE_API_KEY` and `FINMIND_TOKEN` are optional — the code self-skips when they're absent.
@@ -45,7 +45,7 @@ Copy `.env.example` to `.env` and fill in `DATABASE_URL` at minimum. `TELEGRAM_*
 
 Tools are prefixed by domain: `sc_` supply chain, `raw_` raw drill-down, `q_` quant, `n_` news, `d_` digests, `w_` watchlist, `u_` universe, `rg_` risk guard. Call `sc_capabilities` for the live catalog — it is the source of truth, not this file.
 
-Auth is URL-as-secret: the server mounts at `/mcp/<MCP_BEARER_TOKEN>`, and the same token gates the graph (`/g/`), dashboard (`/d/`), hub (`/h/`), and ticker (`/t/`) routes. Only `/` and `/health` are public.
+Auth is URL-as-secret: the server mounts at `/mcp/<MCP_BEARER_TOKEN>/` (trailing slash required), and the same token gates the graph (`/g/`), dashboard (`/d/`), hub (`/h/`), and ticker (`/t/`) routes. Public without a token: `/`, `/health`, and `/bot/*` — the Telegram webhook carries no URL secret and authenticates itself on Telegram's `X-Telegram-Bot-Api-Secret-Token` header plus an owner `chat_id` check.
 
 ## Status
 

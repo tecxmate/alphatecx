@@ -63,9 +63,20 @@ the PRD §7 acceptance table. If a row misses, change thresholds in
 `mcp_server/api/rg/config.py` and re-run. **Do not special-case a date in `scoring.py`** —
 a scorer that recognises 2026-07-24 has learned the answer, not the pattern.
 
-Last run (2026-07-31, range 2026-06-25 → 07-30): **7/7 scorable rows PASS.** Calm and
-rising sessions score 0–1 🟢, mild weakness 2–3 🟡, and the seven acceptance sessions plus
-6/26 (−3.64%) score 4–8 🔴. 7/31 is unscored — TAIEX for it is not harvested yet.
+Last run (2026-07-31, range 2026-06-01 → 07-30): **5/7 scorable rows PASS; 7/07 and 7/24
+FAIL.** 7/31 is unscored — TAIEX for it is not harvested yet.
+
+An earlier run reported 7/7, and that was wrong. Without `--write` the table stayed empty,
+so `breadth_history` found nothing and the "5-day mean" collapsed to today's single ratio —
+far more bearish, inflating breadth points on exactly the down days being checked. The
+harness now carries breadth in memory, so report-only and `--write` agree; the fix cost two
+acceptance rows that were never really passing.
+
+**The two failures are honest and unresolved.** A single-day breadth collapse barely moves
+a 5-day mean: 7/07 printed 128↑/892↓ (ratio 0.126) but its 5-day mean was 0.517, because
+7/01–7/06 were strong. Same for 7/24 (0.500). Under PRD §5's 5日均 wording neither can
+reach its required light. Closing them means changing the spec — a same-day breadth term,
+or a shorter window — not tuning a threshold. Left for [niko] to decide.
 
 Two calibration changes came out of that run, both recorded in `config.py`:
 

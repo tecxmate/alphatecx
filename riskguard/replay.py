@@ -68,10 +68,16 @@ def replay(start: str, end: str, write: bool = False) -> list[dict]:
     results: list[dict] = []
     prev_light: str | None = None
     prev_score: int | None = None
+    # Carried in memory so the breadth mean is identical with and without
+    # --write; see store.build_metrics for why that matters.
+    breadth_seen: list[dict] = []
 
     for as_of in sessions:
         breadth = sources.fetch_breadth(as_of.replace("-", ""))
-        metrics = store.build_metrics(as_of, breadth, fut_series)
+        metrics = store.build_metrics(as_of, breadth, fut_series,
+                                      breadth_prior=list(reversed(breadth_seen[-8:])))
+        if breadth:
+            breadth_seen.append({"date": as_of, **breadth})
         score, reasons = scoring.score_day(metrics)
 
         ctx = light_mod.build_index_context(metrics["_closes"])

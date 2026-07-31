@@ -10,14 +10,14 @@ The wiki under `docs/wiki/` is the project's memory (decisions, stakeholders, to
 
 ## What this is
 
-**alphatecx v2** — Taiwan equity (TWSE/TPEX) supply-chain & flow intelligence. A scheduled Python harvester writes TWSE/MOPS/FinMind data into a self-hosted Zeabur Postgres (was Neon until 2026-07-31); a FastMCP server on Vercel exposes ~45 read-only MCP tools over pre-computed views; Telegram carries alerts; a Next.js chat app and static dashboards are the human surfaces.
+**alphatecx v2** — Taiwan equity (TWSE/TPEX) supply-chain & flow intelligence. A scheduled Python harvester writes TWSE/MOPS/FinMind data into a self-hosted Zeabur Postgres (was Neon until 2026-07-31); a FastMCP server on Zeabur (was Vercel until 2026-07-31) exposes ~45 read-only MCP tools over pre-computed views; Telegram carries alerts; a Next.js chat app and static dashboards are the human surfaces.
 
 `README.md` is the human-facing overview; this file is the agent-facing one.
 
 ## Commands
 
 ```bash
-pytest -q                                   # full suite (191 tests, no network/DB needed)
+pytest -q                                   # full suite (211 tests, no network/DB needed)
 pytest tests/test_flow_leaders.py::test_x   # single test
 ruff check <changed files>                  # see lint convention below
 
@@ -30,13 +30,16 @@ python -m riskguard.pipeline --mode post_close
 python apply_schema.py [--rls]              # apply sql/ to whatever DATABASE_URL points at
 
 # local MCP server — run from mcp_server/, NOT mcp_server/api/
-cd mcp_server && MCP_BEARER_TOKEN=devtoken uvicorn api.index:app --port 8787
+# api.app = MCP + Telegram bot composed (what Zeabur runs); api.index = MCP only
+cd mcp_server && MCP_BEARER_TOKEN=devtoken uvicorn api.app:app --port 8787
+docker build -t alphatecx-mcp . && docker run -p 8080:8080 -e MCP_BEARER_TOKEN=devtoken alphatecx-mcp
 cd web && pnpm dev                          # Next.js chat (pnpm lint = biome)
 ```
 
 Local-server gotchas, all verified by hitting `/health`:
-- `uvicorn` is in neither requirements file — install it separately.
-- `requirements.txt` pins `mcp>=1.2.0`, but **mcp 2.0.0 removed `mcp.server.fastmcp`**. A fresh unpinned install fails at import. Use `mcp<2` until the server is ported.
+- `uvicorn` and the `mcp<2` ceiling are now both in `mcp_server/requirements.txt` — the Zeabur image builds from that file, so it had to stop depending on what happened to be installed. Root `requirements.txt` still has neither.
+- **mcp 2.0.0 removed `mcp.server.fastmcp`**, which `index.py` imports; that is what the ceiling is defending. Lift it only when the server is ported.
+- The MCP endpoint is `/mcp/<token>/` **with the trailing slash** — `/mcp/<token>` 307-redirects and `/mcp/<token>/mcp` is a 404.
 - `index.py` refuses to start without `MCP_BEARER_TOKEN` (an empty token would make the URL-as-secret mount path silently 404 everything).
 
 **Lint convention:** full-repo `ruff check .` fails on pre-existing debt (344 errors). The working gate is focused ruff on files you touched, plus `pytest -q`. Don't open a repo-wide lint cleanup unless asked.
@@ -47,16 +50,17 @@ Local-server gotchas, all verified by hitting `/health`:
 
 ### The deployment split (read this before moving any file)
 
-Vercel's Root Directory is `mcp_server/`. Only what lives under that folder is in the deployed bundle — a repo-root package **cannot** be imported by an MCP tool. Every apparent duplication follows from that:
+The Docker build context is `mcp_server/` (it was Vercel's Root Directory before the 2026-07-31 move, and the `Dockerfile` deliberately kept the same boundary). Only what lives under that folder is in the deployed image — a repo-root package **cannot** be imported by an MCP tool. Every apparent duplication follows from that:
 
 | Runs where | Path | Contains |
 |---|---|---|
 | GitHub Actions (network, DB writes) | `src/`, `riskguard/`, `scripts/` | harvesters, quant compute, cron, dashboards |
-| Vercel + local pytest (DB reads, pure logic) | `mcp_server/api/` | MCP tools, `quant/`, `rg/` |
+| Zeabur + local pytest (DB reads, pure logic) | `mcp_server/api/` | MCP tools, `quant/`, `rg/` |
 
-- `src/quant/*.py` and `mcp_server/api/quant/*.py` are **mirrored copies**, currently differing only in one line (server side adds an `MCP_DATABASE_URL` fallback). Edit both or they drift.
+- `src/quant/*.py` and `mcp_server/api/quant/*.py` are **mirrored copies**, currently differing only in one line (server side adds an `MCP_DATABASE_URL` fallback). Edit both or they drift. Container hosting means this constraint is now self-imposed rather than forced — de-duplicating is possible but is its own piece of work, not a side effect of the move.
 - `riskguard/` = impure (fetch, write, cron). `mcp_server/api/rg/` = pure decision functions over plain dicts + the read layer. The purity split exists so `riskguard.replay` can re-derive historical risk lights deterministically.
-- **Two requirements files:** root `requirements.txt` (polars, feedparser, plotly) is harvester-only. `mcp_server/requirements.txt` (mcp, fastapi, psycopg, numpy — no polars) is what ships. Importing polars from an MCP tool breaks the deploy.
+- **Two requirements files:** root `requirements.txt` (polars, feedparser, plotly) is harvester-only. `mcp_server/requirements.txt` (mcp, fastapi, uvicorn, psycopg, numpy — no polars) is what ships. Importing polars from an MCP tool breaks the deploy.
+- `api/app.py` is the **deployed entrypoint** and exists only because Zeabur runs one process: Vercel served `api/index.py` and `api/bot.py` as two functions with `vercel.json` rewrites steering `/bot/*`. `app.py` merges the bot's routes into the MCP app. `index.py` and `bot.py` stay independently runnable so the Vercel project remains a rollback target — don't collapse them.
 
 ### Import paths
 
@@ -109,4 +113,6 @@ Both of these are uncommitted working-tree state. Check `git status` before assu
 
 **Risk Guard Phase 1 — built.** `RISK_GUARD_PRD.md` (Chinese, v1.1) is the spec; M1 risk light, M2 stop alerts, M2b settlement check are implemented across `riskguard/` + `mcp_server/api/rg/` + `sql/018_riskguard.sql`, with 5 `rg_` MCP tools, a Telegram bot command surface in `bot.py`, and `tests/test_rg_*.py`. Enforced non-goal: it never emits a buy signal — the checklist's best verdict is "no reason stopping you." See [`docs/wiki/topics/risk-guard.md`](docs/wiki/topics/risk-guard.md) and the Phase 1 decision page.
 
-**Postgres migrated Neon → self-hosted Zeabur (2026-07-31).** Data restored and verified; `.env` and the GitHub Actions `DATABASE_URL` secret now point at Zeabur. **One cutover step remains: the Vercel deployment's env vars still point at Neon** — the MCP server keeps reading the old database until they're switched. Neon stays live as rollback. Read [`docs/wiki/decisions/2026-07-31-migrate-neon-to-zeabur.md`](docs/wiki/decisions/2026-07-31-migrate-neon-to-zeabur.md) before touching anything DB-shaped. Still open: Zeabur has **TLS disabled** (`sslmode=require` is rejected, so credentials cross the public internet in cleartext — unmitigated), and collation changed `C.UTF-8` → `en_US.utf8`, so text `ORDER BY` shifts (not corruption).
+**Postgres migrated Neon → self-hosted Zeabur (2026-07-31), then the MCP server followed it (same day).** Data restored and verified; `.env` and the GitHub Actions `DATABASE_URL` secret point at Zeabur. The old "switch Vercel's env off Neon" step was **dropped rather than done** — the server moved to Zeabur instead, so it now reaches Postgres at `postgresql.zeabur.internal:5432` over the project's private network. Read [`docs/wiki/decisions/2026-07-31-migrate-neon-to-zeabur.md`](docs/wiki/decisions/2026-07-31-migrate-neon-to-zeabur.md) and [`2026-07-31-mcp-server-vercel-to-zeabur.md`](docs/wiki/decisions/2026-07-31-mcp-server-vercel-to-zeabur.md) before touching anything DB- or deploy-shaped.
+
+Live at `https://alphatecx-mcp.zeabur.app`; Vercel and Neon both stay up as rollback. Consequence worth knowing: **that private path is the only reason the missing TLS is tolerable.** Zeabur's Postgres has TLS disabled outright (`sslmode=require` is rejected), so any client reaching it over `8.209.197.81:32046` — the GitHub Actions harvesters still do — sends credentials across the public internet in cleartext. Collation also changed `C.UTF-8` → `en_US.utf8`, so text `ORDER BY` shifts (not corruption).

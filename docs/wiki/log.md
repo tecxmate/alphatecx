@@ -818,5 +818,23 @@ attributed_to: [niko]   belongs_to: [mcp-server, system-architecture]
 - Explicitly **not** done: de-duplicating `src/quant/` ↔ `mcp_server/api/quant/`. That mirroring
   existed only because Vercel's Root Directory was `mcp_server/`; containers dissolve the
   constraint, so it's now removable — as its own piece of work, not a side effect of this one.
-- `pytest -q` 211 passed; focused `ruff check` clean; 35 tools verified live over MCP with
+- `pytest -q` 211 passed; focused `ruff check` clean; 44 tools verified live over MCP with
   `sc_data_status` reading 608,082 `raw_twse_t86` rows.
+
+## [2026-07-31] lint | Replay harness was lying without --write; M1 acceptance is 5/7, not 7/7
+attributed_to: [claude-agent]   belongs_to: [risk-guard]
+- Correction to the two entries above. `store.build_metrics` read breadth history from
+  `rg_market_daily`; run without `--write` that table was empty, so the 5-day breadth mean
+  collapsed to today's single ratio — far more bearish, and inflating precisely the down days the
+  acceptance table checks. Report-only and `--write` scored the same session differently, and both
+  earlier "7/7 PASS" claims were artefacts of it.
+- Fixed: `build_metrics` takes `breadth_prior`; the replay carries breadth in memory. The two modes
+  now agree exactly.
+- **Honest result: 5/7 pass. 7/07 and 7/24 fail.** A single-day breadth collapse barely moves a
+  5-day mean — 7/07 printed 128↑/892↓ (0.126) but its 5-day mean was 0.517 because 7/01–7/06 were
+  strong; 7/24's was 0.500. Both score 2 against a required yellow/red.
+- Closing those two means changing PRD §5's 5日均 wording (same-day breadth term, or a shorter
+  window), not tuning a threshold. Not done unilaterally — left for [niko].
+- 36 sessions persisted to `rg_market_daily` (2026-06-01 → 07-30), so the light now has state and
+  tomorrow's cron has a `prev_light` to reason from. All other rg_* tables remain empty by design
+  (no positions, no trades, no alerts yet).

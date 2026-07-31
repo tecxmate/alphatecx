@@ -133,7 +133,7 @@ run** or `rg_journal_add` loses its INSERT grant.
 - Import graph verified along the bare-import path the Vercel bundle uses
   (`from rg import ...` with `mcp_server/api` on `sys.path`).
 
-**Replay verified 2026-07-31 against live Zeabur data: 7/7 scorable rows PASS.**
+**Replay run 2026-07-31 against live Zeabur data: 5/7 scorable rows PASS; 7/07 and 7/24 FAIL.**
 Commands, for re-running after a threshold change:
 
 ```bash
@@ -147,8 +147,8 @@ range. 7/31 is unscored — not harvested yet.
 
 ## What the first live replay changed
 
-The initial run passed 7/7, but the table showed the pass was hollow — see the calibration
-findings below. After fixing them it still passes 7/7, now on subitems that mean something.
+The initial run reported 7/7. Two separate defects made that number meaningless, and the
+honest result after fixing both is **5/7**.
 
 **Subitem 4 scored a constant.** Across 2026-06/07 foreign futures net OI never left
 65k–86k net short — on +4.20% days and on the −6.47% crash alike — so the PRD's
@@ -164,8 +164,20 @@ that matter. Tried 5d, 10d, 20d and trailing-percentile; all invert. The subitem
 therefore capped small rather than dominant, and the light rests on trend + breadth + day.
 
 **Bands moved 0–2 / 3 / ≥4** (PRD says ≥5). With the constant +2 gone every score fell ~2,
-so the cutoff moved with it. At ≥4 exactly the seven acceptance sessions plus 6/26 (−3.64%)
-are red, and calm/rising days land at 0–1. At ≥5 the 7/24 row fails.
+so the cutoff moved with it.
+
+**The replay harness lied when not writing.** `store.build_metrics` read breadth history
+back from `rg_market_daily`; without `--write` that table was empty, so the 5-day breadth
+mean silently collapsed to today's single ratio — much more bearish, and inflating exactly
+the down days under test. Report-only and `--write` therefore scored the same session
+differently. `build_metrics` now accepts `breadth_prior` and the replay carries it in
+memory, so the two modes agree. Both earlier 7/7 results were artefacts of this.
+
+**Remaining, unresolved: 7/07 and 7/24 fail.** A one-day breadth collapse barely moves a
+5-day mean — 7/07 printed 128↑/892↓ (0.126) against a 5-day mean of 0.517 because 7/01–7/06
+were strong; 7/24's mean was 0.500. Both score 2. Under PRD §5's 5日均 wording neither row is
+reachable, so closing them is a spec change (a same-day breadth term, or a shorter window),
+not a threshold tweak. Not made unilaterally — flagged for [niko].
 
 **Stale margin was scored as current** — `margin_totals` returns the latest rows *on or
 before* the session, so a stalled feed handed June's balance to a July session silently.

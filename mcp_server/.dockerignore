@@ -1,0 +1,10 @@
+# Mirrors .vercelignore — keeps secrets and local cruft out of the image.
+# Credentials belong in Zeabur's service variables, never baked into a layer.
+.env
+.env.*
+*.log
+__pycache__
+**/__pycache__
+.venv
+.DS_Store
+.vercel

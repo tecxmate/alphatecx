@@ -56,7 +56,9 @@ Migrate via `pg_dump -Fc` → `pg_restore`, keeping Neon live as rollback. Targe
 
 ## Remaining
 
-**The Vercel deployment still points at Neon** — the MCP server reads the old database until its env vars are switched. The CLI here has no credentials (`vercel login` needed), so this step is the user's. Neon stays live as rollback until it's done. Note the Zeabur CLI does *not* help here: it only manages Zeabur-hosted services.
+~~**The Vercel deployment still points at Neon**~~ — **superseded the same day.** The env switch was never performed: the MCP server moved to Zeabur instead, so it now reads Postgres over the project's private network. See [2026-07-31-mcp-server-vercel-to-zeabur](2026-07-31-mcp-server-vercel-to-zeabur.md).
+
+What that does *not* resolve: the GitHub Actions harvesters still reach `8.209.197.81:32046` from outside Zeabur, so the write path continues to send credentials in cleartext. Neon and Vercel both stay live as rollback.
 
 ## Zeabur CLI
 

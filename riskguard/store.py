@@ -101,7 +101,8 @@ def _fut_change(series: dict | None, as_of: str, window: int) -> tuple:
 
 
 def build_metrics(as_of: str, breadth_today: dict | None,
-                  fut_series: dict | None = None) -> dict:
+                  fut_series: dict | None = None,
+                  breadth_prior: list[dict] | None = None) -> dict:
     """Assemble the M1 metric bundle for one session.
 
     Any component that is absent stays absent — scoring.score_day marks the
@@ -122,8 +123,16 @@ def build_metrics(as_of: str, breadth_today: dict | None,
             if len(closes) >= cfg.MA_LONG else None)
     ret_5d = _pct_change(closes[0], closes[5]) if len(closes) > 5 else None
 
-    # Breadth: today's fresh counts, then the four stored sessions before it.
-    history = [r for r in breadth_history(as_of) if r["date"] != as_of]
+    # Breadth: today's fresh counts, then the four sessions before it.
+    #
+    # `breadth_prior` lets a caller supply that history instead of reading it
+    # back from rg_market_daily. The replay needs it: running without --write
+    # leaves the table empty, so the "5-day mean" silently collapses to today's
+    # single ratio — which scores far more bearishly and made report-only and
+    # --write disagree about the same session. A calibration harness whose
+    # answer depends on whether it saved is worse than no harness.
+    history = breadth_prior if breadth_prior is not None else breadth_history(as_of)
+    history = [r for r in history if r["date"] != as_of]
     counts = ([breadth_today] if breadth_today else []) + history
     counts = counts[:cfg.BREADTH_WINDOW]
     ratios = [

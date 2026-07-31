@@ -8,8 +8,9 @@ Create `.env.local`:
 
 ```
 # Full MCP URL including the URL-as-secret token. Required — the client
-# throws at startup if unset. Local: http://localhost:8787/mcp/<TOKEN>/mcp
-MCP_SERVER_URL=https://<host>/mcp/<MCP_BEARER_TOKEN>/mcp
+# throws at startup if unset. Ends at the token's trailing slash; there is no
+# extra /mcp suffix (that path 404s). Local: http://localhost:8787/mcp/<TOKEN>/
+MCP_SERVER_URL=https://alphatecx-mcp.zeabur.app/mcp/<MCP_BEARER_TOKEN>/
 
 # Provider defaults to anthropic. Set the key for whichever you use.
 ANTHROPIC_API_KEY=...
