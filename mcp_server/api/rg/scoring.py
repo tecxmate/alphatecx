@@ -129,6 +129,13 @@ def _score_futures(m: dict) -> dict:
     means foreigners added to net short. The level is reported for context but
     never scored: it sits structurally deep net-short every single session, so
     scoring it produced a constant. See config for the measurements.
+
+    Re-litigated 2026-07-31 during acceptance, which read this as deviating
+    from PRD §5. Implementing §5 literally was tried and reverted: with a
+    20,000 threshold the level scores +2 on 37/37 recorded sessions, pinning
+    the floor score at 2 against a green band of ≤2. The suite caught it —
+    `test_calm_market_scores_zero_and_is_green` fails, i.e. a quiet market
+    stops being green. The spec is what needs amending, not this function.
     """
     oi = _f(m, "fut_foreign_net_oi")
     chg = _f(m, "fut_net_oi_chg_5d")

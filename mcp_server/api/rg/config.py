@@ -70,6 +70,17 @@ PTS_MARGIN = 2
 FUT_CHANGE_WINDOW = 5
 FUT_ADD_SHORT_HEAVY = 8_000   # added this many contracts to net short
 FUT_ADD_SHORT_MILD = 4_000
+
+# PRD §5 scores the ABSOLUTE net-short level (≥20,000 口 → +2). Measured
+# 2026-07-31 and deliberately NOT implemented: across all 37 sessions on record
+# the foreign net OI ran -63,168 to -86,189, so a 20,000 threshold is crossed
+# on 100% of days. Scoring it adds a constant +2 to every session, which pins
+# the floor score at 2 against a green band of ≤2 — a calm market stops being
+# green the moment any other subitem contributes a single point.
+#
+# Reinstating the level needs a threshold the data actually crosses (a rolling
+# percentile, or ~80,000) AND a recalibration of SCORE_YELLOW / SCORE_RED.
+# See docs/wiki/log.md 2026-07-31 for the measurement.
 PTS_FUT_HEAVY = 2
 PTS_FUT_MILD = 1
 

@@ -37,13 +37,11 @@ import re
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 from zoneinfo import ZoneInfo
 
 import psycopg
 import requests
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request
 
 # Same trick index.py uses: the Vercel function root is mcp_server/api and the
 # `rg` package sits beside this file. Explicit rather than relying on the
@@ -108,7 +106,7 @@ def _send(chat_id: int | str, text: str, parse_mode: str = "HTML") -> None:
 _TICKER_RE = re.compile(r"^[0-9A-Z]+[A-Z]?$")  # e.g. 2330, 6488, 0050, 00400A
 
 
-def _validate_ticker(ticker: str) -> Optional[str]:
+def _validate_ticker(ticker: str) -> str | None:
     """Return the canonical ticker if it parses, else None."""
     t = ticker.strip().upper()
     if not _TICKER_RE.match(t):
@@ -258,7 +256,8 @@ def cmd_indicators(arg: str) -> str:
         return f"ℹ️ No signals for <code>{ticker}</code> (not in classified universe?)."
 
     _, company, as_of, rsi, macd_h, bb, fz, off_high, rs = row
-    fmt = lambda v: f"{v:.2f}" if v is not None else "—"
+    def fmt(v):
+        return f"{v:.2f}" if v is not None else "—"
     return (f"<b>{ticker}</b> {company or ''} <i>(as of {as_of})</i>\n"
             f"RSI-14: {fmt(rsi)}  •  MACD hist: {fmt(macd_h)}  •  BB%B: {fmt(bb)}\n"
             f"foreign_z20: {fmt(fz)}  •  off_52w_high: {fmt(off_high)}%\n"
@@ -353,7 +352,7 @@ def _rg_positions(cur, include_inactive: bool = False) -> list[dict]:
         + " ORDER BY kind, ticker_id"
     )
     cols = [d.name for d in cur.description]
-    rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    rows = [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
     for r in rows:
         for k in ("cost", "qty_lots", "warn_price", "exit_price", "hard_stop_pct"):
             if r[k] is not None:
@@ -361,15 +360,52 @@ def _rg_positions(cur, include_inactive: bool = False) -> list[dict]:
     return rows
 
 
-def _rg_closes(cur, tickers: list[str]) -> dict[str, float]:
+def _rg_closes(cur, tickers: list[str]) -> tuple[dict[str, float], dict[str, str]]:
+    """Latest close per ticker, but ONLY from the market's most recent session.
+
+    Returns (fresh, stale); `stale` maps ticker -> the out-of-date session it
+    would otherwise have reported.
+
+    The previous version took each ticker's newest row whatever its date and
+    presented it as today's price. `raw_twse_ohlcv` does not cover every
+    watchlist name — on 2026-07-31, of 2324/2303/3374/2344 only 2344 had a row
+    — so uncovered tickers silently rendered a price from an arbitrarily old
+    session. Observed: 2324 showed 29.65 against a real 36.0, and 2303 showed
+    91.3 against a real 121.0 (limit up). The stop engine reads this number to
+    decide whether a line was breached, so a stale price is a wrong exit or a
+    missed one.
+
+    Staleness is measured against the newest date in the table rather than a
+    calendar, so weekends and holidays need no special case. Callers must show
+    the stale entries as "no quote"; `rg_stops.distances` already degrades
+    safely when a close is absent, which is why dropping is the right shape —
+    a wrong price can no longer reach a stop decision at all.
+    """
     if not tickers:
-        return {}
+        return {}, {}
     cur.execute(
-        "SELECT DISTINCT ON (ticker_id) ticker_id, close FROM raw_twse_ohlcv "
+        "SELECT DISTINCT ON (ticker_id) ticker_id, close, date FROM raw_twse_ohlcv "
         " WHERE ticker_id = ANY(%s) ORDER BY ticker_id, date DESC",
         (tickers,),
     )
-    return {r[0]: float(r[1]) for r in cur.fetchall() if r[1] is not None}
+    rows = [(r[0], r[1], r[2]) for r in cur.fetchall() if r[1] is not None]
+    if not rows:
+        return {}, {}
+
+    cur.execute("SELECT max(date) FROM raw_twse_ohlcv")
+    latest_row = cur.fetchone()
+    latest = latest_row[0] if latest_row else None
+
+    fresh: dict[str, float] = {}
+    stale: dict[str, str] = {}
+    for ticker, close, date in rows:
+        if latest is not None and date != latest:
+            stale[ticker] = date.isoformat()
+        else:
+            fresh[ticker] = float(close)
+    if stale:
+        log.warning("stale closes suppressed (market latest %s): %s", latest, stale)
+    return fresh, stale
 
 
 def _rg_trading_days(cur, start: str, days: int = 30) -> list[str]:
@@ -395,7 +431,7 @@ def cmd_status(arg: str) -> str:
         )
         m = cur.fetchone()
         positions = _rg_positions(cur)
-        closes = _rg_closes(cur, [p["ticker_id"] for p in positions])
+        closes, stale_closes = _rg_closes(cur, [p["ticker_id"] for p in positions])
         cur.execute("SELECT amount FROM rg_balances ORDER BY ts DESC LIMIT 1")
         bal_row = cur.fetchone()
         cur.execute(
@@ -431,8 +467,9 @@ def cmd_status(arg: str) -> str:
             d = f"{r['pct_to_exit']:+.1f}%" if r["pct_to_exit"] is not None else "未設線"
             flag = " 🚨已觸線" if r["triggered"] == "exit" else (
                 " ⚠️警戒" if r["triggered"] == "warn" else "")
+            px = r["close"] if r["close"] is not None else "無報價"
             lines.append(f"  {r['name'] or ''}({r['ticker_id']}) "
-                         f"收 {r['close']} 距出場 {d}{flag}")
+                         f"收 {px} 距出場 {d}{flag}")
     else:
         lines.append("<b>持倉風險</b>:目前空手")
 
@@ -455,7 +492,7 @@ def cmd_status(arg: str) -> str:
 def cmd_pos(arg: str) -> str:
     with _connect() as conn, conn.cursor() as cur:
         positions = _rg_positions(cur)
-        closes = _rg_closes(cur, [p["ticker_id"] for p in positions])
+        closes, stale_closes = _rg_closes(cur, [p["ticker_id"] for p in positions])
 
     if not positions:
         return "📋 監控清單是空的。用 /setpos 或 /watch 加入。"
@@ -480,6 +517,9 @@ def cmd_pos(arg: str) -> str:
                          + " | ".join(bits))
             if r["note"]:
                 lines.append(f"   {r['note'][:140]}")
+    if stale_closes:
+        names = "、".join(f"{t}({d})" for t, d in sorted(stale_closes.items()))
+        lines.append(f"  ⚠️ 報價過期已抑制(不用於停損判斷):{names}")
     return "\n".join(lines)
 
 

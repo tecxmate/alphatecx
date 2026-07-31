@@ -14,8 +14,9 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from dotenv import load_dotenv
+
 import psycopg
+from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
 DATABASE_URL = os.getenv("DATABASE_URL", "")
@@ -60,6 +61,18 @@ if args.rls:
     # 014 GRANTs to mcp_viewer, so it can only run once 003 has created the role.
     # Keeping it out of the default list is deliberate, not an omission.
     sql_files.append("sql/014_dim_ticker_classify.sql")
+    # 018 again, LAST. 003 ends with a blanket
+    # `REVOKE INSERT, UPDATE, DELETE ON ALL TABLES ... FROM mcp_viewer`, which
+    # strips the INSERT 018 grants on rg_journal — so the earlier pass is undone
+    # the moment 003 runs. 018's own comment says "run this file after any --rls
+    # run"; appending it here is what makes that possible, since this script
+    # owns the order. Without it `rg_journal_add` fails live with
+    # `permission denied for table rg_journal` (observed 2026-07-31), and
+    # nothing in the apply output hints at why.
+    #
+    # Safe twice: every statement in 018 is CREATE TABLE IF NOT EXISTS or a
+    # role-guarded DO $$ GRANT.
+    sql_files.append("sql/018_riskguard.sql")
 
 print(f"Connecting to: {DATABASE_URL[:50]}...")
 
