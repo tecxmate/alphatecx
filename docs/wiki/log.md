@@ -876,3 +876,33 @@ attributed_to: [niko, claude-agent]   belongs_to: [alphatecx, risk-guard]
   `2026-07-31` holds only an `empty` on a trading day → **retryable**, where before it was dead.
   `margin_sessions_missing` reports none outstanding.
 - 9 new tests (`tests/test_margin_catchup.py`); suite 336 passed.
+
+## [2026-07-31] decision | Scheduled work moved onto Zeabur as the `cron` service
+attributed_to: [niko]   belongs_to: [system-architecture]
+- Niko: "run everything on zeabur now" + "do not replace old one", then "auto fix all". GitHub
+  Actions stays enabled and runs the same schedules in parallel; double runs are safe because
+  every writer upserts on composite PKs.
+- New service `cron` (`6a6c5695c553a2bc513cfdef`) from the repo-root `Dockerfile`, supercronic as
+  PID 1. Project is now four services: `postgresql`, `mcp`, `cron`, `worker` (news poller).
+- Crontab is written in **Taipei local time** with `TZ=Asia/Taipei` in the image, not UTC. The
+  workflows only use UTC because GH runners are UTC-only, and that conversion is a standing
+  source of "fixed" schedules that fire eight hours wrong.
+- **Telegram deliberately unset on `cron`.** Everything about a double run is idempotent except
+  the message layer — setting `TELEGRAM_TOKEN` makes every brief and Risk Guard alert arrive
+  twice. Accepted consequence: a `cron` failure is currently silent; GH Actions still notifies.
+- Chain omits `dashboard.build` / `build_ticker_pages` / `correlation_snapshot` — their only
+  output is static files that get committed back to main, and this service does not commit.
+- Two real bugs caught while building, both silent-failure shaped:
+  - `riskguard/pipeline.py` imports `mcp_server.api.rg` (the purity split), so excluding
+    `mcp_server/` from the build context broke the image outright. Needs `mcp_server/api/`
+    minus `static/`; they're PEP 420 namespace packages resolved via `/app` on `sys.path`.
+  - `docs/theses/` is a **runtime input** — `brief.py:180` and `thesis_status.py` read thesis
+    frontmatter. Excluding it as "docs" makes both report zero active theses rather than fail.
+- Zeabur trap worth not re-learning: `zbpack-v2` pre-processes the Dockerfile, and one early
+  build yielded a container whose PID 1 was an auto-detected `python -m src.news.watch` with no
+  `/app/deploy` at all. Always check `cat /proc/1/cmdline` after deploying; don't assume the
+  Dockerfile was honoured. Image pulls also run 6–8 min, so a redeploy straddling a scheduled
+  slot silently eats it — that is how today's 16:30 Zeabur run was lost (GH Actions covered it).
+- **Not yet verified:** the post-close chain firing on Zeabur. First real run is the next
+  weekday 16:30 Taipei. `FINMIND_TOKEN` is also unset on `cron` (it lives only in GH secrets),
+  so the nightly FinMind enrichment step self-skips there.

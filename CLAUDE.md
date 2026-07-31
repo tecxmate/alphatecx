@@ -89,6 +89,29 @@ FastMCP instance mounted at `/mcp/{MCP_BEARER_TOKEN}` inside a FastAPI app. Tool
 
 Dates are `Asia/Taipei`, not UTC. TWSE publishes on Taipei wall-clock; UTC mislabels `_as_of` for ~8h/day.
 
+### Zeabur services (all four in project `alphatecx`)
+
+| Service | Runs | Built from | Notes |
+|---|---|---|---|
+| `postgresql` | the database | Zeabur prebuilt | reachable internally at `postgresql.zeabur.internal:5432` |
+| `mcp` | FastMCP + bot webhook | `mcp_server/Dockerfile` | `alphatecx-mcp.zeabur.app` |
+| `cron` | post-close chain, Risk Guard pre-market | `Dockerfile` (repo root) | supercronic, `TZ=Asia/Taipei` |
+| `worker` | `src/news/watch.py` poller | `Dockerfile.newswatch` | continuous, 180s |
+
+GitHub Actions still runs the same schedules in parallel — deliberate, and safe because every
+writer upserts on composite PKs. **`TELEGRAM_TOKEN` is intentionally unset on `cron`**: the
+message layer is the one thing a double run duplicates. The cost is that a `cron` failure is
+silent, so GH Actions remains the path that alerts on failure. See
+[`docs/wiki/decisions/2026-07-31-scheduled-work-on-zeabur.md`](docs/wiki/decisions/2026-07-31-scheduled-work-on-zeabur.md).
+
+Two non-obvious build inputs, both of which fail *silently* if dropped: `riskguard/` imports
+`mcp_server.api.rg`, so the root image must carry `mcp_server/api/`; and `docs/theses/` is a
+runtime input read by `brief.py` and `thesis_status.py`, not documentation.
+
+`zbpack-v2` pre-processes the Dockerfile and has been observed replacing the entrypoint with an
+auto-detected one. After any deploy, check `zeabur service exec ... -- cat /proc/1/cmdline`
+rather than assuming your `CMD` survived.
+
 ### Data layer
 
 - `sql/NNN_*.sql` migrations applied by `apply_schema.py`, which has a **hardcoded file list**. A new `sql/` file does nothing until you add it there. `003` and `014` sit in the `--rls` branch, not the default list, because they GRANT to `mcp_viewer` and fail where that role doesn't exist.
