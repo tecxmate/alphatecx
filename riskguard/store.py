@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import logging
 from datetime import date, timedelta
-from typing import Optional
 
 from src.harvester.loader import cur
 
@@ -78,14 +77,31 @@ def breadth_history(as_of: str, limit: int = 5) -> list[dict]:
                 for r in c.fetchall()]
 
 
-def _pct_change(newest: Optional[float], older: Optional[float]) -> Optional[float]:
+def _pct_change(newest: float | None, older: float | None) -> float | None:
     if not newest or not older:
         return None
     return round((newest / older - 1) * 100, 3)
 
 
-def build_metrics(as_of: str, breadth_today: Optional[dict],
-                  fut_net_oi: Optional[int]) -> dict:
+def _fut_change(series: dict | None, as_of: str, window: int) -> tuple:
+    """(net OI on `as_of`, change vs `window` sessions earlier).
+
+    Both None when the series does not reach back far enough — subitem 4 then
+    reports data_missing rather than scoring a change it could not measure.
+    """
+    if not series:
+        return None, None
+    days = sorted(d for d in series if d <= as_of)
+    if not days or days[-1] != as_of:
+        return None, None
+    level = series[as_of]
+    if len(days) <= window:
+        return level, None
+    return level, level - series[days[-1 - window]]
+
+
+def build_metrics(as_of: str, breadth_today: dict | None,
+                  fut_series: dict | None = None) -> dict:
     """Assemble the M1 metric bundle for one session.
 
     Any component that is absent stays absent — scoring.score_day marks the
@@ -95,6 +111,7 @@ def build_metrics(as_of: str, breadth_today: Optional[dict],
     """
     from mcp_server.api.rg import config as cfg
 
+    fut_level, fut_chg = _fut_change(fut_series, as_of, cfg.FUT_CHANGE_WINDOW)
     series = taiex_series(as_of)
     today = series[0] if series and series[0]["date"] == as_of else None
     closes = [r["close"] for r in series if r["close"] is not None]
@@ -116,11 +133,16 @@ def build_metrics(as_of: str, breadth_today: Optional[dict],
     ]
     adv_ratio_5d = round(sum(ratios) / len(ratios), 4) if ratios else None
 
+    # Margin only counts if it is actually *this* session's. `margin_totals`
+    # returns the latest rows on or before `as_of`, so a stalled harvest would
+    # otherwise hand June's balance to a July session and score it as current —
+    # silently, since a stale number looks exactly like a fresh one.
     margins = margin_totals(as_of)
-    margin_balance = margins[0]["margin_balance"] if margins else None
+    fresh = bool(margins) and margins[0]["date"] == as_of
+    margin_balance = margins[0]["margin_balance"] if fresh else None
     margin_chg = (_pct_change(margins[0]["margin_balance"],
                               margins[cfg.MARGIN_WINDOW]["margin_balance"])
-                  if len(margins) > cfg.MARGIN_WINDOW else None)
+                  if fresh and len(margins) > cfg.MARGIN_WINDOW else None)
 
     return {
         "date": as_of,
@@ -134,14 +156,15 @@ def build_metrics(as_of: str, breadth_today: Optional[dict],
         "adv_ratio_5d": adv_ratio_5d,
         "margin_balance": margin_balance,
         "margin_chg_5d_pct": margin_chg,
-        "fut_foreign_net_oi": fut_net_oi,
+        "fut_foreign_net_oi": fut_level,
+        "fut_net_oi_chg_5d": fut_chg,
         "_closes": closes,          # for light.build_index_context
     }
 
 
 # ── M1 output ───────────────────────────────────────────────────────────────
 
-def prev_market_day(as_of: str) -> Optional[dict]:
+def prev_market_day(as_of: str) -> dict | None:
     with cur() as c:
         c.execute(
             "SELECT date, risk_light, risk_score FROM rg_market_daily "
@@ -191,10 +214,10 @@ def upsert_market_daily(metrics: dict, light: str, score: int, reasons: list[dic
 # ── Alerts ──────────────────────────────────────────────────────────────────
 
 def record_alert(kind: str, severity: str, message: str,
-                 ticker_id: Optional[str] = None,
-                 payload: Optional[dict] = None,
-                 date_iso: Optional[str] = None,
-                 dedup_key: Optional[str] = None) -> Optional[int]:
+                 ticker_id: str | None = None,
+                 payload: dict | None = None,
+                 date_iso: str | None = None,
+                 dedup_key: str | None = None) -> int | None:
     """Persist an alert before sending it. Returns the row id, or None if an
     identical (date, kind, dedup_key) alert already exists.
 
@@ -253,7 +276,7 @@ def active_positions() -> list[dict]:
             " ORDER BY kind, ticker_id"
         )
         cols = [d.name for d in c.description]
-        rows = [dict(zip(cols, r)) for r in c.fetchall()]
+        rows = [dict(zip(cols, r, strict=True)) for r in c.fetchall()]
     for r in rows:
         for k in ("cost", "qty_lots", "warn_price", "exit_price", "hard_stop_pct"):
             if r[k] is not None:
@@ -314,7 +337,7 @@ def trading_days(start: str, end: str) -> list[str]:
 
 def record_trade(trade_date: str, settle: str, ticker_id: str, side: str,
                  price: float, lots: float, net_amount: float,
-                 note: Optional[str] = None) -> None:
+                 note: str | None = None) -> None:
     """Log a fill and fold it into that settlement date's net amount."""
     with cur() as c:
         c.execute(
@@ -342,12 +365,12 @@ def settlement_schedule(today: str) -> list[dict]:
         return [{"date": r[0].isoformat(), "net_amount": float(r[1])} for r in c.fetchall()]
 
 
-def record_balance(amount: float, note: Optional[str] = None) -> None:
+def record_balance(amount: float, note: str | None = None) -> None:
     with cur() as c:
         c.execute("INSERT INTO rg_balances (amount, note) VALUES (%s, %s)", (amount, note))
 
 
-def latest_balance() -> Optional[float]:
+def latest_balance() -> float | None:
     with cur() as c:
         c.execute("SELECT amount FROM rg_balances ORDER BY ts DESC LIMIT 1")
         r = c.fetchone()
@@ -365,7 +388,7 @@ def set_no_trade_day(date_iso: str, reason: str) -> None:
         )
 
 
-def no_trade_reason(date_iso: str) -> Optional[str]:
+def no_trade_reason(date_iso: str) -> str | None:
     with cur() as c:
         c.execute("SELECT reason FROM rg_no_trade_days WHERE date = %s", (date_iso,))
         r = c.fetchone()
@@ -390,7 +413,7 @@ def upsert_position(ticker_id: str, **fields) -> None:
         c.execute(sql, [ticker_id] + list(patch.values()))
 
 
-def last_trading_day(as_of: Optional[str] = None) -> str:
+def last_trading_day(as_of: str | None = None) -> str:
     """Most recent date with TAIEX data, on or before `as_of`.
 
     Anchoring on data rather than the calendar means a holiday, a typhoon day,

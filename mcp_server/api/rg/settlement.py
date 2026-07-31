@@ -14,12 +14,11 @@ authority (market_holidays, via session_state).
 from __future__ import annotations
 
 import math
-from typing import Optional
 
 from . import config as cfg
 
 
-def settle_date(trade_date: str, trading_days: list[str]) -> Optional[str]:
+def settle_date(trade_date: str, trading_days: list[str]) -> str | None:
     """The T+2 settlement date for a fill, or None if the calendar runs out.
 
     `trading_days` is an ascending list of ISO trading dates that must include
@@ -57,7 +56,7 @@ def fill_amount(side: str, price: float, lots: float) -> float:
 
 def check_gap(
     schedule: list[dict],
-    balance: Optional[float],
+    balance: float | None,
     today: str,
     trading_days: list[str],
 ) -> list[dict]:
@@ -113,7 +112,7 @@ def check_gap(
     return alerts
 
 
-def _sessions_between(start: str, end: str, trading_days: list[str]) -> Optional[int]:
+def _sessions_between(start: str, end: str, trading_days: list[str]) -> int | None:
     """Trading sessions from `start` to `end`, or None if either is off-calendar."""
     try:
         return trading_days.index(end) - trading_days.index(start)

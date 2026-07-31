@@ -9,8 +9,6 @@ function is a single process and Neon's pooler charges for every connection.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 try:
     import db_v2
 except ModuleNotFoundError:  # package import path used by local tests
@@ -22,7 +20,7 @@ _serialize = db_v2._serialize
 
 # ── M1 ──────────────────────────────────────────────────────────────────────
 
-def latest_market_daily() -> Optional[dict]:
+def latest_market_daily() -> dict | None:
     rows = _serialize(_fetch(
         "SELECT * FROM rg_market_daily ORDER BY date DESC LIMIT 1"
     ))
@@ -66,7 +64,7 @@ def latest_closes(ticker_ids: list[str]) -> dict[str, float]:
     return {r["ticker_id"]: float(r["close"]) for r in rows if r["close"] is not None}
 
 
-def gain_5d_pct(ticker_id: str) -> Optional[float]:
+def gain_5d_pct(ticker_id: str) -> float | None:
     """Trailing 5-session return, the input to checklist Q3."""
     rows = _fetch(
         "SELECT close FROM raw_twse_ohlcv WHERE ticker_id = %s "
@@ -101,7 +99,7 @@ def settlement_schedule(today: str) -> list[dict]:
     ))
 
 
-def latest_balance() -> Optional[dict]:
+def latest_balance() -> dict | None:
     rows = _serialize(_fetch(
         "SELECT amount, ts FROM rg_balances ORDER BY ts DESC LIMIT 1"
     ))
@@ -110,7 +108,7 @@ def latest_balance() -> Optional[dict]:
 
 # ── M7 ──────────────────────────────────────────────────────────────────────
 
-def no_trade_reason(date_iso: str) -> Optional[str]:
+def no_trade_reason(date_iso: str) -> str | None:
     """Checklist Q5 input. This is the only read of rg_no_trade_days in the
     whole system — it must never reach a scoring path (PRD §5 M7)."""
     rows = _fetch("SELECT reason FROM rg_no_trade_days WHERE date = %s", (date_iso,))
@@ -133,7 +131,7 @@ def trading_days(start: str, end: str) -> list[str]:
 
 # ── Journal (the one write) ─────────────────────────────────────────────────
 
-def journal_add(text: str, ticker_id: Optional[str] = None) -> dict:
+def journal_add(text: str, ticker_id: str | None = None) -> dict:
     """Append a decision to the journal. Returns the new row id.
 
     Needs INSERT on rg_journal for the mcp_viewer role — granted in
@@ -163,8 +161,8 @@ def journal_recent(limit: int = 20) -> list[dict]:
 def checklist_facts(
     ticker_id: str,
     today: str,
-    buy_amount: Optional[float] = None,
-    available_cash: Optional[float] = None,
+    buy_amount: float | None = None,
+    available_cash: float | None = None,
 ) -> dict:
     """Gather checklist inputs. Unavailable modules stay None so the checklist
     reports them as skipped rather than inventing a pass or a fail."""

@@ -91,9 +91,11 @@ def run_risk_light(as_of: str) -> dict:
     """Compute, store, and (on a change) push today's market risk light."""
     yyyymmdd = as_of.replace("-", "")
     breadth = sources.fetch_breadth(yyyymmdd)
-    fut_oi = sources.fetch_foreign_futures_oi(as_of)
+    # 30 calendar days back comfortably covers the 5-session lookback across a
+    # long weekend or a typhoon closure, in one request.
+    fut_series = sources.fetch_foreign_futures_oi_series(_plus_days(as_of, -30), as_of)
 
-    metrics = store.build_metrics(as_of, breadth, fut_oi)
+    metrics = store.build_metrics(as_of, breadth, fut_series)
     score, reasons = scoring.score_day(metrics)
 
     prev = store.prev_market_day(as_of)

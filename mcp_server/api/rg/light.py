@@ -13,8 +13,6 @@ Red also cannot skip yellow — recovery is walked, never jumped.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from . import config as cfg
 
 _RANK = {"green": 0, "yellow": 1, "red": 2}
@@ -58,9 +56,9 @@ def build_index_context(closes: list[float]) -> dict:
 
 def resolve_light(
     score: int,
-    prev_light: Optional[str],
+    prev_light: str | None,
     ctx: dict,
-    raw_light: Optional[str] = None,
+    raw_light: str | None = None,
 ) -> tuple[str, str]:
     """Apply hysteresis to today's raw band. Returns (light, reason).
 

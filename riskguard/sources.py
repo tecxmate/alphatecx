@@ -18,7 +18,6 @@ import io
 import logging
 import re
 import time
-from typing import Optional
 
 import requests
 
@@ -41,12 +40,12 @@ def _rate_limit() -> None:
     time.sleep(TWSE_REQUEST_DELAY)
 
 
-def _count(cell: str) -> Optional[int]:
+def _count(cell: str) -> int | None:
     m = _COUNT_RE.match(str(cell).strip())
     return int(m.group(1).replace(",", "")) if m else None
 
 
-def parse_breadth(payload: dict) -> Optional[dict]:
+def parse_breadth(payload: dict) -> dict | None:
     """Extract advance/decline counts from an MI_INDEX type=MS response.
 
     Uses the 股票 column, not 整體市場: the latter counts warrants, ETFs and
@@ -68,7 +67,7 @@ def parse_breadth(payload: dict) -> Optional[dict]:
     return None
 
 
-def fetch_breadth(target_date: str) -> Optional[dict]:
+def fetch_breadth(target_date: str) -> dict | None:
     """Advance/decline counts for one session. `target_date` is YYYYMMDD."""
     try:
         _rate_limit()
@@ -97,7 +96,29 @@ _TAIFEX_INVESTOR = "外資及陸資"
 _TAIFEX_NET_OI_COL = "多空未平倉口數淨額"
 
 
-def parse_taifex_oi(text: str) -> Optional[int]:
+def parse_taifex_oi_series(text: str) -> dict[str, int]:
+    """All 臺股期貨 外資及陸資 net-OI rows in a multi-day CSV, keyed by ISO date.
+
+    The endpoint accepts a date range and answers the whole window in one
+    response, so the 5-session change costs the same single request as the
+    level did. Rows for other products and investor types are ignored.
+    """
+    out: dict[str, int] = {}
+    for row in csv.DictReader(io.StringIO(text)):
+        if (row.get("商品名稱") or "").strip() != _TAIFEX_PRODUCT:
+            continue
+        if (row.get("身份別") or "").strip() != _TAIFEX_INVESTOR:
+            continue
+        date = (row.get("日期") or "").strip().replace("/", "-")
+        raw = (row.get(_TAIFEX_NET_OI_COL) or "").strip().replace(",", "")
+        try:
+            out[date] = int(raw)
+        except ValueError:
+            continue
+    return out
+
+
+def parse_taifex_oi(text: str) -> int | None:
     """Foreign net futures open interest from the daily institutional CSV.
 
     Positive = net long, negative = net short. Only 臺股期貨 (TX) counts; the
@@ -118,30 +139,53 @@ def parse_taifex_oi(text: str) -> Optional[int]:
     return None
 
 
-def fetch_foreign_futures_oi(date_iso: str) -> Optional[int]:
-    """Fetch foreign net OI for one session. `date_iso` is YYYY-MM-DD.
-
-    The endpoint answers Big5-encoded CSV and returns a header-only body for
-    non-trading days, which parse_taifex_oi reports as None.
-    """
-    slashed = date_iso.replace("-", "/")
+def _taifex_csv(start_iso: str, end_iso: str) -> str | None:
+    """POST the institutional-position endpoint for a date range, Big5-decoded."""
+    start, end = start_iso.replace("-", "/"), end_iso.replace("-", "/")
     try:
         resp = _SESSION.post(
             TAIFEX_INST,
             data={
-                "firstDate": slashed, "lastDate": slashed,
-                "queryStartDate": slashed, "queryEndDate": slashed,
-                "commodityId": "",
+                "firstDate": start, "lastDate": end,
+                "queryStartDate": start, "queryEndDate": end,
+                "commodityId": "TXF",
             },
             timeout=HTTP_TIMEOUT,
         )
         resp.raise_for_status()
-        text = resp.content.decode("big5", errors="replace")
+        return resp.content.decode("big5", errors="replace")
     except Exception as e:
-        log.warning("TAIFEX %s failed: %s", date_iso, e)
+        log.warning("TAIFEX %s→%s failed: %s", start_iso, end_iso, e)
         return None
 
-    oi = parse_taifex_oi(text)
+
+def fetch_foreign_futures_oi_series(start_iso: str, end_iso: str) -> dict[str, int]:
+    """Foreign net OI for every session in [start, end], keyed by ISO date.
+
+    One request covers the whole window, so the 5-session change costs the same
+    single call the level used to. Returns {} on failure rather than raising —
+    a dead TAIFEX leaves subitem 4 `data_missing` instead of killing the run.
+    """
+    body = _taifex_csv(start_iso, end_iso)
+    if body is None:
+        return {}
+    series = parse_taifex_oi_series(body)
+    if not series:
+        log.warning("TAIFEX %s→%s: no %s / %s rows",
+                    start_iso, end_iso, _TAIFEX_PRODUCT, _TAIFEX_INVESTOR)
+    return series
+
+
+def fetch_foreign_futures_oi(date_iso: str) -> int | None:
+    """Foreign net OI for one session. `date_iso` is YYYY-MM-DD.
+
+    Returns None on a non-trading day, where the endpoint answers a
+    header-only body.
+    """
+    body = _taifex_csv(date_iso, date_iso)
+    if body is None:
+        return None
+    oi = parse_taifex_oi(body)
     if oi is None:
         log.warning("TAIFEX %s: no %s / %s row", date_iso, _TAIFEX_PRODUCT, _TAIFEX_INVESTOR)
     return oi

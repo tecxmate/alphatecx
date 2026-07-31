@@ -63,6 +63,21 @@ the PRD §7 acceptance table. If a row misses, change thresholds in
 `mcp_server/api/rg/config.py` and re-run. **Do not special-case a date in `scoring.py`** —
 a scorer that recognises 2026-07-24 has learned the answer, not the pattern.
 
+Last run (2026-07-31, range 2026-06-25 → 07-30): **7/7 scorable rows PASS.** Calm and
+rising sessions score 0–1 🟢, mild weakness 2–3 🟡, and the seven acceptance sessions plus
+6/26 (−3.64%) score 4–8 🔴. 7/31 is unscored — TAIEX for it is not harvested yet.
+
+Two calibration changes came out of that run, both recorded in `config.py`:
+
+- **Subitem 4 scores the *change* in foreign futures net OI, not the level** (a departure
+  from PRD §5 #4). Measured across 2026-06/07 the level never left 65k–86k net short — on
+  +4.20% days and on the −6.47% crash alike — so the PRD's 20,000 threshold was crossed on
+  every single session and the subitem added a constant +2 to every score. That is not a
+  signal; it just moved the scale up and made 🟢 reachable only when all four other
+  subitems were zero.
+- **Bands moved to 0–2 / 3 / ≥4.** With the constant removed every score dropped ~2, so
+  the PRD's ≥5 red cutoff moved with it.
+
 ## Running
 
 ```bash
@@ -99,6 +114,22 @@ All read the same rows the Telegram bot reads, so the phone and the conversation
 disagree.
 
 ## Limits — read this
+
+**0. Foreign futures OI barely helps, and the margin feed silently died.** Two things the
+first live replay exposed, both worth knowing before you trust a light:
+
+- Subitem 4 carries little signal at any horizon on this sample. 7/24 (−2.67%) saw
+  foreigners *cut* net short by ~9,900 while 6/30 (+2.50%) saw them add ~6,600 — the sign
+  is backwards on the days that matter most. It is scored small on purpose. The light
+  effectively rests on trend + breadth + the day's move.
+- Subitem 3 (margin) was blind for all of July: the nightly harvest recorded
+  `status='empty'` with 0 rows on every trading day since ~1 July while T86 ingested 5,000+
+  rows a day, and `loader.get_ingested_dates` treats `'empty'` as "confirmed holiday —
+  skip forever", so the gap could never self-heal. Repaired by hand (22 sessions, 41,081
+  rows) on 2026-07-31. **The underlying harvester bug is not fixed** — it will re-open
+  tonight. Even repaired the subitem stays quiet through July, correctly: margin balance
+  *fell* 0.2% → 9.7%, so retail was deleveraging, not the "leverage rising into a falling
+  tape" the rule looks for.
 
 **1. Gap-down crashes are not catchable.** 2026-06-08 fell −3.48% in one session with no
 advance signal in any of the five M1 subitems. The PRD lists it as a known miss. M1 warns

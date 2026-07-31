@@ -8,12 +8,12 @@ the caller can see which subitems were blind and say so in the push.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from . import config as cfg
 
 
-def _f(metrics: dict, key: str) -> Optional[float]:
+def _f(metrics: dict, key: str) -> float | None:
     """Read a numeric metric, treating absent/None/non-numeric as missing."""
     v = metrics.get(key)
     if v is None:
@@ -89,19 +89,29 @@ def _score_margin(m: dict) -> dict:
 
 
 def _score_futures(m: dict) -> dict:
-    """4. Foreign net futures open interest (negative = net short)."""
+    """4. Foreign futures positioning — the change, not the level.
+
+    `fut_net_oi_chg_5d` is (net OI today − net OI 5 sessions ago). Negative
+    means foreigners added to net short. The level is reported for context but
+    never scored: it sits structurally deep net-short every single session, so
+    scoring it produced a constant. See config for the measurements.
+    """
     oi = _f(m, "fut_foreign_net_oi")
-    inputs = {"fut_foreign_net_oi": oi}
-    if oi is None:
-        return _subitem(4, "futures", 0, "期貨留倉資料缺漏", inputs, missing=True)
-    net_short = -oi
-    if net_short > cfg.FUT_NET_SHORT_HEAVY:
+    chg = _f(m, "fut_net_oi_chg_5d")
+    inputs = {"fut_foreign_net_oi": oi, "fut_net_oi_chg_5d": chg,
+              "window": cfg.FUT_CHANGE_WINDOW}
+    if chg is None:
+        return _subitem(4, "futures", 0, "期貨留倉變化資料缺漏", inputs, missing=True)
+
+    added = -chg   # positive = added to net short
+    if added > cfg.FUT_ADD_SHORT_HEAVY:
         return _subitem(4, "futures", cfg.PTS_FUT_HEAVY,
-                        f"外資期貨淨空 {net_short:,.0f} 口", inputs)
-    if net_short > cfg.FUT_NET_SHORT_MILD:
+                        f"外資期貨 {cfg.FUT_CHANGE_WINDOW} 日加空 {added:,.0f} 口", inputs)
+    if added > cfg.FUT_ADD_SHORT_MILD:
         return _subitem(4, "futures", cfg.PTS_FUT_MILD,
-                        f"外資期貨淨空 {net_short:,.0f} 口", inputs)
-    return _subitem(4, "futures", 0, f"外資期貨淨部位 {oi:+,.0f} 口", inputs)
+                        f"外資期貨 {cfg.FUT_CHANGE_WINDOW} 日加空 {added:,.0f} 口", inputs)
+    return _subitem(4, "futures", 0,
+                    f"外資期貨 {cfg.FUT_CHANGE_WINDOW} 日淨部位變化 {chg:+,.0f} 口", inputs)
 
 
 def _score_day_drop(m: dict) -> dict:

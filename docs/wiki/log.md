@@ -757,3 +757,66 @@ attributed_to: [niko]   belongs_to: [system-architecture]
 - Used hook id `ruff-check`; plain `ruff` is now a legacy alias (Lucky_vibes still pins the old one).
 - Verified by probe: a file with unused imports + an unused local is rejected, imports auto-fixed,
   F841 reported. `pre-commit install` is required once per clone — the hook lives in `.git/hooks/`.
+
+## [2026-07-31] decision | Risk Guard M1 verified against live data — two calibration fixes, one harvester bug found
+attributed_to: [niko, claude-agent]   belongs_to: [risk-guard, alphatecx]
+- First replay against live Zeabur data passed 7/7 scorable acceptance rows — but the per-subitem
+  table showed the pass was hollow, so the numbers were re-derived from measurement.
+- **Subitem 4 was a constant.** Foreign futures net OI never left 65k–86k net short across
+  2026-06/07 — on +4.20% days and the −6.47% crash alike — so the PRD's 淨空>20,000口 threshold
+  fired on every session and added a flat +2 to every score. 🟢 became reachable only when all four
+  other subitems were zero, and 7/15 (+2.00%) / 7/21 (+4.20%) both read 🔴. Now scores the
+  5-session *change* in net OI (thresholds = p10 ≈ 8,000 added / median ≈ 4,000 of the observed
+  distribution). Deliberate departure from PRD §5 #4.
+- Honest limit, measured: the change barely separates either — 7/24 (−2.67%) saw foreigners *cut*
+  net short ~9,900 while 6/30 (+2.50%) saw them add ~6,600. 5d/10d/20d/percentile all invert on
+  the days that matter, so the subitem is capped small; the light rests on trend + breadth + day.
+- **Bands moved 0–2 / 3 / ≥4** (PRD says ≥5). Removing the constant dropped every score ~2. At ≥4
+  exactly the seven acceptance sessions plus 6/26 (−3.64%) are red and calm days land at 0–1; at
+  ≥5 the 7/24 row fails. Re-verified: 7/7 PASS, honestly this time.
+- **Stale margin was being scored as current** — `margin_totals` returns rows on-or-before the
+  session, so a stalled feed handed June's balance to a July session silently. Now requires an
+  exact date match, else `data_missing`.
+- **Pre-existing harvester bug, NOT fixed:** the margin feed has been dead since ~1 July —
+  `ingestion_log` shows `twse_margin` `status='empty'`, 0 rows every trading day while `twse_t86`
+  ingested 5,000+/day. Endpoint and parser are both fine (20260730 returns 1,873 rows by hand).
+  The trap is `loader.get_ingested_dates`, which treats `status IN ('ok','empty')` as skip-forever,
+  reading a transient failure as a confirmed holiday — so `--only margin` reports "29 skipped,
+  0 rows" while the table stays empty. Repaired 2026-06-30→07-30 by hand (22 sessions, 41,081 rows)
+  by bypassing the guard; **the bug will re-open on the next nightly run.**
+- Even repaired, subitem 3 stays quiet through July and correctly so: margin balance *fell* 0.2%
+  → 9.7%, i.e. retail deleveraging, not the "leverage rising into a falling tape" the rule seeks.
+- `pytest -q` → **206 passed, 5 skipped**.
+
+## [2026-07-31] decision | MCP server moved Vercel → Zeabur; DB link now private
+attributed_to: [niko]   belongs_to: [mcp-server, system-architecture]
+- Niko: "maybe host another in my zebuar no need in vercel anymore", then "impement". The pending
+  "switch Vercel's env off Neon" item was **dropped, not done** — the server moved instead.
+- The point isn't convenience. Co-locating with `postgresql` puts the read path on
+  `postgresql.zeabur.internal:5432`, so the cleartext-credentials exposure flagged in the DB
+  migration is *removed* from that path, not mitigated. **Still live for the harvesters**, which
+  reach `8.209.197.81:32046` from GitHub Actions and remain in cleartext.
+- Live: <https://alphatecx-mcp.zeabur.app>, service `6a6c4b0ed3dbd8abbc44eebb` in project
+  `alphatecx`. Vercel + Neon both left running as rollback.
+- `mcp<2` pinned in `mcp_server/requirements.txt` **before** first deploy: PyPI `mcp` is now 2.0.0
+  and dropped `mcp.server.fastmcp`, so a fresh container build would have died at import where
+  Vercel's older build never noticed. `uvicorn` added for the same reason — the image can't rely on
+  whatever happened to be installed.
+- New `mcp_server/api/app.py` merges bot routes into the MCP app; one uvicorn process can't do what
+  `vercel.json` rewrites did. `index.py`/`bot.py` untouched on purpose so Vercel still works.
+- `security.py` exempts `/bot/*` from the URL-secret gate — not a weakening, since on Vercel those
+  routes were a separate function the middleware never saw. Webhook keeps its own header secret +
+  owner chat_id gate. Tested: right secret 200, wrong 403, none 403, `/botevil` 404.
+- Secrets: `mcp_viewer` password rotated (old value unrecoverable from Zeabur vars) and root `.env`
+  re-synced for `apply_schema.py --rls`. **`MCP_BEARER_TOKEN` and the Telegram webhook secret are
+  both new** — the originals lived only in Vercel's env. Telegram webhook re-registered.
+- Non-obvious, cost me time: `zeabur variable create` hangs without `-i=false`; CLI-deployed
+  services reject `service redeploy` with `CANNOT_REDEPLOY_INPLACE` (needs a bound GitHub repo);
+  and the first boot's 1m46s image pull makes early health checks read 502 like a crash loop.
+- Corrected a real doc bug found by probing: the MCP endpoint is `/mcp/<token>/` with the trailing
+  slash. `web/README.md` documented `/mcp/<token>/mcp`, which 404s.
+- Explicitly **not** done: de-duplicating `src/quant/` ↔ `mcp_server/api/quant/`. That mirroring
+  existed only because Vercel's Root Directory was `mcp_server/`; containers dissolve the
+  constraint, so it's now removable — as its own piece of work, not a side effect of this one.
+- `pytest -q` 211 passed; focused `ruff check` clean; 35 tools verified live over MCP with
+  `sc_data_status` reading 608,082 `raw_twse_t86` rows.

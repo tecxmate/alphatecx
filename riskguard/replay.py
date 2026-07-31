@@ -59,14 +59,19 @@ def replay(start: str, end: str, write: bool = False) -> list[dict]:
         return []
 
     log.info("replaying %d sessions %s → %s", len(sessions), sessions[0], sessions[-1])
+    # One TAIFEX request for the whole window, reaching far enough back that the
+    # first session still has its 5-session lookback.
+    fut_series = sources.fetch_foreign_futures_oi_series(
+        (date.fromisoformat(sessions[0]) - timedelta(days=30)).isoformat(), sessions[-1])
+    log.info("TAIFEX series: %d sessions", len(fut_series))
+
     results: list[dict] = []
     prev_light: str | None = None
     prev_score: int | None = None
 
     for as_of in sessions:
         breadth = sources.fetch_breadth(as_of.replace("-", ""))
-        fut_oi = sources.fetch_foreign_futures_oi(as_of)
-        metrics = store.build_metrics(as_of, breadth, fut_oi)
+        metrics = store.build_metrics(as_of, breadth, fut_series)
         score, reasons = scoring.score_day(metrics)
 
         ctx = light_mod.build_index_context(metrics["_closes"])

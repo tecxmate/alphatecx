@@ -15,8 +15,6 @@ trigger fires (PRD §6 constraint, mirrors the M7 rule).
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from . import config as cfg
 
 
@@ -30,7 +28,7 @@ def _esc(text: object) -> str:
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _head(alert: dict, light: Optional[str]) -> str:
+def _head(alert: dict, light: str | None) -> str:
     sev = cfg.SEVERITY_EMOJI.get(alert.get("severity", "info"), "")
     light_emoji = cfg.LIGHT_EMOJI.get(light or "", "")
     name, ticker = alert.get("name"), alert.get("ticker_id")
@@ -51,7 +49,7 @@ _FACT_BUILDERS = {
 }
 
 
-def format_alert(alert: dict, light: Optional[str] = None) -> str:
+def format_alert(alert: dict, light: str | None = None) -> str:
     """Render one alert. Every message carries a fact line and an action line."""
     kind = alert.get("kind", "")
     builder = _FACT_BUILDERS.get(kind)
@@ -66,11 +64,11 @@ def format_alert(alert: dict, light: Optional[str] = None) -> str:
 
 
 def format_light_change(
-    prev_light: Optional[str],
+    prev_light: str | None,
     light: str,
     score: int,
     reasons: list[dict],
-    missing: Optional[list[str]] = None,
+    missing: list[str] | None = None,
 ) -> str:
     """Render an M1 light transition, or a red-light restatement.
 

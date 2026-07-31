@@ -19,7 +19,9 @@ def metrics(**over):
         "taiex_close": 45000.0, "taiex_pct": 0.5,
         "ma20": 44000.0, "ma60": 43000.0, "taiex_ret_5d_pct": 1.0,
         "adv_ratio_5d": 0.55, "margin_chg_5d_pct": 0.5,
-        "fut_foreign_net_oi": 5000,
+        # Deeply net short is the normal resting state, so a calm day carries a
+        # big negative level and a near-zero change.
+        "fut_foreign_net_oi": -70_000, "fut_net_oi_chg_5d": -500,
     }
     base.update(over)
     return base
@@ -57,12 +59,30 @@ class SubitemTests(unittest.TestCase):
             metrics(margin_chg_5d_pct=5.0, taiex_ret_5d_pct=-2.0))[1][2]
         self.assertEqual(rising_in_down_market["points"], 2)
 
-    def test_futures_net_short_bands(self):
-        self.assertEqual(scoring.score_day(metrics(fut_foreign_net_oi=-81017))[1][3]["points"], 2)
-        self.assertEqual(scoring.score_day(metrics(fut_foreign_net_oi=-15000))[1][3]["points"], 1)
-        self.assertEqual(scoring.score_day(metrics(fut_foreign_net_oi=-5000))[1][3]["points"], 0)
-        # Net long is never a risk penalty.
-        self.assertEqual(scoring.score_day(metrics(fut_foreign_net_oi=40000))[1][3]["points"], 0)
+    def test_futures_scores_added_net_short_not_the_level(self):
+        def pts(**kw):
+            return scoring.score_day(metrics(**kw))[1][3]["points"]
+
+        self.assertEqual(pts(fut_net_oi_chg_5d=-9_000), 2)
+        self.assertEqual(pts(fut_net_oi_chg_5d=-5_000), 1)
+        self.assertEqual(pts(fut_net_oi_chg_5d=-1_000), 0)
+        # Covering net short is never a risk penalty.
+        self.assertEqual(pts(fut_net_oi_chg_5d=+9_929), 0)
+
+    def test_a_deep_but_unchanged_net_short_scores_nothing(self):
+        # The measured failure this metric replaces: through 2026-06/07 the
+        # level sat 65k–86k net short on every single session, so scoring the
+        # level added a constant +2 to every day and told the operator nothing.
+        for level in (-65_039, -81_017, -86_189):
+            _, reasons = scoring.score_day(
+                metrics(fut_foreign_net_oi=level, fut_net_oi_chg_5d=-200))
+            self.assertEqual(reasons[3]["points"], 0, f"level {level} must not score")
+
+    def test_missing_change_is_flagged_even_when_the_level_is_known(self):
+        _, reasons = scoring.score_day(
+            metrics(fut_foreign_net_oi=-81_017, fut_net_oi_chg_5d=None))
+        self.assertTrue(reasons[3]["data_missing"])
+        self.assertEqual(reasons[3]["points"], 0)
 
     def test_day_drop_bands_do_not_stack(self):
         self.assertEqual(scoring.score_day(metrics(taiex_pct=-6.47))[1][4]["points"], 2)
@@ -72,7 +92,8 @@ class SubitemTests(unittest.TestCase):
 
 class MissingDataTests(unittest.TestCase):
     def test_absent_subitem_scores_zero_and_is_flagged_not_silently_calm(self):
-        score, reasons = scoring.score_day(metrics(fut_foreign_net_oi=None))
+        score, reasons = scoring.score_day(
+            metrics(fut_foreign_net_oi=None, fut_net_oi_chg_5d=None))
         self.assertEqual(reasons[3]["points"], 0)
         self.assertTrue(reasons[3]["data_missing"])
         self.assertIn("futures", scoring.missing_subitems(reasons))

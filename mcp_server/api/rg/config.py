@@ -34,10 +34,29 @@ MARGIN_WINDOW = 5
 MARGIN_GROWTH_PCT = 3.0
 PTS_MARGIN = 2
 
-# 4. Foreign net futures open interest (TAIFEX 臺股期貨 外資及陸資
-#    多空未平倉口數淨額). Negative = net short.
-FUT_NET_SHORT_HEAVY = 20_000
-FUT_NET_SHORT_MILD = 10_000
+# 4. Foreign futures positioning (TAIFEX 臺股期貨 外資及陸資 多空未平倉口數淨額).
+#
+#    Scores the *change*, not the level, which is a deliberate departure from
+#    PRD §5 #4 ("淨空>20,000口"). Measured over 2026-06/07 the level never left
+#    65k–86k net short — on +4.20% days and on the −6.47% crash alike — so the
+#    PRD's threshold was crossed on literally every session and the subitem
+#    contributed a constant +2 to every score. A constant is not a signal; it
+#    just moved the whole scale up and made 🟢 reachable only when all four
+#    other subitems were zero.
+#
+#    The level is a structural hedge against cash holdings. What carries
+#    information is foreigners *adding* to that hedge. Thresholds are the 10th
+#    percentile (≈ −8,000) and roughly the median (≈ −4,000) of the observed
+#    5-session change over the same window.
+#
+#    Honest limitation, measured: even this does not separate the 2026-07
+#    correction cleanly — 7/24 (−2.67%) saw foreigners *cut* net short by
+#    ~9,900 while 6/30 (+2.50%) saw them add ~6,600. On this sample the series
+#    carries little directional signal at any horizon, so it is deliberately
+#    capped at a small contribution rather than allowed to dominate.
+FUT_CHANGE_WINDOW = 5
+FUT_ADD_SHORT_HEAVY = 8_000   # added this many contracts to net short
+FUT_ADD_SHORT_MILD = 4_000
 PTS_FUT_HEAVY = 2
 PTS_FUT_MILD = 1
 
@@ -49,8 +68,14 @@ PTS_DAY_HEAVY = 2
 
 # ── Score → light bands ─────────────────────────────────────────────────────
 
-SCORE_YELLOW = 3   # 3–4
-SCORE_RED = 5      # ≥5
+SCORE_YELLOW = 3   # 3
+SCORE_RED = 4      # ≥4
+# PRD §5 bands 0–2 / 3–4 / ≥5 were written when subitem 4 scored the futures
+# *level*, which added a constant +2 to every session (see below). With that
+# padding removed every score dropped by ~2, so the cutoffs move with it.
+# Calibrated on 2026-06-25→07-30 via `python -m riskguard.replay`: ≥4 marks
+# exactly the seven PRD §7 acceptance sessions plus 6/26 (−3.64%), while calm
+# and rising days land at 0–1. Raising it back to 5 fails the 7/24 row.
 
 # ── Light hysteresis (PRD §5 M1 v1.1) ───────────────────────────────────────
 #

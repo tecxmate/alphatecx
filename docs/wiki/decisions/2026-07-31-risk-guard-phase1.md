@@ -123,9 +123,9 @@ run** or `rg_journal_add` loses its INSERT grant.
 
 ## Verification
 
-- `pytest -q` → **202 passed, 5 skipped** (was 112 passed; the 5 skips are the
+- `pytest -q` → **206 passed, 5 skipped** (was 112 passed; the 5 skips are the
   pre-existing DB tests — `psycopg_pool` is not installed locally).
-- 85 new tests across `test_rg_scoring.py`, `test_rg_stops.py`, `test_rg_checklist.py`,
+- 89 new tests across `test_rg_scoring.py`, `test_rg_stops.py`, `test_rg_checklist.py`,
   `test_rg_sources.py`, `test_rg_pipeline.py`. Source parsers are tested against captured **real** 2026-07-30
   payloads, not mocks of our own assumptions.
 - Focused `ruff check` clean apart from `UP045`/`B905`, which match the surrounding
@@ -133,8 +133,8 @@ run** or `rg_journal_add` loses its INSERT grant.
 - Import graph verified along the bare-import path the Vercel bundle uses
   (`from rg import ...` with `mcp_server/api` on `sys.path`).
 
-**Not yet verified — needs [niko] with DB credentials.** There is no `.env` in this
-working copy, so the replay acceptance table has never been run against live data:
+**Replay verified 2026-07-31 against live Zeabur data: 7/7 scorable rows PASS.**
+Commands, for re-running after a threshold change:
 
 ```bash
 python apply_schema.py
@@ -142,9 +142,51 @@ python -m riskguard.replay --start 2026-06-01 --end 2026-07-31          # report
 python -m riskguard.replay --start 2026-06-01 --end 2026-07-31 --write  # persist
 ```
 
-`raw_twse_index` holds 94 sessions back to 2026-02-25 (verified via `q_index_history`),
-so MA60 is computable for the whole replay range; it does have gaps (5/26–6/04, 7/10) and
-ends at 7/30. The replay prints
+`raw_twse_index` holds 94 sessions back to 2026-02-25, so MA60 is computable across the
+range. 7/31 is unscored — not harvested yet.
+
+## What the first live replay changed
+
+The initial run passed 7/7, but the table showed the pass was hollow — see the calibration
+findings below. After fixing them it still passes 7/7, now on subitems that mean something.
+
+**Subitem 4 scored a constant.** Across 2026-06/07 foreign futures net OI never left
+65k–86k net short — on +4.20% days and on the −6.47% crash alike — so the PRD's
+"淨空>20,000口" threshold was crossed on *every* session and the subitem contributed a flat
++2 to every score. It padded the scale (🟢 needed all four other subitems at zero) and made
+7/15 (+2.00%) and 7/21 (+4.20%) read 🔴. Now scores the 5-session *change* in net OI, with
+thresholds at the 10th percentile (≈8,000 added) and median (≈4,000) of the observed
+distribution — a deliberate departure from PRD §5 #4.
+
+Honest limit, measured: even the change barely separates. 7/24 (−2.67%) saw foreigners
+*cut* net short by ~9,900 while 6/30 (+2.50%) saw them add ~6,600 — inverted on the days
+that matter. Tried 5d, 10d, 20d and trailing-percentile; all invert. The subitem is
+therefore capped small rather than dominant, and the light rests on trend + breadth + day.
+
+**Bands moved 0–2 / 3 / ≥4** (PRD says ≥5). With the constant +2 gone every score fell ~2,
+so the cutoff moved with it. At ≥4 exactly the seven acceptance sessions plus 6/26 (−3.64%)
+are red, and calm/rising days land at 0–1. At ≥5 the 7/24 row fails.
+
+**Stale margin was scored as current** — `margin_totals` returns the latest rows *on or
+before* the session, so a stalled feed handed June's balance to a July session silently.
+Now requires an exact date match, else `data_missing`.
+
+## Pre-existing harvester bug found, NOT fixed
+
+The margin feed has been dead since ~1 July. `ingestion_log` shows `status='empty'`,
+`rows_upserted=0` for `twse_margin` on every trading day since, while `twse_t86` ingested
+5,000+ rows daily. The endpoint and parser are both fine — fetching 20260730 by hand
+returns 1,873 rows.
+
+The trap is `loader.get_ingested_dates`, which treats `status IN ('ok','empty')` as "skip
+on retry", reading `empty` as a confirmed holiday. So a day that failed for any transient
+reason is skipped forever and `--only margin` reports "29 skipped, 0 rows" while the table
+stays empty. Self-sealing: a broken fetch plus a guard that reads failure as success.
+
+Repaired by hand for 2026-06-30 → 07-30 (22 sessions, 41,081 rows) by bypassing the guard.
+**The bug itself is untouched and will re-open on the next nightly run.** Fixing it means
+either not recording `empty` when the market was open (cross-check the calendar), or having
+`get_ingested_dates` skip only `'ok'`. Out of Risk Guard scope; belongs to the harvester. The replay prints
 `data_missing` per row and refuses to count an unscored acceptance row as a pass.
 
 ## Open

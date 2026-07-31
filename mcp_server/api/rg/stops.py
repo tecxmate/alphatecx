@@ -11,12 +11,10 @@ the channel, which is the one failure this module cannot afford.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 from . import config as cfg
 
 
-def _num(v) -> Optional[float]:
+def _num(v) -> float | None:
     if v is None:
         return None
     try:
@@ -25,7 +23,7 @@ def _num(v) -> Optional[float]:
         return None
 
 
-def effective_lines(position: dict) -> tuple[Optional[float], Optional[float], bool]:
+def effective_lines(position: dict) -> tuple[float | None, float | None, bool]:
     """Resolve (warn_price, exit_price, is_fallback) for one position.
 
     When no exit line was set, fall back to cost × (1 − hard_stop_pct/100) so a
