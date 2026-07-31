@@ -23,7 +23,6 @@ import re
 from datetime import date, datetime
 from html import escape
 from pathlib import Path
-from typing import Optional
 
 import psycopg
 from dotenv import load_dotenv

@@ -100,7 +100,6 @@ def compute_leadlag_pairs(
     downstream by that many days.
     """
     n_tickers = len(tickers)
-    n_days = rets.shape[0]
     out = []
     for i in range(n_tickers):
         if upstream_filter is not None and tickers[i] not in upstream_filter:

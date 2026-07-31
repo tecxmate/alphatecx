@@ -69,9 +69,6 @@ def fetch_classified_returns(conn, days: int):
     for d, t, c_ in rows:
         by_date.setdefault(d, {})[t] = float(c_)
     # Universe size on a date varies; pick the largest fully-aligned subset
-    counts = sorted({tuple(sorted(m.keys())): 0 for m in by_date.values()},
-                    key=lambda k: -len(k))
-    # Keep dates whose ticker set is the most common large set
     target_set = set()
     for m in by_date.values():
         s = frozenset(m.keys())

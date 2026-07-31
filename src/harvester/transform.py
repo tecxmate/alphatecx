@@ -7,7 +7,6 @@ Supabase upsert. Handles type coercion, deduplication, and validation.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import polars as pl
 

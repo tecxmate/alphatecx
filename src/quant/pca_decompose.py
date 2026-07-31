@@ -24,7 +24,6 @@ import argparse
 import logging
 import os
 from datetime import date, timedelta
-from typing import Optional
 
 import numpy as np
 import psycopg

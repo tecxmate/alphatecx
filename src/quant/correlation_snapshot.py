@@ -20,7 +20,6 @@ import argparse
 import json
 import logging
 import os
-import sys
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -643,7 +642,6 @@ def _fig_individual_heatmap(snap, corr, tickers):
 
 
 def _fig_combined(snap, corr, tickers):
-    import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     fig = make_subplots(
         rows=2, cols=2,
