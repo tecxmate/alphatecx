@@ -1,0 +1,37 @@
+# Caddy fronts the MCP server and terminates TLS. Certificates are issued and
+# renewed automatically from Let's Encrypt — this is the piece that fixes the
+# standing problem on Zeabur, where the MCP endpoint's only transport guarantee
+# came from the platform and Postgres had no TLS at all.
+#
+# Requires MCP_DOMAIN to resolve to this host's public IP BEFORE first start.
+# The ACME HTTP challenge hits port 80 from outside; if DNS is wrong or 80 is
+# firewalled, Caddy retries into a Let's Encrypt rate limit rather than failing
+# loudly, so verify DNS first.
+
+{$MCP_DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy mcp:8080 {
+		# The MCP streamable-HTTP transport holds long-lived responses. A
+		# buffering proxy sits on Server-Sent Events and makes tool calls look
+		# like hangs, so stream them through untouched.
+		flush_interval -1
+	}
+
+	# Auth is URL-as-secret: every real route carries the bearer token in its
+	# path, and the app 404s anything else. Nothing to add here — but it does
+	# mean request paths contain the secret, which is why access logging is
+	# left off. Turn it on only while debugging, then turn it back off.
+	log {
+		output stderr
+		format console
+		level WARN
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}

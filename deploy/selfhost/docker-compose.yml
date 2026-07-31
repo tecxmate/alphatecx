@@ -1,0 +1,117 @@
+# Self-hosted alphatecx — the whole system on one box.
+#
+# Mirrors the four Zeabur services (postgresql / mcp / cron / newswatch). The
+# fifth service currently on Zeabur, `worker`, is deliberately absent: it runs
+# the same `python -m src.news.watch` as `newswatch` and is a duplicate poller.
+#
+# Run from this directory:  docker compose up -d --build
+# Bootstrap steps before the first `up` are in README.md — the mcp_viewer role
+# does not exist in a fresh Postgres and the MCP service cannot create it.
+#
+# THE SECURITY PROPERTY THAT MAKES THIS WORTH DOING: postgres publishes no
+# ports. It is reachable only on the internal docker network, so the cleartext
+# credential exposure that exists on Zeabur (TLS disabled, public TCP proxy)
+# does not get mitigated here — it stops existing. Do not add a `ports:` entry
+# to postgres for convenience; use `docker compose exec postgres psql` instead.
+
+name: alphatecx
+
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: zeabur
+      # Zeabur's Postgres uses en_US.utf8. Matching it keeps text ORDER BY
+      # identical after a restore — C.UTF-8 sorts differently and would
+      # silently reshuffle every alphabetical result.
+      LANG: en_US.utf8
+      POSTGRES_INITDB_ARGS: "--locale=en_US.utf8"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Dependents wait on this. Without it they race an unready database and
+      # crash-loop through their restart policy instead of starting cleanly.
+      test: ["CMD-SHELL", "pg_isready -U root -d zeabur"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  mcp:
+    build:
+      context: ../..
+      dockerfile: mcp_server/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      # Read-only role. DATABASE_URL is deliberately NOT passed — giving the
+      # MCP server write access would defeat the read-only boundary that
+      # sql/003_rls.sql exists to enforce.
+      MCP_DATABASE_URL: postgresql://mcp_viewer:${MCP_VIEWER_PASSWORD:?}@postgres:5432/zeabur?sslmode=disable
+      # The bot writes (watchlist, journal), so it gets the root DSN.
+      BOT_DATABASE_URL: postgresql://root:${POSTGRES_PASSWORD:?}@postgres:5432/zeabur?sslmode=disable
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:?}
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+      FUGLE_API_KEY: ${FUGLE_API_KEY:-}
+    # No ports: caddy is the only way in.
+
+  cron:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      DATABASE_URL: postgresql://root:${POSTGRES_PASSWORD:?}@postgres:5432/zeabur?sslmode=disable
+      TZ: Asia/Taipei
+      TWSE_REQUEST_DELAY: "3.0"
+      HTTP_TIMEOUT: ${HTTP_TIMEOUT:-30}
+      FINMIND_TOKEN: ${FINMIND_TOKEN:-}
+      FUGLE_API_KEY: ${FUGLE_API_KEY:-}
+      # Unset by default ON PURPOSE while GitHub Actions still runs the same
+      # schedules — the message layer is the one part of a double run that is
+      # not idempotent, so setting these makes every alert arrive twice. Once
+      # you disable the workflows, set them: otherwise a cron failure here is
+      # silent, and a silent Risk Guard failure is a stop-loss that never fired.
+      TELEGRAM_TOKEN: ${CRON_TELEGRAM_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${CRON_TELEGRAM_CHAT_ID:-}
+
+  newswatch:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.newswatch
+    restart: unless-stopped
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      DATABASE_URL: postgresql://root:${POSTGRES_PASSWORD:?}@postgres:5432/zeabur?sslmode=disable
+      TZ: Asia/Taipei
+      NEWS_POLL_SECONDS: ${NEWS_POLL_SECONDS:-180}
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [mcp]
+    ports:
+      - "80:80"     # required for the ACME HTTP challenge, not just redirects
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # certificates live here — losing this re-issues,
+      - caddy_config:/config  # and Let's Encrypt rate-limits re-issuance
+    environment:
+      MCP_DOMAIN: ${MCP_DOMAIN:?set MCP_DOMAIN in .env}
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
