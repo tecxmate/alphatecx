@@ -31,17 +31,23 @@ def metrics(**over):
 
 
 class SubitemTests(unittest.TestCase):
-    def test_calm_market_scores_zero_and_is_green(self):
+    def test_calm_market_is_green_but_with_no_margin(self):
+        # Since PRD §5's absolute level was restored, subitem 4 contributes +2
+        # on every session the data has ever shown, so a calm day floors at 2.
+        # Green survives (band is <=2) but with zero headroom: one point from
+        # any other subitem tips it to yellow. Locked in a test so the next
+        # person reads it as a deliberate calibration, not drift.
         score, reasons = scoring.score_day(metrics())
-        self.assertEqual(score, 0)
+        self.assertEqual(score, 2)
         self.assertEqual(scoring.light_from_score(score), "green")
+        self.assertEqual(scoring.light_from_score(score + 1), "yellow")
         self.assertEqual(scoring.missing_subitems(reasons), [])
 
     def test_below_both_moving_averages_stacks_to_three(self):
         score, reasons = scoring.score_day(
             metrics(taiex_close=42000.0, ma20=44000.0, ma60=43000.0))
         self.assertEqual(reasons[0]["points"], 3)
-        self.assertEqual(score, 3)
+        self.assertEqual(score, 5)   # 3 trend + 2 constant futures level
 
     def test_below_ma20_only_scores_one(self):
         _, reasons = scoring.score_day(
@@ -93,28 +99,40 @@ class SubitemTests(unittest.TestCase):
             metrics(margin_chg_5d_pct=5.0, taiex_ret_5d_pct=-2.0))[1][2]
         self.assertEqual(rising_in_down_market["points"], 2)
 
-    def test_futures_scores_added_net_short_not_the_level(self):
+    def test_futures_scores_the_level_not_the_change(self):
         def pts(**kw):
             return scoring.score_day(metrics(**kw))[1][3]["points"]
 
-        self.assertEqual(pts(fut_net_oi_chg_5d=-9_000), 2)
-        self.assertEqual(pts(fut_net_oi_chg_5d=-5_000), 1)
-        self.assertEqual(pts(fut_net_oi_chg_5d=-1_000), 0)
-        # Covering net short is never a risk penalty.
-        self.assertEqual(pts(fut_net_oi_chg_5d=+9_929), 0)
+        self.assertEqual(pts(fut_foreign_net_oi=-82_515), 2)   # PRD §5 example
+        self.assertEqual(pts(fut_foreign_net_oi=-20_000), 2)   # boundary, inclusive
+        self.assertEqual(pts(fut_foreign_net_oi=-10_000), 1)
+        self.assertEqual(pts(fut_foreign_net_oi=-5_000), 0)
+        # Net LONG is never a risk penalty.
+        self.assertEqual(pts(fut_foreign_net_oi=+30_000), 0)
+        # The change is now context only — it must not move the score.
+        self.assertEqual(pts(fut_foreign_net_oi=-82_515, fut_net_oi_chg_5d=+9_929), 2)
 
-    def test_a_deep_but_unchanged_net_short_scores_nothing(self):
-        # The measured failure this metric replaces: through 2026-06/07 the
-        # level sat 65k–86k net short on every single session, so scoring the
-        # level added a constant +2 to every day and told the operator nothing.
+    def test_the_level_scores_on_every_observed_session(self):
+        # Documents the accepted cost of following PRD §5 literally. Through
+        # 2026-06/07 the level sat 65k–86k net short on EVERY session, so this
+        # subitem is a constant, not a discriminator: it reads the same whether
+        # foreigners piled into shorts or covered them. Kept as a test so the
+        # property is visible rather than folklore.
         for level in (-65_039, -81_017, -86_189):
             _, reasons = scoring.score_day(
                 metrics(fut_foreign_net_oi=level, fut_net_oi_chg_5d=-200))
-            self.assertEqual(reasons[3]["points"], 0, f"level {level} must not score")
+            self.assertEqual(reasons[3]["points"], 2, f"level {level} scores +2")
 
-    def test_missing_change_is_flagged_even_when_the_level_is_known(self):
+    def test_a_known_level_scores_even_when_the_change_is_missing(self):
+        # The level is what is scored now, so a missing change is no longer a
+        # data gap for this subitem.
         _, reasons = scoring.score_day(
             metrics(fut_foreign_net_oi=-81_017, fut_net_oi_chg_5d=None))
+        self.assertFalse(reasons[3]["data_missing"])
+        self.assertEqual(reasons[3]["points"], 2)
+
+    def test_a_missing_level_is_flagged_as_data_missing(self):
+        _, reasons = scoring.score_day(metrics(fut_foreign_net_oi=None))
         self.assertTrue(reasons[3]["data_missing"])
         self.assertEqual(reasons[3]["points"], 0)
 

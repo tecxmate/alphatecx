@@ -15,6 +15,19 @@
 # Market closes 13:30; the buffer is for TWSE/MOPS to publish closing data.
 30 16 * * 1-5 /app/deploy/daily-chain.sh
 
+# ── Margin catch-up — 21:00 Taipei, weekdays ────────────────────────────────
+# The MI_MARGN fetcher is NOT broken; TWSE simply publishes 融資融券 after the
+# 16:30 harvest window. Measured 2026-07-31 at 18:36 Taipei: the endpoint
+# returned stat='OK' with 1,060 rows for 07-30 and
+# 「很抱歉,沒有符合條件的資料」 for 07-31. So the post-close run can only ever
+# record an empty day, which left M1's subitem 3 (margin) permanently
+# data_missing and unscored.
+#
+# a1bafbd already made an `empty` logged on a real trading day retryable
+# instead of a permanent skip — but nothing ran later to take the retry. This
+# is that run. Idempotent: upsert on (date, ticker_id).
+0 21 * * 1-5 python -m src.backfill.run --days 3 --only margin
+
 # ── Risk Guard pre-market restatement — 08:30 Taipei, weekdays ──────────────
 # The 試撮 window, before the 09:00 open. Has to land before the operator can
 # place an order — that is the only moment a restatement is worth anything.

@@ -123,36 +123,42 @@ def _score_margin(m: dict) -> dict:
 
 
 def _score_futures(m: dict) -> dict:
-    """4. Foreign futures positioning — the change, not the level.
+    """4. Foreign futures positioning — the absolute level, per PRD §5.
 
-    `fut_net_oi_chg_5d` is (net OI today − net OI 5 sessions ago). Negative
-    means foreigners added to net short. The level is reported for context but
-    never scored: it sits structurally deep net-short every single session, so
-    scoring it produced a constant. See config for the measurements.
+    Scores `fut_foreign_net_oi`: net short ≥ FUT_NET_SHORT_HEAVY → +2. The
+    5-day change is still reported in `inputs` but no longer scored.
 
-    Re-litigated 2026-07-31 during acceptance, which read this as deviating
-    from PRD §5. Implementing §5 literally was tried and reverted: with a
-    20,000 threshold the level scores +2 on 37/37 recorded sessions, pinning
-    the floor score at 2 against a green band of ≤2. The suite caught it —
-    `test_calm_market_scores_zero_and_is_green` fails, i.e. a quiet market
-    stops being green. The spec is what needs amending, not this function.
+    Restored to the spec 2026-07-31 at [niko]'s direction, after three rounds
+    of acceptance flagged the change-based version as a deviation. The
+    measurement that argued against it is recorded rather than re-run: over the
+    37 sessions on record the level ran -63,168 to -86,189, so the 20,000
+    threshold fires on 100% of days and this subitem is a constant +2 rather
+    than a signal.
+
+    Concretely that means the floor score is 2 against a green band of ≤2 — a
+    calm market stays green but with no margin, and one point from any other
+    subitem turns it yellow. That is a risk-model choice, and it is the
+    owner's to make; it is written down here so it is not rediscovered as a
+    surprise. Making this subitem discriminate again needs a threshold the data
+    crosses (rolling percentile, or ~80,000), not a change to this function.
     """
     oi = _f(m, "fut_foreign_net_oi")
     chg = _f(m, "fut_net_oi_chg_5d")
     inputs = {"fut_foreign_net_oi": oi, "fut_net_oi_chg_5d": chg,
-              "window": cfg.FUT_CHANGE_WINDOW}
-    if chg is None:
-        return _subitem(4, "futures", 0, "期貨留倉變化資料缺漏", inputs, missing=True)
+              "window": cfg.FUT_CHANGE_WINDOW,
+              "threshold": cfg.FUT_NET_SHORT_HEAVY}
+    if oi is None:
+        return _subitem(4, "futures", 0, "期貨留倉資料缺漏", inputs, missing=True)
 
-    added = -chg   # positive = added to net short
-    if added > cfg.FUT_ADD_SHORT_HEAVY:
+    net_short = -oi   # positive = net short
+    if net_short >= cfg.FUT_NET_SHORT_HEAVY:
         return _subitem(4, "futures", cfg.PTS_FUT_HEAVY,
-                        f"外資期貨 {cfg.FUT_CHANGE_WINDOW} 日加空 {added:,.0f} 口", inputs)
-    if added > cfg.FUT_ADD_SHORT_MILD:
+                        f"外資期貨淨空 {net_short:,.0f} 口", inputs)
+    if net_short >= cfg.FUT_NET_SHORT_MILD:
         return _subitem(4, "futures", cfg.PTS_FUT_MILD,
-                        f"外資期貨 {cfg.FUT_CHANGE_WINDOW} 日加空 {added:,.0f} 口", inputs)
+                        f"外資期貨淨空 {net_short:,.0f} 口", inputs)
     return _subitem(4, "futures", 0,
-                    f"外資期貨 {cfg.FUT_CHANGE_WINDOW} 日淨部位變化 {chg:+,.0f} 口", inputs)
+                    f"外資期貨淨部位 {oi:+,.0f} 口", inputs)
 
 
 def _score_day_drop(m: dict) -> dict:

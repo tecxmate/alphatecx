@@ -170,7 +170,10 @@ class RiskLightTests(unittest.TestCase):
         self.emit.assert_called_once()
 
     def test_missing_subitems_are_surfaced_to_the_caller(self):
-        self.store.build_metrics.return_value = _metrics(fut_net_oi_chg_5d=None)
+        # Subitem 4 scores the absolute level (PRD §5), so the LEVEL going
+        # absent is the data gap — a missing 5-day change is now only missing
+        # context and must not be reported as one.
+        self.store.build_metrics.return_value = _metrics(fut_foreign_net_oi=None)
         out = pipeline.run_risk_light("2026-07-30")
         self.assertIn("futures", out["data_missing"])
 

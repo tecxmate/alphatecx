@@ -71,16 +71,24 @@ FUT_CHANGE_WINDOW = 5
 FUT_ADD_SHORT_HEAVY = 8_000   # added this many contracts to net short
 FUT_ADD_SHORT_MILD = 4_000
 
-# PRD §5 scores the ABSOLUTE net-short level (≥20,000 口 → +2). Measured
-# 2026-07-31 and deliberately NOT implemented: across all 37 sessions on record
-# the foreign net OI ran -63,168 to -86,189, so a 20,000 threshold is crossed
-# on 100% of days. Scoring it adds a constant +2 to every session, which pins
-# the floor score at 2 against a green band of ≤2 — a calm market stops being
-# green the moment any other subitem contributes a single point.
+# Absolute net-short level, PRD §5. Scored since 2026-07-31 at [niko]'s
+# direction; FUT_ADD_SHORT_* above survive only as reported context.
 #
-# Reinstating the level needs a threshold the data actually crosses (a rolling
-# percentile, or ~80,000) AND a recalibration of SCORE_YELLOW / SCORE_RED.
-# See docs/wiki/log.md 2026-07-31 for the measurement.
+# MEASURED CONSEQUENCE, accepted knowingly: across the 37 sessions on record the
+# foreign net OI ran -63,168 to -86,189, so FUT_NET_SHORT_HEAVY is crossed on
+# 100% of days. This subitem is therefore a constant +2, not a discriminator —
+# it cannot tell a day foreigners piled into shorts from one they covered.
+#
+# What that costs, precisely: the floor score becomes 2 against a green band of
+# ≤2. A calm market is still green, but with zero margin — one point from any
+# other subitem turns it yellow. Scores read 2 higher than the acceptance table
+# assumed.
+#
+# To make it discriminate again, move the threshold to something the data
+# actually crosses (a rolling percentile, or ~80,000). See docs/wiki/log.md.
+FUT_NET_SHORT_HEAVY = 20_000
+FUT_NET_SHORT_MILD = 10_000
+
 PTS_FUT_HEAVY = 2
 PTS_FUT_MILD = 1
 
