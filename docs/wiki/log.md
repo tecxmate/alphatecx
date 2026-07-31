@@ -906,3 +906,18 @@ attributed_to: [niko]   belongs_to: [system-architecture]
 - **Not yet verified:** the post-close chain firing on Zeabur. First real run is the next
   weekday 16:30 Taipei. `FINMIND_TOKEN` is also unset on `cron` (it lives only in GH secrets),
   so the nightly FinMind enrichment step self-skips there.
+
+## [2026-07-31] decision | Mobile MCP access needs OAuth; plan written, build deferred
+attributed_to: [niko]   belongs_to: [alphatecx, system-architecture]
+- Niko needs the MCP server reachable from mobile. Only cloud connectors serve mobile, and Anthropic's connector flow now requires OAuth — it probes `/.well-known/oauth-protected-resource`, gets the blanket 404 `security.py` returns for unknown paths, falls back to Dynamic Client Registration at `/register`, gets 404 again, and fails with "Couldn't register with Alphatecx's sign-in service". Nothing is broken server-side; URL-as-secret simply isn't an auth scheme the connector can negotiate.
+- Working today without OAuth: Claude Code (`claude mcp add`, verified connected) and Claude Desktop via an `mcp-remote` stdio bridge in `~/Library/Application Support/Claude/claude_desktop_config.json` (verified: "Proxy established successfully"). Both are local-only — neither helps mobile.
+- Plan written to `docs/OAUTH-PLAN.md`; **implementation deliberately not started.** Two prerequisites block it, and both are recorded there.
+- Correction to something claimed earlier in the session: the existing `Alpha`/`Alphatecx` cloud connectors were described as "grandfathered", implying editing their URL would preserve mobile access. That was a guess stated as fact — no evidence either way about edit-vs-create behaviour in the connector flow. Cheap to try, but don't plan around it.
+- Design decision recorded up front so it isn't relitigated: keep URL-as-secret alive at `/mcp/<token>/` and add bearer auth at bare `/mcp/`. Additive, independently revertable, and it stops an auth rewrite from taking out the two surfaces that currently work.
+
+## [2026-07-31] lint | Two instances answer as "the" database; /status silence traced to it
+attributed_to: [claude-agent]   belongs_to: [alphatecx]
+- `postgresql.zeabur.internal:5432` and `8.209.197.81:32046` present the same user (`root`) and database name (`zeabur`) but return **different rows**: `rg_positions` active-watch is 7 rows via `.env` (`2327 2338 2344 2408 3374 6239 8299`) and 4 via the deployed bot (`2324 2344 2408 8299`). `2324` exists in one and not the other, so this is not caching. An earlier note in this session calling them "the same database, different route" was wrong; the row sets disprove it.
+- Best explanation for the `/status` silence: `cmd_status` reads `rg_market_daily`, which has rows on the `.env`-reachable instance — run locally it returned a full 232-char reply — and evidently not on the one the bot reads. `if reply:` then skips the send, so no message, no error, no log. `/help` (no DB) replied fine throughout, which is what isolated it.
+- Open and load-bearing: the harvesters use `DATABASE_URL`, the `mcp` service uses `BOT_DATABASE_URL`/`MCP_DATABASE_URL`. If those resolve to different instances, writes and reads have been diverging. Settle which is authoritative before applying any further migration — `apply_schema.py` is manual and migrates whatever `DATABASE_URL` happens to point at.
+- Contributing factor worth fixing on its own: `bot.py:_send` never checks Telegram's response — no `raise_for_status()`, no status check — so a rejected reply disappears without a trace. Two config bugs found earlier today (token pointing at bot `7984740171`, `TELEGRAM_CHAT_ID` set to a chat that doesn't exist) were slow to find for exactly that reason.
