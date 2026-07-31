@@ -10,19 +10,18 @@ import logging
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 from zoneinfo import ZoneInfo
-
-_TPE = ZoneInfo("Asia/Taipei")
 
 import polars as pl
 from psycopg_pool import ConnectionPool
 
 from src.config import DATABASE_URL
 
+_TPE = ZoneInfo("Asia/Taipei")
+
 log = logging.getLogger("loader")
 
-_pool: Optional[ConnectionPool] = None
+_pool: ConnectionPool | None = None
 
 
 def _configure(conn):
@@ -100,7 +99,7 @@ def _cursor_or_default(c):
             yield c2
 
 
-def _save_local(df: pl.DataFrame, table: str, partition_col: Optional[str] = None):
+def _save_local(df: pl.DataFrame, table: str, partition_col: str | None = None):
     """Save a local parquet copy of the dataframe."""
     base_dir = Path("data") / table
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -283,8 +282,8 @@ def upsert_supply_chain(df: pl.DataFrame, c=None) -> int:
 
 # ── Ingestion log ───────────────────────────────────────────────────────────
 
-def log_ingestion(source: str, target_date: Optional[str], rows: int,
-                  status: str = "ok", error_msg: Optional[str] = None,
+def log_ingestion(source: str, target_date: str | None, rows: int,
+                  status: str = "ok", error_msg: str | None = None,
                   c=None) -> None:
     """Log an ingestion event. Pass `c` to commit atomically with an upsert."""
     sql = """
@@ -305,17 +304,58 @@ def refresh_views() -> None:
 
 
 def get_ingested_dates(source: str) -> set[str]:
-    """Dates we should skip on retry — both successfully ingested days
-    and confirmed-empty (holiday/closure) days. Errors are NOT skipped:
-    they should be retried."""
+    """Dates to skip on retry: successes, plus empties on days the market was
+    genuinely shut. Errors are never skipped.
+
+    The calendar check is the whole point. `empty` used to mean two very
+    different things — "the market was closed" and "the source had not
+    published yet" — and both were skipped forever. TWSE releases
+    融資融券彙總 after the 16:30 harvest window, so every trading day from
+    ~2026-07-01 logged `empty`, was treated as a confirmed holiday, and could
+    never be retried: `--only margin` reported "29 skipped, 0 rows" against an
+    empty table while the endpoint served the data fine. A failure that records
+    itself as a success is the worst kind, because nothing downstream can tell
+    it happened.
+
+    An empty on a real trading day is now retryable. Re-fetching a genuinely
+    dead day costs one request that returns nothing.
+    """
     sql = """
         SELECT target_date FROM ingestion_log
-        WHERE source = %s AND status IN ('ok', 'empty')
+         WHERE source = %s
+           AND (
+                status = 'ok'
+             OR (status = 'empty' AND (
+                    EXTRACT(ISODOW FROM target_date) >= 6
+                 OR EXISTS (SELECT 1 FROM market_holidays h
+                             WHERE h.cal_date = target_date AND h.is_closed)
+                ))
+           )
     """
     with cur() as c:
         c.execute(sql, (source,))
         rows = c.fetchall()
     return {str(r[0]) for r in rows if r[0]}
+
+
+def margin_sessions_missing(days: int = 10) -> list[str]:
+    """Recent trading sessions with no rows in raw_twse_margin, oldest first.
+
+    Keyed off the data itself rather than ingestion_log, so it repairs the gap
+    whatever caused it — a late publish, a transient 500, or a log row that
+    lied. `raw_twse_index` supplies the trading calendar: a session TWSE
+    published an index for is a session that traded.
+    """
+    sql = """
+        SELECT i.date
+          FROM (SELECT DISTINCT date FROM raw_twse_index
+                 ORDER BY date DESC LIMIT %s) i
+         WHERE NOT EXISTS (SELECT 1 FROM raw_twse_margin m WHERE m.date = i.date)
+         ORDER BY i.date
+    """
+    with cur() as c:
+        c.execute(sql, (int(days),))
+        return [r[0].isoformat() for r in c.fetchall()]
 
 
 # ── Schema management ──────────────────────────────────────────────────────

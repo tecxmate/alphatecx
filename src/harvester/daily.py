@@ -23,8 +23,8 @@ from __future__ import annotations
 import logging
 from datetime import date, timedelta
 
-from src.harvester import twse, transform, loader, finmind
 from src.alerts.telegram import send_daily_summary
+from src.harvester import finmind, loader, transform, twse
 
 logging.basicConfig(
     level=logging.INFO,
@@ -135,8 +135,8 @@ def _compute_quant_signals() -> None:
     # Imports are deferred so a daily run that doesn't reach this stage
     # (e.g. a missing OHLCV table during early bootstrap) doesn't fail
     # earlier steps with an ImportError.
-    from src.quant import compute_signals as price_signals
     from src.quant import compute_flow_signals as flow_signals
+    from src.quant import compute_signals as price_signals
 
     log.info("Computing price-derived signals...")
     price_signals.main()  # writes signal_value rows + refreshes matview
@@ -149,6 +149,27 @@ def _harvest_news() -> dict:
     from src.news.harvest import harvest
     log.info("Harvesting news sources...")
     return harvest()
+
+
+# How many recent sessions the margin catch-up will re-attempt per run. Small
+# on purpose: each one costs two rate-limited requests, and a longer outage is
+# a job for `python -m src.backfill.run --only margin`, not the nightly path.
+_MARGIN_CATCHUP_LIMIT = 3
+
+
+def _margin_catchup(target: str, limit: int = _MARGIN_CATCHUP_LIMIT) -> list[str]:
+    """Recent sessions still missing margin rows, as YYYYMMDD, oldest first.
+
+    `target` is dropped: today's session is fetched by the main path and would
+    otherwise be requested twice. Never fatal — a failure here must not cost
+    the run its normal margin fetch.
+    """
+    try:
+        missing = loader.margin_sessions_missing(days=10)
+    except Exception as e:
+        log.warning("Margin catch-up lookup failed: %s", e)
+        return []
+    return [d.replace("-", "") for d in missing if d.replace("-", "") != target][:limit]
 
 
 def harvest_today() -> dict:
@@ -207,19 +228,37 @@ def harvest_today() -> dict:
     twse._rate_limit()
 
     # ── 3. Margin Balance ─────────────────────────────────────────────────
-    try:
-        rows = twse.fetch_all_margin(target)
-        if rows:
-            df = transform.margin_to_frame(rows)
-            with loader.atomic() as c:
-                count = loader.upsert_margin(df, c=c)
-                loader.log_ingestion("twse_margin", iso, count, c=c)
-            results["margin"] = count
-        else:
-            loader.log_ingestion("twse_margin", iso, 0, "empty")
-    except Exception as e:
-        log.error("Margin failed: %s", e)
-        results["errors"].append(f"margin: {e}")
+    # Today's session first, then a catch-up over recent sessions that still
+    # have no rows. TWSE publishes 融資融券彙總 after this job's 16:30 window,
+    # so `target` routinely comes back empty and only lands on a later run.
+    # Without the sweep that day is simply lost: between ~2026-07-01 and 07-30
+    # every session went missing this way while T86 ingested normally, and M1's
+    # margin subitem scored blind for a month without anything surfacing it.
+    for i, day in enumerate([target] + _margin_catchup(target)):
+        day_iso = f"{day[:4]}-{day[4:6]}-{day[6:8]}"
+        if i:
+            twse._rate_limit()
+        try:
+            rows = twse.fetch_all_margin(day)
+            if rows:
+                df = transform.margin_to_frame(rows)
+                with loader.atomic() as c:
+                    count = loader.upsert_margin(df, c=c)
+                    loader.log_ingestion("twse_margin", day_iso, count, c=c)
+                if day == target:
+                    results["margin"] = count
+                else:
+                    results["margin_backfilled"] = (
+                        results.get("margin_backfilled", 0) + count)
+                    log.info("Margin catch-up %s: %d rows", day_iso, count)
+            else:
+                # Not yet published, or a genuinely closed day. Either way this
+                # is retryable — get_ingested_dates decides which, by calendar.
+                loader.log_ingestion("twse_margin", day_iso, 0, "empty")
+        except Exception as e:
+            log.error("Margin %s failed: %s", day_iso, e)
+            results["errors"].append(f"margin {day_iso}: {e}")
+            loader.log_ingestion("twse_margin", day_iso, 0, "error", str(e))
     twse._rate_limit()
 
     # ── 4. Monthly Revenue (only changes around month boundaries) ─────────
@@ -301,7 +340,8 @@ def harvest_today() -> dict:
     # TWT49U times out on wide ranges during peak ex-dividend season, so query
     # per calendar month rather than one long span.
     try:
-        from datetime import date as _d, timedelta as _td
+        from datetime import date as _d
+        from datetime import timedelta as _td
         today = _d.today()
         prev_month_end = today.replace(day=1) - _td(days=1)
         div_rows: list = []

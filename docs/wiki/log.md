@@ -838,3 +838,41 @@ attributed_to: [claude-agent]   belongs_to: [risk-guard]
 - 36 sessions persisted to `rg_market_daily` (2026-06-01 → 07-30), so the light now has state and
   tomorrow's cron has a `prev_light` to reason from. All other rg_* tables remain empty by design
   (no positions, no trades, no alerts yet).
+
+## [2026-07-31] decision | Near-real-time news = polling worker + Telegram, not SSE/WebSocket
+attributed_to: [niko]   belongs_to: [alphatecx, system-architecture]
+- Niko asked if the system needs Redis, then whether real-time news/signals need SSE or WebSocket. Neither was the binding constraint. No Redis anywhere in the repo and nothing wants it (materialized views, Actions-as-scheduler, clock-pure `session_state`, no limiter, no fan-out). Transport was the wrong layer: `news_harvest.yml` fires 6×/day, so a perfect WebSocket still delivers 4-hour-old news.
+- GitHub Actions cannot close that gap — scheduled workflows floor at 5 min and are routinely queue-delayed past it. Closing it needs a long-running process, which the Zeabur move now permits.
+- Built `src/news/watch.py` + `Dockerfile.worker`: its own Zeabur container, polls every feed on `NEWS_POLL_SECONDS` (default 180), pushes matches to Telegram. Reuses `harvest._fetch_feed` / `_upsert` so dedup + upsert SQL stay single-sourced; `_upsert` now returns the inserted rows rather than a count, since a fresh insert is the only reliable "never seen this article" signal.
+- Telegram is the only consumer (Niko's call), so the browser half — SSE over `LISTEN`/`NOTIFY` for `web/` — is deliberately not built. Noted for whoever does: `security.py` gates only `/mcp`, `/g`, `/d`, `/h`, `/t`, so a new `/events` route ships unauthenticated by default.
+- Non-obvious, and each would have shipped a quiet bug: (1) `raise_for_status()` does **not** raise on 304 and the body is empty, so an unchecked conditional GET hands `b""` to feedparser and logs the healthy path as an unparseable feed; (2) "fresh DB insert" ≠ "new news" — cold start makes every article fresh, hence a priming cycle that ingests without announcing, plus a 6h recency gate for feeds re-surfacing old items; (3) `watchlist.company_name` is English (bot-written) while `dim_ticker.company_name` is TWSE's Chinese name — half the feeds are zh-Hant, so matching on one alone silently under-alerts.
+- Conditional GET is load-bearing, not politeness: at 480 cycles/day an unconditional fetch re-upserts every unchanged row and `ON CONFLICT DO UPDATE` writes a new row version regardless, churning dead tuples all day. Cache is in-memory by choice — a restart costs one full fetch.
+- Structural ceiling worth restating: this speeds up **news only**. Risk Guard and flow leaders derive from T86, which TWSE publishes once a day near 15:00. No transport makes institutional-flow signals intraday.
+- Deploy inside the Zeabur project against `postgresql.zeabur.internal:5432` — this service carries *write* credentials and that Postgres has TLS disabled outright.
+- Environment quirk found while testing: bare `pytest -q` no longer collects the suite. The new test imports `src/news/harvest.py`, which needs feedparser and (via `harvester/loader`) polars; Homebrew python is PEP-668 externally-managed so neither installs there. Bare `python3` only ever worked because nothing under `src/` had tests. `.pre-commit-config.yaml` now prefers `.venv/bin/python`, falling back to `python3`.
+- `.venv/bin/python -m pytest -q` 326 passed (26 new); focused `ruff check` clean on the three touched files.
+- Verified live, not just unit-tested: one `--once` cycle loaded 3 watchlist tickers, fetched 776 items across 12 feeds in ~54s, upserted 5 new rows, sent nothing (priming). A second `poll_once` sharing the cache dropped to 677 fetched with 3 feeds answering 304.
+- That measurement changed the design: **only 5 of 12 feeds send ETag/Last-Modified**, so conditional GET can't carry the load alone. `_upsert`'s `DO UPDATE` now carries `WHERE raw_news.published_at IS NULL` — same intent (backfill a null date), but an unchanged conflict updates nothing and returns no row, so `fetchone()` yields `None` and the existing logic counts it as a duplicate. Without it, ~600 no-op row versions per cycle × 480 cycles/day.
+- Still Niko's to do: create the Zeabur service, set `DATABASE_URL` (internal host), `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`, `NEWS_POLL_SECONDS`. Code and `Dockerfile.worker` are committed; nothing is deployed.
+
+## [2026-07-31] decision | Fixed the margin harvest bug — `empty` meant two different things
+attributed_to: [niko, claude-agent]   belongs_to: [alphatecx, risk-guard]
+- Root cause: TWSE publishes 融資融券彙總 **after** the 16:30 harvest window, so the nightly
+  `fetch_all_margin(target)` legitimately returns nothing. That was logged `status='empty'`, and
+  `loader.get_ingested_dates` treated `empty` as "confirmed holiday — skip forever". The day could
+  then never be retried: `--only margin` reported "29 skipped, 0 rows" against an empty table while
+  the endpoint served the data fine. Every session ~2026-07-01→07-30 was lost this way while
+  `twse_t86` ingested 5,000+ rows a day, and Risk Guard's M1 margin subitem scored blind for a
+  month with nothing surfacing it. A failure that records itself as a success is the worst kind.
+- Fix is two independent guards, because there are two failure modes:
+  1. **`get_ingested_dates` is calendar-aware.** `empty` is only skippable when the date is a
+     weekend or a `market_holidays.is_closed` day; an `empty` on a real trading day is retryable.
+     Re-fetching a genuinely dead day costs one request that returns nothing.
+  2. **`daily.py` sweeps recent gaps.** Each run re-attempts up to 3 sessions that still have no
+     rows in `raw_twse_margin` (`loader.margin_sessions_missing`, keyed off the *data* not the log,
+     so it repairs the gap whatever caused it — including a log row that lied). A late publish now
+     lands on the next run instead of being lost. Longer outages remain a `src.backfill.run` job.
+- Verified live: `2026-07-30` holds both an `empty` and the repaired `ok` → correctly skipped;
+  `2026-07-31` holds only an `empty` on a trading day → **retryable**, where before it was dead.
+  `margin_sessions_missing` reports none outstanding.
+- 9 new tests (`tests/test_margin_catchup.py`); suite 336 passed.
