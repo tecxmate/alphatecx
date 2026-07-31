@@ -18,7 +18,6 @@ import os
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 from zoneinfo import ZoneInfo
 
 # TWSE publishes data in Asia/Taipei. Using UTC mislabels _as_of for ~8 hours
@@ -31,30 +30,35 @@ _HERE = Path(__file__).resolve().parent
 load_dotenv(_HERE.parent / ".env")
 sys.path.insert(0, str(_HERE))
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-from mcp.server.fastmcp import FastMCP
-from mcp.server.transport_security import TransportSecuritySettings
+from html import escape as html_escape
+from urllib.parse import quote_plus
 
 import db_v2
+import flow_leaders
+import fugle as fugle_mod
 import graph_view
 import limit_board
-import flow_leaders
-import session_state as session_state_mod
 import quote as quote_mod
-import fugle as fugle_mod
+import session_state as session_state_mod
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from rg import checklist as rg_checklist_mod
 from rg import db as rg_db
 from rg import stops as rg_stops
+
 try:
-    from security import is_authorized_path, token_matches
+    import oauth as oauth_mod
+    from security import bearer_token_valid, is_authorized_path, token_matches
 except ModuleNotFoundError:  # package import path used by local tests
-    from .security import is_authorized_path, token_matches
+    from . import oauth as oauth_mod
+    from .security import bearer_token_valid, is_authorized_path, token_matches
 
 MCP_BEARER_TOKEN = os.getenv("MCP_BEARER_TOKEN", "")
 
 
-def _stamp(payload: dict, source: str, as_of: Optional[str], freshness: str) -> dict:
+def _stamp(payload: dict, source: str, as_of: str | None, freshness: str) -> dict:
     """Annotate a response with provenance + freshness."""
     return {
         "_source": source,
@@ -85,7 +89,7 @@ mcp = FastMCP(
 
 @mcp.tool()
 def sc_sector_momentum(
-    pillar: Optional[str] = None,
+    pillar: str | None = None,
     window: str = "5d",
     top_n: int = 10,
 ) -> dict:
@@ -119,9 +123,9 @@ def sc_sector_momentum(
 
 @mcp.tool()
 def sc_ticker_momentum(
-    pillar: Optional[str] = None,
-    node: Optional[str] = None,
-    ticker_id: Optional[str] = None,
+    pillar: str | None = None,
+    node: str | None = None,
+    ticker_id: str | None = None,
     window: str = "5d",
     top_n: int = 15,
     min_streak: int = 0,
@@ -163,9 +167,9 @@ def sc_ticker_momentum(
 
 @mcp.tool()
 def sc_supply_chain_map(
-    pillar: Optional[str] = None,
-    node: Optional[str] = None,
-    search: Optional[str] = None,
+    pillar: str | None = None,
+    node: str | None = None,
+    search: str | None = None,
 ) -> dict:
     """Look up the Taiwan AI supply chain classification for tickers.
 
@@ -276,7 +280,7 @@ def sc_compare_nodes(
 def sc_accumulation_screen(
     min_streak: int = 3,
     min_foreign_5d: int = 0,
-    pillar: Optional[str] = None,
+    pillar: str | None = None,
     top_n: int = 20,
 ) -> dict:
     """Screen for tickers with sustained foreign accumulation.
@@ -310,14 +314,14 @@ def sc_accumulation_screen(
 
 @mcp.tool()
 def market_flow_screener(
-    market: Optional[str] = None,
+    market: str | None = None,
     classification: str = "all",
-    search: Optional[str] = None,
+    search: str | None = None,
     min_streak: int = 0,
-    foreign_1d_above: Optional[int] = None,
-    foreign_5d_above: Optional[int] = None,
-    foreign_20d_above: Optional[int] = None,
-    total_5d_above: Optional[int] = None,
+    foreign_1d_above: int | None = None,
+    foreign_5d_above: int | None = None,
+    foreign_20d_above: int | None = None,
+    total_5d_above: int | None = None,
     sort_by: str = "foreign_5d",
     sort_direction: str = "desc",
     top_n: int = 50,
@@ -371,7 +375,7 @@ def market_flow_screener(
 
 # ── Tool: Limit Board Scanner ─────────────────────────────────────────────
 
-def _resolve_board_date(date: Optional[str]) -> tuple[list[str], bool]:
+def _resolve_board_date(date: str | None) -> tuple[list[str], bool]:
     """Return (candidate dates newest-first, caller_pinned).
 
     A caller-supplied date is honoured exactly — a post-mortem of a specific
@@ -401,12 +405,12 @@ def _resolve_board_date(date: Optional[str]) -> tuple[list[str], bool]:
 @mcp.tool()
 def scan_limit_board(
     direction: str = "up",
-    markets: Optional[list[str]] = None,
+    markets: list[str] | None = None,
     min_pct: float = 9.5,
     locked_only: bool = False,
     min_turnover_twd: int = 0,
     enrich: bool = True,
-    date: Optional[str] = None,
+    date: str | None = None,
     limit: int = 200,
     mode: str = "eod",
 ) -> dict:
@@ -469,7 +473,7 @@ def scan_limit_board(
 
     errors: list[str] = []
     rows: list[dict] = []
-    as_of: Optional[str] = None
+    as_of: str | None = None
     per_market: dict[str, int] = {}
 
     for iso in candidates:
@@ -624,11 +628,11 @@ def flow_leaders_scan(
     max_pe: float = 20.0,
     max_foreign_held: float = 25.0,
     min_turnover_twd: int = 10_000_000,
-    markets: Optional[list[str]] = None,
+    markets: list[str] | None = None,
     include_loss: bool = False,
-    min_foreign_z: Optional[float] = None,
+    min_foreign_z: float | None = None,
     sort_by: str = "sleeper_score",
-    date: Optional[str] = None,
+    date: str | None = None,
     limit: int = 50,
 ) -> dict:
     """Find quiet foreign accumulation into a still-cheap, still-flat price.
@@ -767,7 +771,7 @@ def flow_leaders_scan(
 # ── Tool: Session State (Taipei market phase + trading calendar) ───────────
 
 @mcp.tool()
-def session_state(date: Optional[str] = None) -> dict:
+def session_state(date: str | None = None) -> dict:
     """Report the Taipei market phase and whether the market is open.
 
     Call this before quoting a price, or whenever the question is "is this
@@ -956,7 +960,7 @@ def quote(symbols: list[str], source: str = "auto") -> dict:
 # ── Tool: Dividend Calendar (does a buyer today get the dividend?) ─────────
 
 @mcp.tool()
-def dividend_calendar(ticker_id: str, date: Optional[str] = None) -> dict:
+def dividend_calendar(ticker_id: str, date: str | None = None) -> dict:
     """Answer 'does a buyer today still receive the dividend?' for a TWSE stock.
 
     Returns the most-recent-past and next-upcoming ex-dividend/ex-rights event
@@ -996,7 +1000,7 @@ def dividend_calendar(ticker_id: str, date: Optional[str] = None) -> dict:
     recent = data["most_recent"]
     upcoming = data["upcoming"]
 
-    def shape(row: Optional[dict]) -> Optional[dict]:
+    def shape(row: dict | None) -> dict | None:
         if not row:
             return None
         return {
@@ -1105,16 +1109,16 @@ def price_history(ticker_id: str, days: int = 90) -> dict:
 
 @mcp.tool()
 def q_screener(
-    rsi_below: Optional[float] = None,
-    rsi_above: Optional[float] = None,
-    macd_hist_above: Optional[float] = None,
-    above_sma_200: Optional[bool] = None,
-    rs_above: Optional[float] = None,
-    rs_below: Optional[float] = None,
-    foreign_z_above: Optional[float] = None,
-    foreign_z_below: Optional[float] = None,
-    pct_below_52w_high_above: Optional[float] = None,
-    pct_below_52w_high_below: Optional[float] = None,
+    rsi_below: float | None = None,
+    rsi_above: float | None = None,
+    macd_hist_above: float | None = None,
+    above_sma_200: bool | None = None,
+    rs_above: float | None = None,
+    rs_below: float | None = None,
+    foreign_z_above: float | None = None,
+    foreign_z_below: float | None = None,
+    pct_below_52w_high_above: float | None = None,
+    pct_below_52w_high_below: float | None = None,
     universe: str = "classified",
 ) -> dict:
     """Filter signal-covered tickers by indicator conditions (AND-combined).
@@ -1251,8 +1255,8 @@ def q_backtest_compound(
 @mcp.tool()
 def n_recent(
     days: int = 1,
-    source: Optional[str] = None,
-    lang: Optional[str] = None,
+    source: str | None = None,
+    lang: str | None = None,
     limit: int = 50,
 ) -> dict:
     """Recent news articles harvested into raw_news.
@@ -1375,8 +1379,8 @@ def u_universe(filter: str = "all") -> dict:
 
 @mcp.tool()
 def w_add(ticker_id: str,
-          reason: Optional[str] = None,
-          escalation_trigger: Optional[str] = None) -> dict:
+          reason: str | None = None,
+          escalation_trigger: str | None = None) -> dict:
     """Add a ticker to the watchlist (or reactivate an archived row).
 
     Validates that the ticker exists in `dim_supply_chain` — the
@@ -1408,11 +1412,11 @@ def w_remove(ticker_id: str) -> dict:
 
 @mcp.tool()
 def q_valuation(
-    ticker_id: Optional[str] = None,
-    pillar: Optional[str] = None,
-    max_pe: Optional[float] = None,
-    max_pb: Optional[float] = None,
-    min_yield: Optional[float] = None,
+    ticker_id: str | None = None,
+    pillar: str | None = None,
+    max_pe: float | None = None,
+    max_pb: float | None = None,
+    min_yield: float | None = None,
     top_n: int = 30,
 ) -> dict:
     """Latest valuation metrics (P/E, P/B, dividend yield) per ticker.
@@ -1448,7 +1452,7 @@ def q_valuation(
 
 @mcp.tool()
 def q_index_history(
-    index_name: Optional[str] = None,
+    index_name: str | None = None,
     days: int = 30,
 ) -> dict:
     """Sector / cross-market index closes & changes from TWSE MI_INDEX.
@@ -1514,10 +1518,10 @@ def q_regime(window: int = 30, days: int = 120) -> dict:
 
 @mcp.tool()
 def q_quality_score(
-    ticker_id: Optional[str] = None,
-    pillar: Optional[str] = None,
-    node: Optional[str] = None,
-    tickers: Optional[list[str]] = None,
+    ticker_id: str | None = None,
+    pillar: str | None = None,
+    node: str | None = None,
+    tickers: list[str] | None = None,
     top_n: int = 30,
 ) -> dict:
     """Composite TW-specific quality score per ticker.
@@ -1650,9 +1654,9 @@ def q_pca_decompose(
 
 @mcp.tool()
 def q_factor_screen(
-    pillar: Optional[str] = None,
-    node: Optional[str] = None,
-    tickers: Optional[list[str]] = None,
+    pillar: str | None = None,
+    node: str | None = None,
+    tickers: list[str] | None = None,
     days: int = 90,
     sort_by: str = "alpha_tstat",
     top_n: int = 25,
@@ -1746,8 +1750,8 @@ def q_factor_alpha(ticker_id: str, days: int = 120) -> dict:
 
 @mcp.tool()
 def q_lead_lag(
-    upstream: Optional[str] = None,
-    downstream: Optional[str] = None,
+    upstream: str | None = None,
+    downstream: str | None = None,
     min_corr: float = 0.4,
     min_gain: float = 0.0,
     top_n: int = 20,
@@ -1793,7 +1797,7 @@ def q_lead_lag(
 # ── Tool: Digests (Phase 3) ──────────────────────────────────────────────
 
 @mcp.tool()
-def d_recent(days: int = 3, kind: Optional[str] = None) -> dict:
+def d_recent(days: int = 3, kind: str | None = None) -> dict:
     """Recent cron-generated briefs (pre_market / intraday_alert / post_close).
 
     Briefs are written by the GitHub Actions cron at meaningful times in
@@ -1815,7 +1819,7 @@ def d_recent(days: int = 3, kind: Optional[str] = None) -> dict:
 
 
 @mcp.tool()
-def d_for_date(digest_date: str, kind: Optional[str] = None) -> dict:
+def d_for_date(digest_date: str, kind: str | None = None) -> dict:
     """All digests for one specific date.
 
     Args:
@@ -2040,8 +2044,8 @@ def rg_alerts(days: int = 3) -> dict:
 @mcp.tool()
 def rg_checklist(
     ticker_id: str,
-    buy_amount: Optional[float] = None,
-    available_cash: Optional[float] = None,
+    buy_amount: float | None = None,
+    available_cash: float | None = None,
 ) -> dict:
     """Run the six-question entry checklist against one ticker.
 
@@ -2064,7 +2068,7 @@ def rg_checklist(
 
 
 @mcp.tool()
-def rg_journal_add(text: str, ticker_id: Optional[str] = None) -> dict:
+def rg_journal_add(text: str, ticker_id: str | None = None) -> dict:
     """Record a trading decision made in conversation into the Risk Guard journal.
 
     Use this whenever the operator commits to something concrete — a stop level,
@@ -2109,47 +2113,194 @@ def health():
 
 @app.middleware("http")
 async def auth_gate(request: Request, call_next):
-    if is_authorized_path(request.url.path, MCP_BEARER_TOKEN):
+    path = request.url.path
+    if is_authorized_path(path, MCP_BEARER_TOKEN):
         return await call_next(request)
+
+    # Bare /mcp is the OAuth-protected mount that cloud connectors (and so
+    # mobile) use. It is the ONE path that answers 401 instead of 404: the
+    # WWW-Authenticate header is what starts discovery. Everything else keeps
+    # 404-ing, so /g, /d, /h, /t and /mcp/<token> stay hidden.
+    if path == "/mcp" or path.startswith("/mcp/"):
+        if bearer_token_valid(request.headers.get("authorization", "")):
+            return await call_next(request)
+        return JSONResponse(
+            status_code=401,
+            content={"error": "invalid_token"},
+            headers={
+                "WWW-Authenticate": (
+                    'Bearer resource_metadata='
+                    f'"{_base_url(request)}/.well-known/oauth-protected-resource"'
+                )
+            },
+        )
+
     return JSONResponse(status_code=404, content={"error": "not_found"})
 
 
-@app.get(f"/g/{{token}}/")
+# ── OAuth 2.1 + PKCE (cloud connectors / mobile) ──────────────────────────
+#
+# Additive: URL-as-secret keeps serving Claude Code and the Desktop bridge.
+# See docs/OAUTH-PLAN.md and mcp_server/api/oauth.py for why this is stateless.
+
+def _base_url(request: Request) -> str:
+    """Public origin, honouring the proxy headers Zeabur sets — behind TLS
+    termination request.url.scheme reads 'http', and an issuer that disagrees
+    with the URL the client typed fails discovery validation."""
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host") or request.headers.get(
+        "host", request.url.netloc)
+    return f"{proto}://{host}"
+
+
+@app.get("/.well-known/oauth-protected-resource")
+def oauth_protected_resource(request: Request):
+    return oauth_mod.protected_resource_metadata(_base_url(request))
+
+
+@app.get("/.well-known/oauth-authorization-server")
+def oauth_authorization_server(request: Request):
+    return oauth_mod.authorization_server_metadata(_base_url(request))
+
+
+@app.post("/register")
+async def oauth_register(request: Request):
+    """Dynamic Client Registration. The client_id is derived from the redirect
+    URIs rather than stored, so nothing has to survive a restart."""
+    body = await request.json()
+    redirect_uris = body.get("redirect_uris") or []
+    if not redirect_uris:
+        return JSONResponse(status_code=400,
+                            content={"error": "invalid_redirect_uri"})
+    return JSONResponse(status_code=201, content={
+        "client_id": oauth_mod.client_id_for(redirect_uris),
+        "redirect_uris": redirect_uris,
+        "token_endpoint_auth_method": "none",
+        "grant_types": ["authorization_code", "refresh_token"],
+        "response_types": ["code"],
+    })
+
+
+@app.get("/authorize")
+def oauth_authorize_form(client_id: str = "", redirect_uri: str = "",
+                         state: str = "", code_challenge: str = "",
+                         code_challenge_method: str = "S256"):
+    if code_challenge_method != "S256" or not code_challenge:
+        return JSONResponse(status_code=400,
+                            content={"error": "invalid_request"})
+    # Exact match against the URIs this client_id was derived from. No prefix,
+    # no wildcard — for a public client this check is the whole boundary.
+    if not oauth_mod.client_id_matches(client_id, [redirect_uri]):
+        return JSONResponse(status_code=400,
+                            content={"error": "invalid_client"})
+    return HTMLResponse(_authorize_html(client_id, redirect_uri, state,
+                                        code_challenge))
+
+
+@app.post("/authorize")
+async def oauth_authorize_submit(request: Request):
+    form = await request.form()
+    client_id = str(form.get("client_id", ""))
+    redirect_uri = str(form.get("redirect_uri", ""))
+    if not oauth_mod.client_id_matches(client_id, [redirect_uri]):
+        return JSONResponse(status_code=400, content={"error": "invalid_client"})
+    if not oauth_mod.password_ok(str(form.get("password", ""))):
+        return HTMLResponse(
+            _authorize_html(client_id, redirect_uri, str(form.get("state", "")),
+                            str(form.get("code_challenge", "")),
+                            error="Incorrect password."),
+            status_code=401,
+        )
+    code = oauth_mod.make_code(client_id, redirect_uri,
+                               str(form.get("code_challenge", "")))
+    sep = "&" if "?" in redirect_uri else "?"
+    target = f"{redirect_uri}{sep}code={quote_plus(code)}"
+    if form.get("state"):
+        target += f"&state={quote_plus(str(form.get('state')))}"
+    return RedirectResponse(target, status_code=302)
+
+
+@app.post("/token")
+async def oauth_token(request: Request):
+    form = await request.form()
+    grant = str(form.get("grant_type", ""))
+    if grant == "authorization_code":
+        result = oauth_mod.exchange_code(
+            str(form.get("code", "")),
+            str(form.get("code_verifier", "")),
+            str(form.get("redirect_uri", "")),
+        )
+    elif grant == "refresh_token":
+        result = oauth_mod.refresh(str(form.get("refresh_token", "")))
+    else:
+        return JSONResponse(status_code=400,
+                            content={"error": "unsupported_grant_type"})
+    if result is None:
+        # Generic on purpose: never say which check failed.
+        return JSONResponse(status_code=400, content={"error": "invalid_grant"})
+    return result
+
+
+def _authorize_html(client_id: str, redirect_uri: str, state: str,
+                    code_challenge: str, error: str = "") -> str:
+    note = f'<p class="err">{html_escape(error)}</p>' if error else ""
+    return f"""<!doctype html><meta charset="utf-8">
+<title>alphatecx — authorize</title>
+<style>
+ body{{font:15px/1.5 system-ui,sans-serif;max-width:22rem;margin:12vh auto;padding:0 1rem}}
+ input{{width:100%;padding:.6rem;font-size:1rem;box-sizing:border-box}}
+ button{{margin-top:.8rem;padding:.6rem 1.2rem;font-size:1rem}}
+ .err{{color:#b00}}
+</style>
+<h1>alphatecx</h1>
+<p>Authorize this client to read your market data.</p>
+{note}
+<form method="post" action="/authorize">
+ <input type="hidden" name="client_id" value="{html_escape(client_id)}">
+ <input type="hidden" name="redirect_uri" value="{html_escape(redirect_uri)}">
+ <input type="hidden" name="state" value="{html_escape(state)}">
+ <input type="hidden" name="code_challenge" value="{html_escape(code_challenge)}">
+ <input type="password" name="password" placeholder="Password" autofocus>
+ <button type="submit">Authorize</button>
+</form>"""
+
+
+@app.get("/g/{token}/")
 def graph_index(token: str):
     if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_viewer_html()
 
 
-@app.get(f"/h/{{token}}/")
+@app.get("/h/{token}/")
 def home(token: str):
     if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_home_html(token)
 
 
-@app.get(f"/t/{{token}}/")
+@app.get("/t/{token}/")
 def tickers(token: str):
     if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_tickers_html(token)
 
 
-@app.get(f"/g/{{token}}/data.json")
+@app.get("/g/{token}/data.json")
 def graph_data(token: str):
     if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_snapshot_json()
 
 
-@app.get(f"/g/{{token}}/graph.png")
+@app.get("/g/{token}/graph.png")
 def graph_png(token: str):
     if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_graph_png()
 
 
-@app.post(f"/g/{{token}}/classify")
+@app.post("/g/{token}/classify")
 async def graph_classify(token: str, request: Request):
     if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
@@ -2160,7 +2311,7 @@ async def graph_classify(token: str, request: Request):
     return graph_view.classify_ticker(payload)
 
 
-@app.post(f"/t/{{token}}/folders")
+@app.post("/t/{token}/folders")
 async def ticker_folders(token: str, request: Request):
     if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
@@ -2171,35 +2322,35 @@ async def ticker_folders(token: str, request: Request):
     return graph_view.update_ticker_folders(payload)
 
 
-@app.get(f"/d/{{token}}/")
+@app.get("/d/{token}/")
 def dashboard(token: str):
     if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_dashboard_html()
 
 
-@app.get(f"/d/{{token}}/home")
+@app.get("/d/{token}/home")
 def dashboard_home(token: str):
     if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_home_html(token)
 
 
-@app.get(f"/d/{{token}}/dashboard.css")
+@app.get("/d/{token}/dashboard.css")
 def dashboard_css(token: str):
     if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_dashboard_css()
 
 
-@app.get(f"/d/{{token}}/dashboard.js")
+@app.get("/d/{token}/dashboard.js")
 def dashboard_js(token: str):
     if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_dashboard_js()
 
 
-@app.get(f"/d/{{token}}/t/{{ticker}}")
+@app.get("/d/{token}/t/{ticker}")
 def ticker_page(token: str, ticker: str):
     """Per-ticker analytical detail page (candlestick + flow + RS + thesis + news).
 
@@ -2218,4 +2369,21 @@ if not MCP_BEARER_TOKEN:
         "would silently 404 every request."
     )
 
+if not oauth_mod.SIGNING_KEY:
+    # Warn rather than refuse: a missing OAuth key only costs the cloud-connector
+    # surface, whereas MCP_BEARER_TOKEN above is fatal because an empty one would
+    # 404 everything. URL-as-secret keeps working here.
+    print("WARNING: OAUTH_SIGNING_KEY is not set — bare /mcp will 401 every "
+          "request and cloud connectors (mobile) cannot authenticate. "
+          "URL-as-secret at /mcp/<token>/ is unaffected.")
+
+# Order matters: the token mount is the more specific prefix and must be
+# registered first, or the bare /mcp mount below swallows /mcp/<token>/ and
+# the URL-as-secret path starts demanding a bearer header — which would kill
+# Claude Code and the Desktop bridge.
 app.mount(f"/mcp/{MCP_BEARER_TOKEN}", mcp_app)
+
+# Same app object mounted twice, deliberately: FastMCP holds one session
+# manager and `lifespan` runs it once, so building a second
+# `mcp.streamable_http_app()` would leave the second one un-run.
+app.mount("/mcp", mcp_app)

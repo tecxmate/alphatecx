@@ -9,3 +9,11 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# index.py does `sys.path.insert(0, _HERE)` before importing its siblings —
+# that is what makes the bare `import db_v2` form work both on the server and
+# under pytest's `pythonpath`. Those imports therefore cannot move above it, so
+# E402 here is structural, not debt. Scoped to this one file on purpose: the
+# rule stays on everywhere else.
+"mcp_server/api/index.py" = ["E402"]
