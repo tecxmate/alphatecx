@@ -137,11 +137,11 @@ def cmd_help(arg: str) -> str:
 
 def cmd_watch(arg: str) -> str:
     if not arg:
-        return "Usage: /watch &lt;ticker&gt; [reason]"
+        return "用法:/watch &lt;股號&gt; [原因]"
     parts = arg.split(maxsplit=1)
     ticker = _validate_ticker(parts[0])
     if not ticker:
-        return f"⚠️ Invalid ticker format: <code>{parts[0]}</code>"
+        return f"⚠️ 股號格式不正確:<code>{parts[0]}</code>"
     reason = parts[1] if len(parts) > 1 else ""
 
     with _connect() as conn, conn.cursor() as cur:
@@ -183,20 +183,20 @@ def cmd_watch(arg: str) -> str:
                     updated_at = now()
             """, (ticker, company, pillar, node, reason))
 
-    suffix = f"\nReason: {reason}" if reason else ""
+    suffix = f"\n原因:{reason}" if reason else ""
     if row:
-        return (f"✅ Added <b>{ticker}</b> {company} "
-                f"({pillar}/{node}) to watchlist + Risk Guard 自選.{suffix}")
-    return (f"✅ Added <b>{ticker}</b> {company or ''} to Risk Guard 自選.\n"
-            f"ℹ️ 不在 26 檔分類供應鏈中,故未加入 classified watchlist。{suffix}")
+        return (f"✅ 已加入 <b>{ticker}</b> {company} "
+                f"({pillar}/{node}) 到監控清單 + Risk Guard 自選。{suffix}")
+    return (f"✅ 已加入 <b>{ticker}</b> {company or ''} 到 Risk Guard 自選。\n"
+            f"ℹ️ 不在分類供應鏈名單中,故未加入分類監控清單。{suffix}")
 
 
 def cmd_unwatch(arg: str) -> str:
     if not arg:
-        return "Usage: /unwatch &lt;ticker&gt;"
+        return "用法:/unwatch &lt;股號&gt;"
     ticker = _validate_ticker(arg.strip().split()[0])
     if not ticker:
-        return f"⚠️ Invalid ticker format: <code>{arg}</code>"
+        return f"⚠️ 股號格式不正確:<code>{arg}</code>"
 
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(
@@ -207,27 +207,33 @@ def cmd_unwatch(arg: str) -> str:
         row = cur.fetchone()
 
     if not row:
-        return f"ℹ️ <code>{ticker}</code> is not on the active watchlist."
-    return f"🗄️ Archived <b>{ticker}</b> {row[0]} from watchlist."
+        return f"ℹ️ <code>{ticker}</code> 不在目前的監控清單中。"
+    return f"🗄️ 已將 <b>{ticker}</b> {row[0]} 移出監控清單。"
 
 
 def cmd_list(arg: str) -> str:
     with _connect() as conn, conn.cursor() as cur:
         cur.execute("""
-            SELECT ticker_id, company_name, ai_pillar, node, reason,
-                   added_at::date
-            FROM watchlist WHERE status = 'active'
-            ORDER BY added_at DESC, ticker_id
+            -- 中文名優先:watchlist.company_name 是 bot 寫入的英文
+            -- (GlobalWafers),dim_ticker.company_name 是 TWSE 發布的中文
+            -- (環球晶)。顯示面一律走中文,英文只在中文缺漏時兜底。
+            SELECT w.ticker_id,
+                   COALESCE(NULLIF(t.company_name, ''), w.company_name),
+                   w.ai_pillar, w.node, w.reason, w.added_at::date
+            FROM watchlist w
+            LEFT JOIN dim_ticker t ON t.ticker_id = w.ticker_id
+            WHERE w.status = 'active'
+            ORDER BY w.added_at DESC, w.ticker_id
         """)
         rows = cur.fetchall()
 
     if not rows:
-        return "📋 Watchlist is empty."
-    lines = [f"<b>📋 Watchlist ({len(rows)} active)</b>"]
+        return "📋 監控清單是空的。"
+    lines = [f"<b>📋 監控清單({len(rows)} 檔)</b>"]
     for r in rows:
         ticker, company, pillar, node, reason, added = r
         lines.append(f"• <b>{ticker}</b> {company} <i>({pillar}/{node}, "
-                     f"added {added})</i>")
+                     f"加入於 {added})</i>")
         if reason:
             lines.append(f"   {reason[:140]}")
     return "\n".join(lines)
@@ -236,10 +242,10 @@ def cmd_list(arg: str) -> str:
 def cmd_indicators(arg: str) -> str:
     """Quick q_indicators-equivalent reply — bypasses MCP, queries DB directly."""
     if not arg:
-        return "Usage: /q &lt;ticker&gt;"
+        return "用法:/q &lt;股號&gt;"
     ticker = _validate_ticker(arg.strip().split()[0])
     if not ticker:
-        return f"⚠️ Invalid ticker format: <code>{arg}</code>"
+        return f"⚠️ 股號格式不正確:<code>{arg}</code>"
 
     with _connect() as conn, conn.cursor() as cur:
         cur.execute("""
@@ -253,23 +259,42 @@ def cmd_indicators(arg: str) -> str:
         """, (ticker,))
         row = cur.fetchone()
     if not row:
-        return f"ℹ️ No signals for <code>{ticker}</code> (not in classified universe?)."
+        return f"ℹ️ 查無 <code>{ticker}</code> 的指標資料(可能不在分類名單中)。"
 
     _, company, as_of, rsi, macd_h, bb, fz, off_high, rs = row
+
     def fmt(v):
         return f"{v:.2f}" if v is not None else "—"
-    return (f"<b>{ticker}</b> {company or ''} <i>(as of {as_of})</i>\n"
-            f"RSI-14: {fmt(rsi)}  •  MACD hist: {fmt(macd_h)}  •  BB%B: {fmt(bb)}\n"
-            f"foreign_z20: {fmt(fz)}  •  off_52w_high: {fmt(off_high)}%\n"
-            f"RS vs mkt 60d: {fmt(rs)}")
+
+    # 術語保留原文、後面加一句白話。翻成「相對強弱指標」反而更難懂,
+    # 而且看盤軟體和研究報告一律用 RSI —— 要降低的是理解成本,不是英文字。
+    def gloss(v, bands):
+        """bands: [(上限, 說明), ...],由低到高;最後一項的上限用 None。"""
+        if v is None:
+            return ""
+        for hi, label in bands:
+            if hi is None or v < hi:
+                return f" ({label})"
+        return ""
+
+    return (
+        f"<b>{ticker}</b> {company or ''} <i>({as_of} 收盤)</i>\n"
+        f"RSI-14: {fmt(rsi)}{gloss(rsi, [(30, '超賣'), (70, '中性'), (None, '超買')])}"
+        f"  •  MACD: {fmt(macd_h)}{gloss(macd_h, [(0, '下跌動能'), (None, '上漲動能')])}\n"
+        f"BB%B: {fmt(bb)}{gloss(bb, [(0, '跌破下軌'), (1, '通道內'), (None, '突破上軌')])}\n"
+        f"外資 z20: {fmt(fz)}"
+        f"{gloss(fz, [(-2, '異常賣超'), (-1, '賣超'), (1, '中性'), (2, '買超'), (None, '異常買超')])}\n"
+        f"距一年高點: {fmt(off_high)}%\n"
+        f"60日相對大盤: {fmt(rs)}{gloss(rs, [(1, '落後'), (None, '領先')])}"
+    )
 
 
 def cmd_news(arg: str) -> str:
     if not arg:
-        return "Usage: /n &lt;ticker&gt;"
+        return "用法:/n &lt;股號&gt;"
     ticker = _validate_ticker(arg.strip().split()[0])
     if not ticker:
-        return f"⚠️ Invalid ticker format: <code>{arg}</code>"
+        return f"⚠️ 股號格式不正確:<code>{arg}</code>"
 
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(
@@ -314,16 +339,15 @@ def cmd_news(arg: str) -> str:
 
 def cmd_thesis(arg: str) -> str:
     if not arg:
-        return "Usage: /thesis &lt;ticker&gt;"
+        return "用法:/thesis &lt;股號&gt;"
     ticker = _validate_ticker(arg.strip().split()[0])
     if not ticker:
-        return f"⚠️ Invalid ticker format: <code>{arg}</code>"
+        return f"⚠️ 股號格式不正確:<code>{arg}</code>"
     # Theses live as MD files in the repo, not in DB. The bot doesn't
     # have repo access — point the user at the MCP / Claude app instead.
-    return (f"ℹ️ Thesis files live in <code>docs/theses/</code> in the "
-            f"repo. To see active thesis on <code>{ticker}</code>, use "
-            f"the Claude app project view or check "
-            f"github.com/nikolasdoan/alphatecx-v2/tree/main/docs/theses")
+    return (f"ℹ️ 論點檔案存在 repo 的 <code>docs/theses/</code>,不在資料庫裡。"
+            f"要看 <code>{ticker}</code> 目前的論點,請用 Claude app 的專案檢視,"
+            f"或到 github.com/tecxmate/alphatecx/tree/main/docs/theses")
 
 
 # ── Risk Guard commands ──────────────────────────────────────────────────
@@ -526,12 +550,12 @@ def cmd_pos(arg: str) -> str:
 def cmd_setpos(arg: str) -> str:
     """/setpos 2344 cost=51.5 warn=49 exit=47.8 lots=3"""
     if not arg:
-        return ("Usage: /setpos &lt;ticker&gt; cost=51.5 warn=49 exit=47.8 lots=3\n"
+        return ("用法:/setpos &lt;股號&gt; cost=51.5 warn=49 exit=47.8 lots=3\n"
                 "只更新有給的欄位,沒給的保持原值。")
     parts = arg.split()
     ticker = _validate_ticker(parts[0])
     if not ticker:
-        return f"⚠️ Invalid ticker format: <code>{parts[0]}</code>"
+        return f"⚠️ 股號格式不正確:<code>{parts[0]}</code>"
 
     kv = {k.lower(): float(v) for k, v in _KV_RE.findall(arg)}
     field_map = {"cost": "cost", "warn": "warn_price", "exit": "exit_price",
@@ -559,11 +583,11 @@ def cmd_setpos(arg: str) -> str:
 def cmd_check(arg: str) -> str:
     """/check 2344 [買進金額]"""
     if not arg:
-        return "Usage: /check &lt;ticker&gt; [買進金額]"
+        return "用法:/check &lt;股號&gt; [買進金額]"
     parts = arg.split()
     ticker = _validate_ticker(parts[0])
     if not ticker:
-        return f"⚠️ Invalid ticker format: <code>{parts[0]}</code>"
+        return f"⚠️ 股號格式不正確:<code>{parts[0]}</code>"
     buy_amount = float(parts[1].replace(",", "")) if len(parts) > 1 else None
 
     today = _today()
@@ -612,11 +636,11 @@ def cmd_trade(arg: str) -> str:
     """/trade buy 2344 51.5 x3 — report a fill so the T+2 check knows about it."""
     m = _TRADE_RE.match(arg.strip())
     if not m:
-        return "Usage: /trade buy|sell &lt;ticker&gt; &lt;price&gt; x&lt;lots&gt;"
+        return "用法:/trade buy|sell &lt;股號&gt; &lt;價格&gt; x&lt;張數&gt;"
     side, raw_ticker, price, lots = m.group(1).lower(), m.group(2), float(m.group(3)), float(m.group(4))
     ticker = _validate_ticker(raw_ticker)
     if not ticker:
-        return f"⚠️ Invalid ticker format: <code>{raw_ticker}</code>"
+        return f"⚠️ 股號格式不正確:<code>{raw_ticker}</code>"
 
     trade_date = _today()
     net = rg_settlement.fill_amount(side, price, lots)
@@ -661,7 +685,7 @@ def cmd_trade(arg: str) -> str:
 
 def cmd_balance(arg: str) -> str:
     if not arg:
-        return "Usage: /balance &lt;金額&gt;"
+        return "用法:/balance &lt;金額&gt;"
     try:
         amount = float(arg.strip().replace(",", ""))
     except ValueError:
@@ -690,7 +714,7 @@ def cmd_notrade(arg: str) -> str:
     and nothing else: it never touches a score, a light, or an alert trigger."""
     parts = arg.split(maxsplit=1)
     if len(parts) < 2 or not _DATE_RE.match(parts[0]):
-        return "Usage: /notrade YYYY-MM-DD &lt;reason&gt;"
+        return "用法:/notrade YYYY-MM-DD &lt;原因&gt;"
     date_iso, reason = parts[0], parts[1].strip()
     with _connect() as conn, conn.cursor() as cur:
         cur.execute(
@@ -748,7 +772,7 @@ async def webhook(request: Request):
 
     handler = HANDLERS.get(cmd)
     if handler is None:
-        _send(chat_id, f"Unknown command: <code>{cmd}</code>\nTry /help.")
+        _send(chat_id, f"未知指令:<code>{cmd}</code>\n輸入 /help 看可用指令。")
         return {"ok": True}
 
     try:

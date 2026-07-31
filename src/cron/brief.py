@@ -25,8 +25,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from src.harvester.loader import cur
 from src.alerts.telegram import send
+from src.harvester.loader import cur
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -130,19 +130,19 @@ def _format_signal_alert(s: dict) -> str:
     fz = s.get("foreign_net_z20")
     if rsi is not None:
         if rsi > ALERT_RSI_HIGH:
-            parts.append(f"RSI {rsi:.0f} (overbought)")
+            parts.append(f"RSI {rsi:.0f}(超買)")
         elif rsi < ALERT_RSI_LOW:
-            parts.append(f"RSI {rsi:.0f} (oversold)")
+            parts.append(f"RSI {rsi:.0f}(超賣)")
     if bb is not None:
         if bb > ALERT_BB_HIGH:
-            parts.append(f"BB%B {bb:.2f} (above upper)")
+            parts.append(f"BB%B {bb:.2f}(突破上軌)")
         elif bb < ALERT_BB_LOW:
-            parts.append(f"BB%B {bb:.2f} (below lower)")
+            parts.append(f"BB%B {bb:.2f}(跌破下軌)")
     if fz is not None:
         if fz > ALERT_FOREIGN_Z:
-            parts.append(f"foreign_z {fz:+.2f} (heavy buying)")
+            parts.append(f"外資買超 {fz:+.2f}(超過 +2 算異常大量)")
         elif fz < -ALERT_FOREIGN_Z:
-            parts.append(f"foreign_z {fz:+.2f} (heavy selling)")
+            parts.append(f"外資賣超 {fz:+.2f}(超過 -2 算異常大量)")
     return f"{s['ticker_id']} {s['company_name']} — " + ", ".join(parts)
 
 
@@ -219,7 +219,7 @@ def _watchlist() -> list[dict]:
         """)
         cols = ["ticker", "company", "ai_pillar", "node", "reason",
                 "escalation_trigger", "added"]
-        return [dict(zip(cols, row)) for row in c.fetchall()]
+        return [dict(zip(cols, row, strict=True)) for row in c.fetchall()]
 
 
 def _action_checklist(extremes: list[dict], ticker_news: list[dict],
@@ -245,8 +245,8 @@ def _action_checklist(extremes: list[dict], ticker_news: list[dict],
         company = t.get("company", "?")
         last_review = t.get("last_review", "?")
         items.append(
-            f"Review thesis on {ticker} {company.split('/')[0].strip()}: "
-            f"check trigger conditions vs today's close (last_review {last_review})"
+            f"複審 {ticker} {company.split('/')[0].strip()} 的論點:"
+            f"對照今日收盤檢查觸發條件(上次複審 {last_review})"
         )
 
     # 2. Watchlist names with extreme flow today → escalation candidate.
@@ -258,10 +258,10 @@ def _action_checklist(extremes: list[dict], ticker_news: list[dict],
         fz = s.get("foreign_net_z20")
         if fz is None:
             continue
-        direction = "buying" if fz > 0 else "selling"
+        direction = "買超" if fz > 0 else "賣超"
         items.append(
-            f"Escalation candidate: {s['ticker_id']} {s['company_name']} "
-            f"on watchlist + foreign_z {fz:+.2f} ({direction}) — consider `decide-on-ticker`"
+            f"升級候選:{s['ticker_id']} {s['company_name']} "
+            f"在監控清單中且外資 z {fz:+.2f}({direction})— 可考慮跑 `decide-on-ticker`"
         )
         if len(items) >= 3:
             break
@@ -275,10 +275,10 @@ def _action_checklist(extremes: list[dict], ticker_news: list[dict],
         fz = s.get("foreign_net_z20")
         if fz is None or abs(fz) < 2.0:
             continue
-        direction = "buying" if fz > 0 else "selling"
+        direction = "買超" if fz > 0 else "賣超"
         items.append(
-            f"Watch {s['ticker_id']} {s['company_name']}: foreign_z {fz:+.2f} "
-            f"({direction}) — add to watchlist if it sustains"
+            f"觀察 {s['ticker_id']} {s['company_name']}:外資 z {fz:+.2f} "
+            f"({direction})— 若持續再加入監控清單"
         )
 
     # 4. Fall back to top news cross-reference.
@@ -314,25 +314,25 @@ def pre_market_brief() -> None:
         general_news = _query_news_recent(c, hours=12, limit=10)
         extremes = _query_extreme_signals(c)
 
-        lines = ["# Pre-market brief — " + _today_taipei_iso() + "\n"]
-        lines.append(f"_Generated {datetime.now(_TPE).strftime('%H:%M %Z')} — overnight window 12h._\n")
+        lines = ["# 盤前簡報 — " + _today_taipei_iso() + "\n"]
+        lines.append(f"_產生於 {datetime.now(_TPE).strftime('%H:%M %Z')} — 隔夜區間 12 小時_\n")
 
         if ticker_news:
-            lines.append("## Watchlist names in overnight news\n")
+            lines.append("## 隔夜新聞提到的監控標的\n")
             for n in ticker_news[:8]:
                 ts = n["ts"].astimezone(_TPE).strftime("%m-%d %H:%M") if n["ts"] else "—"
                 lines.append(f"- **{n['ticker_id']} {n['company_name']}** [{n['source']}, {ts}] {n['title'][:120]}")
             lines.append("")
         else:
-            lines.append("## Watchlist names in overnight news\n_None._\n")
+            lines.append("## 隔夜新聞提到的監控標的\n_無_\n")
 
         if extremes:
-            lines.append("## Indicator extremes from yesterday's close\n")
+            lines.append("## 昨日收盤的指標異常\n")
             for s in extremes[:8]:
                 lines.append(f"- {_format_signal_alert(s)}")
             lines.append("")
         else:
-            lines.append("## Indicator extremes from yesterday's close\n_None tripping thresholds._\n")
+            lines.append("## 昨日收盤的指標異常\n_無超過門檻者_\n")
 
         # Watchlist + active theses are read once and passed into the
         # checklist generator. Both also surface as section snippets.
@@ -340,7 +340,7 @@ def pre_market_brief() -> None:
         watchlist = _watchlist()
 
         if watchlist:
-            lines.append("## Watchlist (escalation candidates)\n")
+            lines.append("## 監控清單(升級候選)\n")
             for w in watchlist:
                 lines.append(f"- **{w.get('ticker','?')} {w.get('company','?')}** "
                              f"({w.get('ai_pillar','?')}/{w.get('node','?')}, added {w.get('added','?')}) — "
@@ -348,10 +348,10 @@ def pre_market_brief() -> None:
             lines.append("")
 
         checklist = _action_checklist(extremes, ticker_news, theses, watchlist)
-        lines.append("## Action checklist\n")
+        lines.append("## 行動清單\n")
         lines.append(_format_checklist(checklist) + "\n")
 
-        lines.append("## Macro/geo headlines (overnight)\n")
+        lines.append("## 總經/地緣新聞(隔夜)\n")
         for n in general_news[:5]:
             ts = n["ts"].astimezone(_TPE).strftime("%m-%d %H:%M") if n["ts"] else "—"
             lines.append(f"- [{n['source']}, {ts}] {n['title'][:120]}")
@@ -372,12 +372,12 @@ def pre_market_brief() -> None:
              f"Extremes: {len(extremes)} • "
              f"Theses: {len(theses)}\n")
     if extremes:
-        short += "\n<b>Top extremes</b>:\n"
+        short += "\n<b>主要異常</b>:\n"
         for s in extremes[:3]:
             short += f"• {_format_signal_alert(s)}\n"
     if ticker_news:
         short += f"\n<b>Top headline</b>: {ticker_news[0]['title'][:120]}\n"
-    short += "\n<b>Actions</b>:\n" + _format_checklist(checklist)
+    short += "\n<b>今天要做的事</b>:\n" + _format_checklist(checklist)
     send(short)
     with cur() as c:
         c.execute("SET search_path TO public, neon_auth")
@@ -403,11 +403,11 @@ def intraday_alerts() -> None:
 
     lines = [f"<b>Intraday alert {datetime.now(_TPE).strftime('%H:%M Taipei')}</b>\n"]
     if ticker_news:
-        lines.append("\n<b>Watchlist mentioned in last 1h</b>:")
+        lines.append("\n<b>近 1 小時提到監控標的</b>:")
         for n in ticker_news[:5]:
             lines.append(f"• <b>{n['ticker_id']}</b> [{n['source']}] {n['title'][:100]}")
     if extremes:
-        lines.append("\n<b>Indicator extremes (latest close)</b>:")
+        lines.append("\n<b>指標異常(最新收盤)</b>:")
         for s in extremes[:5]:
             lines.append(f"• {_format_signal_alert(s)}")
     send("\n".join(lines))
@@ -518,36 +518,36 @@ def post_close_brief() -> None:
         discovery = _discovery_candidates_from_snapshot(limit=5)
         leadlag = _query_top_lead_lag(c, limit=5)
 
-    lines = ["# Post-close brief — " + _today_taipei_iso() + "\n"]
-    lines.append(f"_Generated {datetime.now(_TPE).strftime('%H:%M %Z')}._\n")
+    lines = ["# 收盤簡報 — " + _today_taipei_iso() + "\n"]
+    lines.append(f"_產生於 {datetime.now(_TPE).strftime('%H:%M %Z')}_\n")
 
-    lines.append("## Top sectors by 5d foreign flow\n")
+    lines.append("## 外資 5 日資金流向前段族群\n")
     for s in sectors:
         sign = "+" if s["foreign_5d"] >= 0 else ""
-        lines.append(f"- **{s['pillar']}/{s['node']}** — {sign}{s['foreign_5d']:,.0f} shares 5d, top: {s['top']}")
+        lines.append(f"- **{s['pillar']}/{s['node']}** — 5 日 {sign}{s['foreign_5d']:,.0f} 股,領頭:{s['top']}")
     lines.append("")
 
-    lines.append("## Names tripping thresholds\n")
+    lines.append("## 觸發門檻的個股\n")
     if extremes:
         for s in extremes[:8]:
             lines.append(f"- {_format_signal_alert(s)}")
     else:
-        lines.append("_None._")
+        lines.append("_無_")
     lines.append("")
 
-    lines.append(f"## News naming watchlist tickers (last 24h): {len(ticker_news)}\n")
+    lines.append(f"## 近 24 小時提到監控標的的新聞:{len(ticker_news)} 則\n")
     for n in ticker_news[:5]:
         lines.append(f"- {n['ticker_id']} {n['company_name']} [{n['source']}]: {n['title'][:120]}")
 
     if watchlist:
-        lines.append(f"\n## Watchlist ({len(watchlist)} names)")
+        lines.append(f"\n## 監控清單({len(watchlist)} 檔)")
         for w in watchlist:
             lines.append(f"- **{w.get('ticker','?')} {w.get('company','?')}** "
                          f"— {(w.get('reason') or '')[:140]}")
 
-    lines.append(f"\n## Active theses: {active_theses}")
+    lines.append(f"\n## 進行中的論點:{active_theses} 個")
     if active_theses == 0:
-        lines.append("\n_No active theses yet. Run `decide-on-ticker` Skill in Claude app to open one._")
+        lines.append("\n_目前沒有進行中的論點。在 Claude app 跑 `decide-on-ticker` Skill 可以開一個。_")
     else:
         for t in theses:
             lines.append(f"- **{t.get('ticker','?')} {t.get('company','?')}** — "
@@ -556,7 +556,7 @@ def post_close_brief() -> None:
 
     # New: discovery candidates from correlation graph
     if discovery:
-        lines.append(f"\n## Discovery candidates ({len(discovery)})")
+        lines.append(f"\n## 可能漏分類的個股({len(discovery)} 檔)")
         lines.append("_Unclassified tickers tracking a classified pillar — possible "
                      "supply-chain peers worth investigating._\n")
         for c_ in discovery:
@@ -566,7 +566,7 @@ def post_close_brief() -> None:
 
     # New: lead-lag (top forward-leading pairs)
     if leadlag:
-        lines.append(f"\n## Lead-lag signals ({len(leadlag)})")
+        lines.append(f"\n## 領先落後訊號({len(leadlag)} 組)")
         lines.append("_Upstream → downstream pairs where today's upstream move "
                      "predicts the downstream's move N days later._\n")
         for ll in leadlag:
@@ -576,11 +576,11 @@ def post_close_brief() -> None:
 
     # Action checklist last — derived from everything above.
     checklist = _action_checklist(extremes, ticker_news, theses, watchlist)
-    lines.append("\n## Action checklist for tomorrow\n")
+    lines.append("\n## 明天的行動清單\n")
     lines.append(_format_checklist(checklist))
 
     body = "\n".join(lines)
-    title = f"Post-close — {_today_taipei_iso()}"
+    title = f"收盤簡報 — {_today_taipei_iso()}"
 
     with cur() as c:
         c.execute("SET search_path TO public, neon_auth")
@@ -590,28 +590,33 @@ def post_close_brief() -> None:
                       alerts=[{"ticker": s["ticker_id"], "reason": _format_signal_alert(s)} for s in extremes[:8]])
 
     # Telegram: short summary + action checklist
-    short = (f"<b>Post-close {_today_taipei_iso()}</b>\n"
-             f"Top sector: <b>{sectors[0]['pillar']}/{sectors[0]['node']}</b> "
-             f"({'+' if sectors[0]['foreign_5d']>=0 else ''}{sectors[0]['foreign_5d']:,.0f} shares 5d)\n"
-             f"Watchlist: {len(watchlist)} • "
-             f"Theses: {active_theses} • "
-             f"Extremes: {len(extremes)} • "
-             f"News mentions: {len(ticker_news)}\n")
+    short = (f"<b>收盤簡報 {_today_taipei_iso()}</b>\n"
+             f"資金最集中:<b>{sectors[0]['pillar']}/{sectors[0]['node']}</b> "
+             f"(外資 5 日{'買超 +' if sectors[0]['foreign_5d']>=0 else '賣超 '}"
+             f"{sectors[0]['foreign_5d']:,.0f} 股)\n"
+             f"監控 {len(watchlist)} 檔 • "
+             f"論點 {active_theses} 個 • "
+             f"異常 {len(extremes)} 檔 • "
+             f"相關新聞 {len(ticker_news)} 則\n")
     if extremes:
-        short += "\n<b>Notable</b>:\n"
+        short += "\n<b>值得注意</b>:\n"
         for s in extremes[:3]:
             short += f"• {_format_signal_alert(s)}\n"
     if discovery:
-        short += "\n🔍 <b>Discovery candidates</b>:\n"
+        short += "\n🔍 <b>可能漏分類的個股</b>:\n"
         for c_ in discovery[:3]:
-            short += (f"• {c_['ticker']} {c_['name']} → "
-                      f"{c_['suggested_pillar']} (ρ≈{c_['conviction']})\n")
+            rho = c_['conviction']
+            tie = "走勢幾乎同步" if rho >= 0.8 else ("走勢很像" if rho >= 0.6 else "有點像")
+            short += (f"• {c_['ticker']} {c_['name']} 和 "
+                      f"{c_['suggested_pillar']} {tie}(相關 {rho})\n")
     if leadlag:
-        short += "\n🔗 <b>Lead-lag</b>:\n"
+        short += "\n🔗 <b>領先落後配對</b>:\n"
         for ll in leadlag[:3]:
-            short += (f"• {ll['up']}→{ll['down']} lag {ll['lag']}d "
-                      f"(ρ={ll['rho_lag']}, +{ll['gain']:.2f})\n")
-    short += "\n<b>Actions for tomorrow</b>:\n" + _format_checklist(checklist)
+            rho = ll['rho_lag']
+            strength = "強" if rho >= 0.7 else ("中等" if rho >= 0.5 else "偏弱")
+            short += (f"• {ll['up']} 先動,{ll['down']} 約 {ll['lag']} 天後跟著動"
+                      f"(關聯{strength} {rho})\n")
+    short += "\n<b>明天要做的事</b>:\n" + _format_checklist(checklist)
     send(short)
 
     with cur() as c:
