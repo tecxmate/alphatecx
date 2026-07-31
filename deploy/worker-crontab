@@ -20,13 +20,17 @@
 # place an order — that is the only moment a restatement is worth anything.
 30 8 * * 1-5 python -m riskguard.pipeline --mode pre_market
 
-# ── News harvest ────────────────────────────────────────────────────────────
-# Idempotent: re-runs are no-ops on unchanged feeds. Scheduled Telegram briefs
-# were switched off upstream on 2026-06-17, so these are harvest-only — do not
-# "restore" a brief here without checking that decision first.
-30 7  * * 1-5 python -m src.news.harvest
-0  10 * * 1-5 python -m src.news.harvest
-0  12 * * 1-5 python -m src.news.harvest
-30 14 * * 1-5 python -m src.news.harvest
-0  21 * * *   python -m src.news.harvest
-0  6  * * *   python -m src.news.harvest
+# ── News harvest — REMOVED 2026-07-31, deliberately ─────────────────────────
+# Six `python -m src.news.harvest` slots used to live here (07:30 / 10:00 /
+# 12:00 / 14:30 / 21:00 / 06:00 Taipei). The `newswatch` service now polls the
+# same feeds every 180s, so these were re-fetching what a continuous poller had
+# already ingested minutes earlier.
+#
+# Do NOT restore them because news looks stale — check `newswatch` first, and
+# check `ingestion_log`, where the poller writes `source='news_watch'` rather
+# than `'news_harvest'`. A third path would corrupt nothing (every writer
+# upserts on the canonical-URL PK); it would just be work nobody reads.
+#
+# `.github/workflows/news_harvest.yml` still runs those six slots and stays as
+# the backstop — it is the one path that survives this container being down.
+# See docs/wiki/decisions/2026-07-31-near-realtime-news-poller.md.
