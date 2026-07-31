@@ -1,0 +1,33 @@
+# Pre-commit gate: focused ruff + the test suite.
+#
+# pre-commit passes only STAGED files to the ruff hook, which is what makes this
+# usable here — `ruff check .` across the repo currently reports 344 pre-existing
+# errors, so a full-repo gate would fail every commit. See CLAUDE.md ("Lint
+# convention"): the working gate is focused ruff on files you touched.
+#
+# ruff-format is deliberately NOT enabled. It would reformat 66 of 84 files
+# (~11k lines); with a staged-files hook that churn arrives one file at a time
+# and buries real changes. If we ever want it, do a single repo-wide format
+# commit first, then add the hook.
+#
+# Install once:  pre-commit install
+# Run manually:  pre-commit run --all-files
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.11
+    hooks:
+      # `ruff-check`, not the legacy `ruff` alias Lucky Vibes still pins.
+      - id: ruff-check
+        args: [--fix]
+
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest -q
+        entry: python3 -m pytest -q
+        language: system
+        # The suite needs no network and no DB, and runs in well under a second,
+        # so gating every commit on all of it is cheap. pass_filenames is off
+        # because pytest takes test paths, not the arbitrary staged files.
+        pass_filenames: false
+        always_run: true
