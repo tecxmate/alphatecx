@@ -104,8 +104,28 @@ def _harvest_ohlcv_current_month(target: str) -> int:
     month = int(target[4:6])
     log.info("OHLCV current-month: %d-%02d", year, month)
 
+    # dim_supply_chain UNION active rg_positions. The watchlist is deliberately
+    # NOT restricted to the classified universe (see bot.cmd_watch: "a name you
+    # cannot watch is a name whose stop you cannot set"), so fetching prices for
+    # the classified set alone left watched-but-unclassified names with no bars
+    # at all. 2324 was watched, never classified, and its newest close stayed
+    # frozen at 2026-05-08 — which the stop view then rendered as today's price,
+    # 84 sessions stale, against a real 36.0. Suppressing the stale read was
+    # half the fix; harvesting the name is the other half.
+    #
+    # market comes from dim_ticker for the unclassified ones, defaulting to
+    # TWSE when even that is unknown — a wrong venue costs one failed request,
+    # which the loop below already logs and survives.
     with loader.cur() as c:
-        c.execute("SELECT ticker_id, market FROM dim_supply_chain ORDER BY ticker_id")
+        c.execute("""
+            SELECT ticker_id, market FROM dim_supply_chain
+            UNION
+            SELECT p.ticker_id, COALESCE(t.market, 'TWSE')
+              FROM rg_positions p
+              LEFT JOIN dim_ticker t ON t.ticker_id = p.ticker_id
+             WHERE p.active
+            ORDER BY 1
+        """)
         targets = [(r[0], r[1]) for r in c.fetchall()]
     targets.append((_BENCHMARK, "TWSE"))
 
