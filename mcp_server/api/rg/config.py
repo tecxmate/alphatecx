@@ -1,0 +1,120 @@
+"""Risk Guard tunables and fixed copy.
+
+Every number the M1 scorer keys off lives here, per PRD §7 ("閾值進 config,
+改動記 CHANGELOG"). Changing a threshold and re-running `python -m
+riskguard.replay` is the intended calibration loop; editing scoring.py is not.
+
+The 兵法 quote table also lives here. PRD §6 and §5-M7 make it a code-review
+acceptance condition that it never reaches a scoring or triggering path — it is
+looked up once, at message-format time, keyed by an alert kind that has already
+been decided. Keeping it in config (data, not logic) is what makes a violation
+visible in review.
+"""
+from __future__ import annotations
+
+# ── M1 subitem thresholds ───────────────────────────────────────────────────
+
+# 1. TAIEX vs moving averages. Points stack: below both MAs scores 1 + 2 = 3.
+MA_SHORT = 20
+MA_LONG = 60
+PTS_BELOW_MA_SHORT = 1
+PTS_BELOW_MA_LONG = 2
+
+# 2. Breadth — 5-day mean of adv / (adv + dec) over TWSE common stock only
+#    (MI_INDEX 漲跌證券數合計, the 股票 column, which excludes warrants and ETFs).
+BREADTH_WINDOW = 5
+BREADTH_BAD = 0.40
+BREADTH_WEAK = 0.45
+PTS_BREADTH_BAD = 2
+PTS_BREADTH_WEAK = 1
+
+# 3. Margin — retail leverage still climbing into a falling index is the
+#    "everyone is still holding" signal, so both halves must be true.
+MARGIN_WINDOW = 5
+MARGIN_GROWTH_PCT = 3.0
+PTS_MARGIN = 2
+
+# 4. Foreign net futures open interest (TAIFEX 臺股期貨 外資及陸資
+#    多空未平倉口數淨額). Negative = net short.
+FUT_NET_SHORT_HEAVY = 20_000
+FUT_NET_SHORT_MILD = 10_000
+PTS_FUT_HEAVY = 2
+PTS_FUT_MILD = 1
+
+# 5. Single-day drawdown. Takes the worse band, does not stack.
+DAY_DROP_MILD = -2.0
+DAY_DROP_HEAVY = -3.5
+PTS_DAY_MILD = 1
+PTS_DAY_HEAVY = 2
+
+# ── Score → light bands ─────────────────────────────────────────────────────
+
+SCORE_YELLOW = 3   # 3–4
+SCORE_RED = 5      # ≥5
+
+# ── Light hysteresis (PRD §5 M1 v1.1) ───────────────────────────────────────
+#
+# Downgrades toward green are gated; upgrades toward red are immediate. Without
+# this, 7/30 (−0.26% after a −4.65% / −3.76% pair) and 7/31 (+8.0%) each flip
+# the light on a single quiet or violent day — exactly the failure the replay
+# table exists to catch.
+
+# 紅轉黃: the index must have held above its prior low this many sessions running.
+RED_TO_YELLOW_HOLD_DAYS = 2
+# The window whose minimum close defines "前低".
+PRIOR_LOW_WINDOW = 10
+# 黃轉綠: back above MA20, or this many consecutive higher closes.
+YELLOW_TO_GREEN_UP_STREAK = 3
+
+# ── M2 stop alerts ──────────────────────────────────────────────────────────
+
+DEFAULT_HARD_STOP_PCT = 10.0
+
+# PRD §5 M2 v1.1: the 28.6 case proved a close-only rule plus a human hand
+# takes four days to execute. Every exit alert carries this instruction.
+CONDITIONAL_ORDER_ADVICE = (
+    "建議改掛券商觸價條件單(觸價=出場線下一檔、市價、長效),把執行交給機器"
+)
+
+# ── M2b settlement ──────────────────────────────────────────────────────────
+
+SETTLEMENT_LAG_DAYS = 2          # T+2, counted in trading days
+SETTLEMENT_LOOKAHEAD_DAYS = 3    # check the next 3 settlement dates
+SETTLEMENT_WARN_LEAD_DAYS = 2    # alert at least this many days ahead
+
+# Taiwan retail cost model, used to turn a reported fill into a settlement
+# amount. Brokerage 0.1425% with the common 6折 discount; the sell side also
+# pays 0.3% 證交稅. Minimum NT$20 fee per side.
+BROKER_FEE_RATE = 0.001425
+BROKER_FEE_DISCOUNT = 0.6
+BROKER_FEE_MIN = 20
+SECURITIES_TAX_RATE = 0.003
+SHARES_PER_LOT = 1000
+
+# ── Entry checklist (PRD §5 M2) ─────────────────────────────────────────────
+
+MAX_5D_GAIN_PCT = 15.0        # Q3 — the 175 vertical-run block
+MAX_CASH_USE_PCT = 70.0       # Q6 — single buy ≤ 70% of available cash
+
+# The only two verdict strings the checklist may produce. There is no "buy"
+# phrasing anywhere in Risk Guard, by design (PRD §0, §5 M2).
+VERDICT_BLOCKED = "今天不買。原因:"
+VERDICT_CLEAR = "沒有阻止你的理由"
+
+# ── 兵法 copy layer (PRD §6) ────────────────────────────────────────────────
+#
+# Pure presentation. Keyed by alert kind; read only by messages.format_alert().
+SUNZI_BY_KIND = {
+    "risk_light_red": "不可勝者,守也",
+    "risk_light_green": "善戰者,無智名,無勇功",
+    "stop_warn": "小敵之堅,大敵之擒也",
+    "stop_exit": "小敵之堅,大敵之擒也",
+    "anomaly_limit_open": "兵貴勝,不貴久",
+    "anomaly_crash": "兵貴勝,不貴久",
+    "checklist_block": "勝兵先勝而後求戰",
+    "sector_exit": "避實而擊虛",
+    "settlement_gap": "多算勝,少算不勝",
+}
+
+LIGHT_EMOJI = {"green": "🟢", "yellow": "🟡", "red": "🔴"}
+SEVERITY_EMOJI = {"info": "ℹ️", "warn": "⚠️", "critical": "🚨"}

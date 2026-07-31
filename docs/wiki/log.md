@@ -585,3 +585,159 @@ attributed_to: [niko]   belongs_to: [flow-leaders-scan]
 - New: src/harvester/finmind.py, scripts/backfill_finmind.py, sql/017_finmind.sql,
   decisions/2026-07-27-finmind-phase2-build.md; updated finmind-phase2-plan + flow-leaders-scan.
 - Still blocked (paid): true 5y 填息 + dividend-adjusted flatness (v2 #5) via TaiwanStockPriceAdj.
+
+## [2026-07-31] ingest | CLAUDE.md rewritten as a real onboarding file
+attributed_to: [niko]   belongs_to: [system-architecture]
+- `/init` run. `CLAUDE.md` was an 11-byte `@AGENTS.md` import; rewrote it to carry commands +
+  architecture while keeping the `@AGENTS.md` line so the wiki contract survives.
+- Documented the facts that cost multiple files to derive: the Vercel Root Directory =
+  `mcp_server/` deployment split (why `riskguard/` vs `mcp_server/api/rg/`, why `src/quant`
+  is mirrored into `mcp_server/api/quant`), the two requirements files, the
+  `pythonpath = [".", "mcp_server/api"]` bare-import convention, `apply_schema.py`'s
+  hardcoded file list, and the two GH-Actions Neon quirks (`gssencmode=disable`, /etc/hosts
+  IPv4 pin) that hang rather than error when dropped.
+- Verified before writing: `pytest -q` → 112 passed / 5 skipped; the five `quant` mirror pairs
+  differ by exactly one line (server adds an `MCP_DATABASE_URL` fallback).
+- Noted root `README.md` is still the untouched `tecxproj` template — flagged as not project docs.
+- Local-server line verified empirically, and it surfaced a live risk: `mcp_server/requirements.txt`
+  pins `mcp>=1.2.0`, but mcp 2.0.0 dropped `mcp.server.fastmcp` — a fresh unpinned install cannot
+  import `index.py`. `mcp<2` boots and `/health` returns 200. Worth pinning in the requirements file.
+- Also confirmed `index.py` hard-refuses to start without `MCP_BEARER_TOKEN`, and that the working
+  invocation is `cd mcp_server && uvicorn api.index:app` (uvicorn is in neither requirements file).
+
+## [2026-07-31] decision | Postgres migrated from Neon to Zeabur
+attributed_to: [niko]   belongs_to: [system-architecture]
+- Niko deployed a Zeabur Postgres (18.4, `8.209.197.81:32046`) and asked to migrate off Neon (17.10).
+  Audit found zero Neon lock-in: only `plpgsql` installed, `neon_auth` an empty scaffold, every caller
+  reads `DATABASE_URL` from env. See [2026-07-31-migrate-neon-to-zeabur](decisions/2026-07-31-migrate-neon-to-zeabur.md).
+- Dump/restore run inside a `postgres:18` container — local client is 14.19 and refuses a 17/18 server.
+  26 of 27 relations match source `count(*)` exactly; indexes 56=56, policies 24=24, FK/PK/unique identical.
+- Non-obvious: RLS roles are cluster-level and never travel in a dump. 24 policies bind to `mcp_viewer`,
+  so the role had to be created on the target *before* `pg_restore` or every policy would have errored.
+- Zeabur has TLS **disabled** (`sslmode=require` rejected outright), so the new URL must drop it and
+  traffic is cleartext over a public IP. Flagged to Niko; unresolved.
+- Cutover deliberately not performed — `.env`, the GH Actions secret, and the Vercel MCP deployment
+  still point at Neon, which stays live as rollback.
+
+## [2026-07-31] ingest | view_ticker_momentum can't refresh
+attributed_to: [claude-agent]   belongs_to: [system-architecture]
+- The migration's `REFRESH MATERIALIZED VIEW` failed on a real pre-existing bug, not a migration artifact:
+  ETF 009805 renamed 新光美國電力基建 → 台新美國電力基建 on 2026-07-13, and the matview groups by
+  `company_name` (from per-date `raw_twse_t86`) while `idx_vtm_ticker` is unique on `ticker_id` alone.
+- Refreshing on Neon fails today too; Neon only looks healthy because it holds pre-rename stale rows.
+  `continue-on-error: true` in `daily_harvest.yml` has been hiding it nightly.
+- Fix direction (unapplied) in [view-ticker-momentum-refresh-break](topics/view-ticker-momentum-refresh-break.md).
+
+## [2026-07-31] decision | Risk Guard Phase 1 implemented from RISK_GUARD_PRD.md v1.1
+attributed_to: [niko, claude-agent]   belongs_to: [risk-guard, alphatecx]
+- [niko] handed over `RISK_GUARD_PRD.md` v1.1 and asked for it to be implemented. Delivered
+  **Phase 1 exactly as PRD §7 scopes it**: schema + M1 + M2 + M2b + Telegram bot + five `rg_*`
+  MCP tools + held_pct snapshot. Phases 2–4 (M3 族群, M4 盤中, M5 intent, M6 公告, M7 節律) not built.
+- **Checked before designing:** a TAIEX-only M1 provably fails the 7/07 acceptance row (−2.31%,
+  below MA20 → score 2 = green, but §7 demands ≥yellow). Verified all three missing feeds are
+  reachable first: TWSE `MI_INDEX?type=MS` 漲跌證券數合計 (7/07 = 128↑/892↓ on the 股票 column),
+  TAIFEX `futContractsDateDown` Big5 CSV (7/30 外資 net OI = −81,017), and market margin as
+  `SUM(margin_balance)` over existing `raw_twse_margin` — no new feed needed for the third.
+- The light is a **state machine, not `f(score)`** — PRD v1.1 hysteresis. 7/30 and 7/31 are replay
+  rows that exist to catch a stateless implementation; both are pinned in tests.
+- **Deviation, deliberate:** code splits across `riskguard/` (cron, impure) and
+  `mcp_server/api/rg/` (pure + read layer) rather than the single `/riskguard` folder PRD §2
+  names — Vercel's Root Directory is `mcp_server/`, so a repo-root package cannot be imported
+  by an MCP tool. `api/quant/` is the precedent.
+- **Deviation, deliberate:** cron on GitHub Actions, not Vercel Cron (there is none in this repo).
+  M1 lands ~16:40 Taipei instead of 15:30, inheriting the `/etc/hosts` IPv4 pin and
+  `gssencmode=disable`. Pre-market gets its own workflow at 00:30 UTC. The Risk Guard step is
+  **not** `continue-on-error` — a silent failure there is a stop-loss alert that never fired.
+- PRD §5-M7 and §6 state review-only constraints (節律 veto and 兵法 quotes must never enter a
+  scoring path). Turned into `inspect.getsource` assertions in `tests/test_rg_checklist.py`.
+- Found but did not fix: `sql/003_rls.sql` places its final `REVOKE INSERT, UPDATE, DELETE ON ALL
+  TABLES` **after** its own watchlist grant, so `apply_schema.py --rls` strips the write grant
+  `w_add`/`w_remove` rely on. Noted in `sql/018_riskguard.sql`.
+- Post-review fixes: (a) `flush_undelivered()` re-sends undelivered `critical` alerts at the end
+  of both entry points — without it the new `(date, kind, dedup_key)` unique index turned a failed
+  Telegram send into a permanently swallowed alert, since the next run's ON CONFLICT suppressed the
+  re-record; (b) an active position with no `raw_twse_ohlcv` close now raises `stop_unchecked`
+  instead of being silently skipped ("0 stop alerts" and "never checked" must not look alike).
+- Verified: `raw_twse_index` holds 94 sessions back to 2026-02-25, so MA60 is computable across the
+  replay range; and `daily.py` step 5b does upsert indices, so `last_trading_day()` advances daily.
+- `pytest -q` → **202 passed, 5 skipped** (85 new). Source parsers tested against captured real
+  2026-07-30 payloads.
+- **Still unverified — needs [niko] with DB credentials:** no `.env` in this working copy, so
+  `python -m riskguard.replay --start 2026-06-01 --end 2026-07-31` has never run against live
+  data. `raw_twse_index` also has gaps (5/26–6/04, 7/10) and ends at 7/30, so MA60 may be short.
+
+## [2026-07-31] lint | Documentation sweep — README, web README, alphatecx, system-architecture
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture, alphatecx]
+- Root `README.md` was still the unmodified `tecxproj` template describing a project template.
+  Rewrote as the real project README: layout, quick start, ingest cadence, MCP prefix taxonomy, auth.
+- `web/README.md` was the untouched assistant-ui starter and stated two false things — that
+  `OPENAI_API_KEY` is what you set (actual default provider is anthropic, via `LLM_PROVIDER`),
+  and that the MCP client defaults to `localhost:8000` (actual: `MCP_SERVER_URL` required, throws
+  if unset). Fixed both; left the accurate "How it's wired" section alone.
+- [alphatecx](topics/alphatecx.md): page still called v2 "planning" and cited dead workspace paths
+  12 weeks after v2 went live. Replaced Current State, closed the four answered Open Questions.
+- [system-architecture](topics/system-architecture.md): listed 9 MCP tools against a live 44.
+  Swapped enumeration for the prefix taxonomy + "sc_capabilities is the catalog" so it can't rot
+  again. Diagram gained the Vercel/dashboard/web and Risk Guard branches; deployment-split rule
+  (Vercel Root Directory = `mcp_server/`) recorded on the topic page for the first time.
+- Wiki index verified complete — no orphan pages, no dead links.
+- Concurrent session landed Risk Guard Phase 1 + the Zeabur migration mid-sweep; re-read the tree
+  and folded both into README/CLAUDE.md rather than overwriting the newer risk-guard page.
+- Left `BOOTSTRAP.md` alone — template artefact, its job is done, but removing it is [niko]'s call.
+
+## [2026-07-31] lint | Dead-code sweep — unused imports and variables
+attributed_to: [niko, antigravity-agent]   belongs_to: [system-architecture]
+- Removed 13 unused imports (ruff F401) across 11 files and 3 assigned-never-read locals (F841):
+  `counts` in both copies of `quant/regime.py`, `n_days` in `quant/leadlag.py`, and a
+  function-local `plotly.graph_objects` in `correlation_snapshot.py:_fig_combined`.
+- Scoped deliberately: `--select F401` on an explicit file list, not repo-wide `--fix`, so the
+  configured `I`/`UP` rules could not rewrite unrelated files. `mcp_server/api/bot.py`,
+  `riskguard/`, and `mcp_server/api/rg/` were skipped — concurrent session has them uncommitted.
+- `src/quant/regime.py` and `mcp_server/api/quant/regime.py` edited together; the mirror pairs
+  still differ by exactly one line each (the `MCP_DATABASE_URL` fallback), invariant intact.
+- `pytest -q` unchanged at 191 passed / 5 skipped.
+- Flagged, not removed: `src/seed_supply_chain.py` has no callers, but having none is normal for a
+  one-shot seeding script. [niko]'s call.
+
+## [2026-07-31] decision | Zeabur cutover executed; matview bug fixed on both hosts
+attributed_to: [niko]   belongs_to: [system-architecture]
+- Niko: "check and auto do all". Executed the pending list from the migration entry above.
+- Fixed `view_ticker_momentum` in `sql/002_views.sql`: group by `ticker_id, ai_pillar, node` and take
+  the latest `company_name`/`market` via `(ARRAY_AGG(... ORDER BY date DESC))[1]`. Applied to Zeabur
+  **and Neon** — Neon had the same broken refresh, just masked by stale rows. 10,584 rows on both.
+- `sql/003_rls.sql` no longer hardcodes `GRANT CONNECT ON DATABASE postgres`; resolved at runtime with
+  `current_database()`. That literal was wrong on every host the project has ever used.
+- `apply_schema.py` gained `014_dim_ticker_classify.sql` — in the `--rls` branch, not the default list,
+  because it GRANTs to `mcp_viewer` and would fail wherever that role doesn't exist.
+- `018_riskguard.sql` had never been applied to any database; its 10 `rg_*` tables now exist on Zeabur.
+- Non-obvious, worth not re-learning: the `DATABASE_URL` secret **must** end with a query string. All
+  three workflows build `${{ secrets.DATABASE_URL }}&gssencmode=disable`, so a bare URL would push
+  `&gssencmode=disable` into the database name. The secret ends `?sslmode=disable` (Zeabur has no TLS).
+- Removed the `/etc/hosts` "Pin Neon hostname to IPv4" step from all three workflows — Zeabur's host is
+  already a literal IPv4, so the step would have written `8.209.197.81 8.209.197.81`.
+- Verified by connecting *as* `mcp_viewer`, not just as root: matview, `dim_ticker`, `rg_positions` all
+  readable. `pytest -q` 191 passed / 5 skipped.
+- **Still open:** the Vercel deployment env still points at Neon (CLI has no credentials here), so the
+  MCP server reads the old DB until Niko switches it. Neon left running as rollback.
+
+## [2026-07-31] ingest | Zeabur CLI usable, but only the GitHub-release build
+attributed_to: [niko]   belongs_to: [system-architecture]
+- Niko supplied a Zeabur API token so the CLI could reach the account (the migration entry above
+  closed with "CLI has no credentials here"). CLI now authenticates as `nguyenvanqui291`, plan
+  DEVELOPER. Project `alphatecx` (`6a6c3c70c553a2bc513cf1ce`) holds one service, `postgresql`
+  (`6a6c3e4d2e9443830f4905ae`), created the same day as the cutover.
+- **The npm package is abandoned.** `@zeabur/cli` on npm is pinned at `0.2.9` (`dist-tags.latest`
+  = 0.2.9); real releases ship as bare binaries on GitHub, currently `v0.21.0`. `npm i -g
+  @zeabur/cli@latest` reinstalls 0.2.9 and looks like a no-op upgrade.
+- 0.2.9 **cannot talk to Zeabur at all**: it targets `gateway.zeabur.com`, which now answers with a
+  Traefik default self-signed cert on a Linode IP, so every call dies as
+  `x509: certificate signed by unknown authority`. The live endpoint is `api.zeabur.com`
+  (Cloudflare, valid `CN=zeabur.com`), which only 0.21.0 uses. Symptom looks like a local CA/proxy
+  problem and is not one — don't go chasing trust stores.
+- Release assets are **raw Mach-O/ELF binaries, not tarballs** (`zeabur_0.21.0_darwin_arm64`);
+  `tar xzf` on them fails with "Unrecognized archive format".
+- Token was pasted in cleartext into a chat transcript and lands in `~/.config/zeabur`; it should be
+  rotated in the Zeabur dashboard once the remaining cutover work is done.
+- The `zeabur variable` subcommand is the path to the still-open item from the cutover — the Vercel
+  deployment env — but note Vercel env vars are set with the *Vercel* CLI; Zeabur's only covers
+  Zeabur-hosted services.

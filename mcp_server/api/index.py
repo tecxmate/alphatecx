@@ -43,6 +43,9 @@ import flow_leaders
 import session_state as session_state_mod
 import quote as quote_mod
 import fugle as fugle_mod
+from rg import checklist as rg_checklist_mod
+from rg import db as rg_db
+from rg import stops as rg_stops
 try:
     from security import is_authorized_path, token_matches
 except ModuleNotFoundError:  # package import path used by local tests
@@ -1906,8 +1909,178 @@ def sc_capabilities() -> dict:
             {"name": "u_universe", "purpose": "Unified read: classified-ticker × knowledge × watch-state × signals"},
             {"name": "w_add", "purpose": "Add a ticker to the watchlist (writes to DB; same as bot /watch)"},
             {"name": "w_remove", "purpose": "Archive a watchlist entry (writes to DB; same as bot /unwatch)"},
+            {"name": "rg_status", "purpose": "Risk Guard: today's market risk light, its five subitems, and settlement-cash state"},
+            {"name": "rg_positions", "purpose": "Risk Guard: monitored positions/watch names with warn+exit lines and distance to each"},
+            {"name": "rg_alerts", "purpose": "Risk Guard: recent alert stream (stop, settlement, light change) — what the operator was already told"},
+            {"name": "rg_checklist", "purpose": "Risk Guard: six-question entry checklist; blocks or says nothing is stopping you — never recommends a buy"},
+            {"name": "rg_journal_add", "purpose": "Risk Guard: record a decision made in conversation (writes to DB)"},
         ],
+        "risk_guard": {
+            "purpose": "Post-close risk system whose only job is to prevent large losses. "
+                       "It never produces buy signals, target prices, or forecasts.",
+            "phase": "Phase 1 live: M1 risk light, M2 stop alerts, M2b settlement check. "
+                     "M3 sector strength, M4 intraday anomaly, M5 intent score, "
+                     "M6 announcements and M7 rhythm veto are not yet built; checklist "
+                     "questions backed by them report as skipped.",
+        },
     }
+
+
+# ── Risk Guard tools (rg_*) ────────────────────────────────────────────────
+#
+# PRD §6 介面三: the dashboard, the Telegram bot and this conversation all read
+# one row of truth. Every tool below is a thin DB read except rg_journal_add —
+# nothing here recomputes a light, so Claude can never disagree with the push
+# the operator already received on their phone.
+
+
+@mcp.tool()
+def rg_status() -> dict:
+    """Today's Risk Guard state: market risk light, its five subitems, and cash.
+
+    The light is computed post-close by the Risk Guard pipeline and stored; this
+    reads it back. Use it before discussing any Taiwan-market entry — a red
+    light means new positions are off the table regardless of how good the
+    individual name looks.
+
+    Returns the light (green/yellow/red), the score, the per-subitem breakdown
+    with the inputs each one saw, upcoming settlement obligations, and the last
+    reported settlement-account balance.
+    """
+    market = rg_db.latest_market_daily()
+    if not market:
+        return _stamp({"error": "no risk light computed yet — run "
+                                "`python -m riskguard.pipeline --mode post_close`"},
+                      source="rg_market_daily", as_of=None, freshness="none")
+
+    today = _today_iso()
+    balance = rg_db.latest_balance()
+    reasons = market.get("reasons") or []
+    return _stamp(
+        {
+            "risk_light": market.get("risk_light"),
+            "risk_score": market.get("risk_score"),
+            "behaviour": {
+                "green": "正常",
+                "yellow": "新倉減半、停損上移",
+                "red": "禁新倉,建議總持股 ≤50%",
+            }.get(market.get("risk_light")),
+            "taiex": {
+                "close": market.get("taiex_close"),
+                "pct": market.get("taiex_pct"),
+                "ma20": market.get("taiex_ma20"),
+                "ma60": market.get("taiex_ma60"),
+                "ret_5d_pct": market.get("taiex_ret_5d_pct"),
+            },
+            "subitems": reasons,
+            "data_missing": [r["name"] for r in reasons if r.get("data_missing")],
+            "breadth": {"adv": market.get("adv_count"), "dec": market.get("dec_count"),
+                        "adv_ratio_5d": market.get("adv_ratio_5d")},
+            "margin_chg_5d_pct": market.get("margin_chg_5d_pct"),
+            "fut_foreign_net_oi": market.get("fut_foreign_net_oi"),
+            "settlement": {
+                "upcoming": rg_db.settlement_schedule(today),
+                "balance": balance,
+            },
+            "no_trade_reason": rg_db.no_trade_reason(today),
+        },
+        source="rg_market_daily",
+        as_of=market.get("date"),
+        freshness="T+0 post-close",
+    )
+
+
+@mcp.tool()
+def rg_positions(include_inactive: bool = False) -> dict:
+    """Monitored positions and watch names with their stop lines and distances.
+
+    Shows cost, warning line (halve), exit line (full exit), the latest close,
+    and how far price sits from each line. `exit_is_fallback` marks a line the
+    system derived from cost × (1 − hard_stop_pct) because none was set.
+
+    Args:
+        include_inactive: also return archived rows, which include the
+            blacklist ("拉黑") names kept as a do-not-buy record.
+    """
+    rows = rg_db.positions(include_inactive=include_inactive)
+    closes = rg_db.latest_closes([r["ticker_id"] for r in rows])
+    enriched = rg_stops.distances(rows, closes)
+    return _stamp(
+        {
+            "positions": [r for r in enriched if r["kind"] == "position"],
+            "watch": [r for r in enriched if r["kind"] == "watch"],
+            "count": len(enriched),
+        },
+        source="rg_positions",
+        as_of=_today_iso(),
+        freshness="T+1 close",
+    )
+
+
+@mcp.tool()
+def rg_alerts(days: int = 3) -> dict:
+    """Recent Risk Guard alerts — what the system already told the operator.
+
+    Read this before giving advice so the conversation reinforces the pushes
+    rather than contradicting them. `pushed=false` means the alert was recorded
+    but Telegram delivery failed.
+
+    Args:
+        days: lookback window in days (default 3).
+    """
+    rows = rg_db.recent_alerts(days=days)
+    return _stamp(
+        {"alerts": rows, "count": len(rows), "days": days},
+        source="rg_alerts",
+        as_of=_today_iso(),
+        freshness="real_time",
+    )
+
+
+@mcp.tool()
+def rg_checklist(
+    ticker_id: str,
+    buy_amount: Optional[float] = None,
+    available_cash: Optional[float] = None,
+) -> dict:
+    """Run the six-question entry checklist against one ticker.
+
+    This tool never recommends a buy. Any failed question returns
+    「今天不買。原因:…」; a clean sheet returns 「沒有阻止你的理由」 — the
+    absence of a reason to stop, not a reason to act. Questions whose module is
+    not live yet (Q2 sector rank, Q4 disposition status) report as skipped and
+    are listed under `warnings`, never silently passed.
+
+    Args:
+        ticker_id: TWSE/TPEX ticker, e.g. '2344'.
+        buy_amount: intended purchase size in TWD, for Q6.
+        available_cash: available cash in TWD; defaults to the last
+            /balance report if omitted.
+    """
+    facts = rg_db.checklist_facts(ticker_id, _today_iso(),
+                                  buy_amount=buy_amount, available_cash=available_cash)
+    result = rg_checklist_mod.evaluate(facts)
+    return _stamp(result, source="rg_checklist", as_of=_today_iso(), freshness="T+1")
+
+
+@mcp.tool()
+def rg_journal_add(text: str, ticker_id: Optional[str] = None) -> dict:
+    """Record a trading decision made in conversation into the Risk Guard journal.
+
+    Use this whenever the operator commits to something concrete — a stop level,
+    a decision to stay out, a condition they are waiting for. Later alerts can
+    then quote the operator's own words back at them, which is far harder to
+    rationalise away than a generic warning.
+
+    Args:
+        text: the decision, in the operator's own framing.
+        ticker_id: optional ticker the decision is about.
+    """
+    if not text or not text.strip():
+        return {"error": "text is required"}
+    row = rg_db.journal_add(text.strip(), ticker_id)
+    return _stamp({"saved": row}, source="rg_journal",
+                  as_of=_today_iso(), freshness="real_time")
 
 
 # ── FastAPI mount ──────────────────────────────────────────────────────────

@@ -1,0 +1,52 @@
+name: Risk Guard pre-market
+
+# 08:30 Taipei == 00:30 UTC, weekdays — the 試撮 window, before the 09:00 open.
+# Separate from daily_harvest.yml because that one runs after the close; this
+# one has to land before the operator can place an order, which is the only
+# moment a restatement is worth anything.
+#
+# It only speaks while the light is red (RISK_GUARD_PRD.md §5 M1). A warning
+# that arrives every single morning stops being read, which is the failure mode
+# this system is least able to afford.
+
+on:
+  schedule:
+    - cron: '30 0 * * 1-5'    # 08:30 Taipei, Mon-Fri
+  workflow_dispatch:
+
+env:
+  # Same non-obvious requirement as daily_harvest.yml. NOTE the `&`: the
+  # DATABASE_URL secret must already carry a query string (it ends with
+  # ?sslmode=disable) or this suffix lands inside the database name.
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}&gssencmode=disable
+  TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+jobs:
+  premarket:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Risk Guard pre-market restatement
+        run: python -m riskguard.pipeline --mode pre_market
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\": \"${TELEGRAM_CHAT_ID}\", \"text\": \"🔴 Risk Guard pre-market FAILED — ${GITHUB_RUN_URL}\", \"parse_mode\": \"HTML\"}"

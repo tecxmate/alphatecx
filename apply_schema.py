@@ -49,6 +49,7 @@ sql_files = [
     "sql/015_market_calendar.sql",
     "sql/016_dividends.sql",
     "sql/017_finmind.sql",
+    "sql/018_riskguard.sql",
 ]
 if args.rls:
     pw = os.getenv("MCP_VIEWER_PASSWORD")
@@ -56,6 +57,9 @@ if args.rls:
         print("ERROR: --rls requires MCP_VIEWER_PASSWORD in env")
         sys.exit(1)
     sql_files.append("sql/003_rls.sql")
+    # 014 GRANTs to mcp_viewer, so it can only run once 003 has created the role.
+    # Keeping it out of the default list is deliberate, not an omission.
+    sql_files.append("sql/014_dim_ticker_classify.sql")
 
 print(f"Connecting to: {DATABASE_URL[:50]}...")
 

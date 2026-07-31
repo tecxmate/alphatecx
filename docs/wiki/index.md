@@ -12,6 +12,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [Antigravity Agent](stakeholders/antigravity-agent.md) — Claude agent, wiki curation & implementation (agent)
 - [Codex Agent](stakeholders/codex-agent.md) — Codex agent, implementation and operational debugging (agent)
 - [Gemini Agent](stakeholders/gemini-agent.md) — Google Gemini agent, initial architecture & strategy proposal (agent)
+- [Claude Agent](stakeholders/claude-agent.md) — Claude Code agent, database operations & implementation (agent)
 
 ## Decisions
 - [2026-05-07 — Stateful Upgrade](decisions/2026-05-07-stateful-upgrade.md) — upgrade from stateless MCP to systematic Postgres pipeline
@@ -29,6 +30,8 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [2026-07-21 — session_state calendar](decisions/2026-07-21-session-state-calendar.md) — holiday classifier, manual typhoon overrides, and the mcp_viewer GRANT/RLS every new MCP-read table needs
 - [2026-07-26 — Flow-leaders dividend enrichment](decisions/2026-07-26-flow-leaders-dividend-enrichment.md) — Tool Review v2 Phase 1 (TWSE-native): forward-cash yield flag, ex-div proximity, stale-price guard, revenue numeric guard; FinMind items deferred
 - [2026-07-27 — FinMind Phase 2 built](decisions/2026-07-27-finmind-phase2-build.md) — cash/stock split + honest ex-date dividend_trap (fill-probability isn't computable free) + governance-news overlay; nightly FinMind ETL
+- [2026-07-31 — Migrate Neon → Zeabur Postgres](decisions/2026-07-31-migrate-neon-to-zeabur.md) — dump/restore onto self-hosted PG 18.4; roles don't travel so `mcp_viewer` must pre-exist; Zeabur has TLS disabled; cutover still pending
+- [2026-07-31 — Risk Guard Phase 1 built](decisions/2026-07-31-risk-guard-phase1.md) — M1 light as a hysteresis state machine, M2 stops, M2b T+2 settlement, five `rg_*` tools; TAIEX-only scoring provably fails the 7/07 acceptance row, so breadth + TAIFEX feeds were added; cron on GH Actions, not Vercel
 
 ## Topics
 *Areas, products, events, and synthesised concepts. Topics don't make decisions; stakeholders do.*
@@ -48,6 +51,8 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [Session State + Market Calendar](topics/session-state.md) — `session_state`: Taipei market phase + trading calendar; 試撮 indicative-price guard, holiday classifier, mcp_viewer grant rule
 - [Realtime Quote](topics/realtime-quote.md) — `quote`: watchlist realtime via TWSE MIS; authoritative limit prices, serverless watchlist-only constraint, 試撮 indicative stamp
 - [Dividend Calendar](topics/dividend-calendar.md) — `dividend_calendar`: ex-dividend dates + amounts (TWT49U/TWT48U); "does a buyer today get the dividend?"; the 華碩 fix
+- [view_ticker_momentum refresh break](topics/view-ticker-momentum-refresh-break.md) — issuer renames split one `ticker_id` into two grouped rows and violate `idx_vtm_ticker`; fails silently under `continue-on-error`
+- [Risk Guard](topics/risk-guard.md) — post-close loss-prevention system (`rg_*`): M1 risk light, M2 stops + entry checklist, M2b settlement check; never emits buy signals
 - [FinMind integration (Phase 2)](topics/finmind-phase2-plan.md) — deferred Tool Review v2 items needing a FinMind token: dividend_trap/填息 probability, governance news overlay, dividend-adjusted flatness
 
 ## Log
