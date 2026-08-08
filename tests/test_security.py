@@ -39,6 +39,16 @@ class SecurityTests(unittest.TestCase):
         self.assertFalse(is_authorized_path("/botevil", "secret"))
         self.assertFalse(is_authorized_path("/botevil/webhook", "secret"))
 
+    def test_billing_paths_bypass_the_url_secret_gate(self):
+        # /billing/* authenticates itself via the MoR's HMAC signature over the
+        # raw body, so it does not carry the URL secret.
+        self.assertTrue(is_authorized_path("/billing/lemonsqueezy", "secret"))
+        self.assertTrue(is_authorized_path("/billing/lemonsqueezy", ""))
+
+    def test_billing_prefix_is_segment_aware(self):
+        self.assertFalse(is_authorized_path("/billingevil", "secret"))
+        self.assertFalse(is_authorized_path("/billingevil/hook", "secret"))
+
     def test_token_matches_rejects_empty_server_token(self):
         self.assertTrue(token_matches("secret", "secret"))
         self.assertFalse(token_matches("secret", ""))

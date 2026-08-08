@@ -32,6 +32,7 @@ except ModuleNotFoundError:      # package import path used by local tests
 log = logging.getLogger("customers")
 
 STATUS_ACTIVE = "active"
+VALID_STATUSES = frozenset({"active", "suspended", "trial"})
 SECRET_PREFIX = "atx_"          # recognisable in logs/support without revealing the secret
 ID_PREFIX = "cust_"
 
@@ -113,6 +114,47 @@ def get(customer_id: str) -> dict | None:
     except Exception:               # noqa: BLE001
         log.exception("customer get failed")
         return None
+
+
+def get_by_email(email: str) -> dict | None:
+    """Fetch a customer by email — the billing webhook's fallback match when a
+    checkout carried no custom_data customer_id. Read-only."""
+    if not email:
+        return None
+    try:
+        rows = db._fetch(
+            "SELECT id, email, plan, status, monthly_quota "
+            "FROM customers WHERE email = %s LIMIT 1",
+            (email,),
+        )
+    except Exception:               # noqa: BLE001
+        log.exception("customer get_by_email failed")
+        return None
+    return rows[0] if rows else None
+
+
+def set_status(customer_id: str, status: str) -> bool:
+    """Set a customer's status (the billing webhook's write). Returns whether a
+    row was updated. Runs through the read pool: mcp_viewer holds a narrow,
+    column-scoped `UPDATE (status, updated_at)` grant on customers
+    (sql/022_customers_status_grant.sql), the same scoped-write pattern as
+    watchlist — no owner connection needed. Errors are logged and surface as
+    False so the caller (webhook) can signal a retry."""
+    if status not in VALID_STATUSES:
+        raise ValueError(f"invalid status {status!r}; expected one of {sorted(VALID_STATUSES)}")
+    if not customer_id:
+        return False
+    try:
+        with db.pool().connection() as conn:
+            cur = conn.execute(
+                "UPDATE customers SET status = %s, updated_at = now() WHERE id = %s",
+                (status, customer_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+    except Exception:               # noqa: BLE001
+        log.exception("customer set_status failed for %s", customer_id)
+        return False
 
 
 # ── Provisioning (owner-only write path) ─────────────────────────────────────

@@ -7,7 +7,7 @@ updated: 2026-08-08
 attributed_to: [niko, brian, antigravity-agent]
 belongs_to: [alphatecx]
 source: chat
-status: proposed
+status: active
 tags: [commercialization, product, connector, mcp, oauth, safety, compliance, monetization]
 related: [system-architecture, 2026-07-31-risk-guard-phase1, brian, niko]
 ---
@@ -25,7 +25,13 @@ Two surfaces were on the table:
   / upgrade). Customer brings their own cloud (Claude) account and sets up the connector.
 - **[brian]** — a **native mobile app**, on safety / guard-rail grounds.
 
-Surfaced first time this turn (chat 2026-08-08). **Not yet finalized — status `proposed`.**
+Surfaced first time 2026-08-08.
+
+**Settled 2026-08-09 ([niko], CEO):** **connector-first**, and current use is framed as **private, not
+a commercial sale** — so the investment-advice-licensing lawyer step is **set aside for now** as
+[niko]'s explicit risk call. Status → `active`. Note for future work: that gate reopens the moment
+this becomes a public/commercial offering (paid signups to the general public), because the "private
+among known parties" framing is what defers it.
 
 ## The clarification that reframes it
 

@@ -116,11 +116,19 @@ not settled — see [2026-08-08-commercialization-direction](../decisions/2026-0
 **Layer 1 (metering) is now built** (2026-08-09): `usage_monthly` + `usage.py` + the ContextVar/`_stamp`
 counter + the `_customer_gate` session gate (402 inactive / 429 over-quota). To activate it you just
 provision customers with a `monthly_quota` (NULL = unlimited); enforcement and counting are automatic.
-The billing hook that flips `customers.status` (MoR webhook, or by hand in Phase 0) is the remaining
-piece before self-serve.
 
-**Compliance gate (blocking before taking money):** investment-advice licensing (RIA / SFC-type) —
-lawyer read required; the connector "data provider, not advisor" framing is the lower-liability posture.
+**MoR billing webhook is now built** (2026-08-09): `POST /billing/lemonsqueezy` (`billing.py` +
+`customers.set_status`/`get_by_email` + column-scoped `UPDATE(status)` grant `sql/022`). Lemon Squeezy
+posts a subscription event, the HMAC signature is verified, and the customer's `status` flips
+(active/on_trial → active; cancelled/past_due/etc → suspended). Ops: set `LEMONSQUEEZY_WEBHOOK_SECRET`,
+point the LS webhook at `<host>/billing/lemonsqueezy`, and pass our `customer_id` as `custom_data` at
+checkout (email is the fallback match). While **private** this can stay dormant — hand-provision with
+`scripts/provision_customer.py` — and be switched on when self-serve paid signups are wanted.
+
+**Compliance gate — set aside 2026-08-09 per [niko] (CEO):** current use is framed as **private, not a
+commercial sale**, so the investment-advice-licensing (RIA / SFC-type) lawyer step is deferred as an
+explicit risk call. It **reopens** if this ever becomes a public/commercial offering; the connector
+"data provider, not advisor" framing remains the lower-liability posture.
 
 ## The plan (metering + disclaimer)
 

@@ -29,6 +29,12 @@ TOKEN_PREFIXES = ("/mcp", "/g", "/d", "/h", "/t")
 # process makes the exemption something we have to state out loud.
 BOT_PREFIX = "/bot"
 
+# The billing webhook (/billing/*) carries no URL secret: it authenticates by
+# verifying the Merchant-of-Record's HMAC signature over the raw body, then only
+# flips a known customer's status. Exempt from the URL-secret gate for the same
+# reason as /bot — the signature is the credential.
+BILLING_PREFIX = "/billing"
+
 
 def is_authorized_path(path: str, token: str) -> bool:
     """Return whether a request path should pass the app auth gate.
@@ -40,6 +46,8 @@ def is_authorized_path(path: str, token: str) -> bool:
     if path in PUBLIC_PATHS:
         return True
     if path == BOT_PREFIX or path.startswith(f"{BOT_PREFIX}/"):
+        return True
+    if path == BILLING_PREFIX or path.startswith(f"{BILLING_PREFIX}/"):
         return True
     if not token:
         return False

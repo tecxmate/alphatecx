@@ -53,6 +53,7 @@ sql_files = [
     "sql/018_riskguard.sql",
     "sql/019_customers.sql",
     "sql/020_usage.sql",
+    "sql/022_customers_status_grant.sql",
 ]
 if args.rls:
     pw = os.getenv("MCP_VIEWER_PASSWORD")
@@ -89,6 +90,9 @@ if args.rls:
     # re-append, w_add/w_remove fail `permission denied` after any --rls run.
     # Grant-only (RLS policies from 003 survive the REVOKE), role/table-guarded.
     sql_files.append("sql/021_watchlist_grant.sql")
+    # 022 grants mcp_viewer a column-scoped UPDATE(status) on customers for the
+    # billing webhook. Same REVOKE trap → re-append after 003.
+    sql_files.append("sql/022_customers_status_grant.sql")
 
 print(f"Connecting to: {DATABASE_URL[:50]}...")
 

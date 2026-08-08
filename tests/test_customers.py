@@ -8,7 +8,7 @@ the value in it is the secret generation/hashing, which is tested directly.
 import os
 import unittest
 from importlib.util import find_spec
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("MCP_BEARER_TOKEN", "testtoken")
 
@@ -82,6 +82,61 @@ class AuthenticateTests(unittest.TestCase):
         # A database blip must never mint a token; auth fails closed.
         with patch.object(customers.db, "_fetch", side_effect=RuntimeError("db down")):
             self.assertIsNone(customers.authenticate("atx_secret"))
+
+
+@unittest.skipIf(customers is None, "psycopg_pool is not installed")
+class GetByEmailTests(unittest.TestCase):
+    def test_found_returns_row(self):
+        with patch.object(customers.db, "_fetch", return_value=[_row(email="a@b.co")]):
+            self.assertEqual(customers.get_by_email("a@b.co")["id"], "cust_x")
+
+    def test_missing_returns_none(self):
+        with patch.object(customers.db, "_fetch", return_value=[]):
+            self.assertIsNone(customers.get_by_email("nope@b.co"))
+
+    def test_empty_email_short_circuits(self):
+        with patch.object(customers.db, "_fetch") as fetch:
+            self.assertIsNone(customers.get_by_email(""))
+            fetch.assert_not_called()
+
+
+@unittest.skipIf(customers is None, "psycopg_pool is not installed")
+class SetStatusTests(unittest.TestCase):
+    def _pool_returning(self, rowcount):
+        conn = MagicMock()
+        cur = MagicMock()
+        cur.rowcount = rowcount
+        conn.execute.return_value = cur
+        ctx = MagicMock()
+        ctx.__enter__.return_value = conn
+        pool = MagicMock()
+        pool.return_value.connection.return_value = ctx
+        return pool, conn
+
+    def test_rejects_an_invalid_status(self):
+        with self.assertRaises(ValueError):
+            customers.set_status("cust_1", "banana")
+
+    def test_updates_status_and_commits(self):
+        pool, conn = self._pool_returning(1)
+        with patch.object(customers.db, "pool", pool):
+            self.assertTrue(customers.set_status("cust_1", "suspended"))
+        sql, params = conn.execute.call_args.args
+        self.assertIn("UPDATE customers SET status", sql)
+        self.assertEqual(params, ("suspended", "cust_1"))
+        conn.commit.assert_called_once()
+
+    def test_no_matching_row_returns_false(self):
+        pool, _ = self._pool_returning(0)
+        with patch.object(customers.db, "pool", pool):
+            self.assertFalse(customers.set_status("cust_missing", "active"))
+
+    def test_empty_id_returns_false(self):
+        self.assertFalse(customers.set_status("", "active"))
+
+    def test_db_error_returns_false(self):
+        with patch.object(customers.db, "pool", side_effect=RuntimeError("db down")):
+            self.assertFalse(customers.set_status("cust_1", "active"))
 
 
 if __name__ == "__main__":

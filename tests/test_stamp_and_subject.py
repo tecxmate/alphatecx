@@ -143,5 +143,44 @@ class CustomerGateTests(unittest.TestCase):
             self.assertEqual(index._customer_gate("c").status_code, 429)
 
 
+@unittest.skipIf(index is None, "server deps not installed")
+class ApplyBillingTests(unittest.TestCase):
+    """Billing webhook glue: resolve the customer and flip status; pick the code."""
+
+    def test_non_subscription_event_acks_200(self):
+        with patch.object(index.billing_mod, "event_to_status", return_value=None):
+            self.assertEqual(index._apply_billing({}), 200)
+
+    def test_active_by_customer_id_sets_status(self):
+        with patch.object(index.billing_mod, "event_to_status",
+                          return_value=("cust_1", None, "active")), \
+             patch.object(index.customers_mod, "set_status", return_value=True) as ss:
+            self.assertEqual(index._apply_billing({}), 200)
+            ss.assert_called_once_with("cust_1", "active")
+
+    def test_email_fallback_resolves_then_sets(self):
+        with patch.object(index.billing_mod, "event_to_status",
+                          return_value=(None, "a@b.co", "suspended")), \
+             patch.object(index.customers_mod, "get_by_email",
+                          return_value={"id": "cust_9"}), \
+             patch.object(index.customers_mod, "set_status", return_value=True) as ss:
+            self.assertEqual(index._apply_billing({}), 200)
+            ss.assert_called_once_with("cust_9", "suspended")
+
+    def test_unknown_customer_acks_200_without_a_write(self):
+        with patch.object(index.billing_mod, "event_to_status",
+                          return_value=(None, "x@y.co", "active")), \
+             patch.object(index.customers_mod, "get_by_email", return_value=None), \
+             patch.object(index.customers_mod, "set_status") as ss:
+            self.assertEqual(index._apply_billing({}), 200)
+            ss.assert_not_called()
+
+    def test_write_failure_returns_500_for_retry(self):
+        with patch.object(index.billing_mod, "event_to_status",
+                          return_value=("cust_1", None, "active")), \
+             patch.object(index.customers_mod, "set_status", return_value=False):
+            self.assertEqual(index._apply_billing({}), 500)
+
+
 if __name__ == "__main__":
     unittest.main()

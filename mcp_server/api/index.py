@@ -14,6 +14,8 @@ Auth: URL-as-secret. Mount path is /mcp/<MCP_BEARER_TOKEN>/.
 from __future__ import annotations
 
 import contextlib
+import json
+import logging
 import os
 import sys
 from contextvars import ContextVar
@@ -50,17 +52,21 @@ from rg import db as rg_db
 from rg import stops as rg_stops
 
 try:
+    import billing as billing_mod
     import customers as customers_mod
     import oauth as oauth_mod
     import usage as usage_mod
     from security import is_authorized_path, token_matches
 except ModuleNotFoundError:  # package import path used by local tests
+    from . import billing as billing_mod
     from . import customers as customers_mod
     from . import oauth as oauth_mod
     from . import usage as usage_mod
     from .security import is_authorized_path, token_matches
 
 MCP_BEARER_TOKEN = os.getenv("MCP_BEARER_TOKEN", "")
+
+log = logging.getLogger("mcp")
 
 # Set by the auth gate to the authenticated token subject (a customer id, or
 # "owner"), so _stamp() can meter the call without threading identity through
@@ -2378,6 +2384,45 @@ def _authorize_html(client_id: str, redirect_uri: str, state: str,
  <input type="password" name="password" placeholder="Password" autofocus>
  <button type="submit">Authorize</button>
 </form>"""
+
+
+# ── Billing webhook (Merchant of Record — Lemon Squeezy) ──────────────────
+#
+# Flips customers.status on subscription events. Authenticated by the HMAC
+# signature over the raw body (no URL secret — security.py exempts /billing/*).
+# Pass our customer_id as `custom_data` when creating the LS checkout so events
+# match; email is the fallback. See mcp_server/api/billing.py.
+
+def _apply_billing(payload: dict) -> int:
+    """Resolve the customer from an LS subscription event and set their status.
+    Returns the HTTP status to answer. Unit-testable by patching customers_mod:
+    the only I/O is the customer lookup/update."""
+    mapping = billing_mod.event_to_status(payload)
+    if mapping is None:
+        return 200  # not a subscription-status event — ack so LS stops retrying
+    customer_id, email, status = mapping
+    if not customer_id and email:
+        customer = customers_mod.get_by_email(email)
+        customer_id = customer["id"] if customer else None
+    if not customer_id:
+        log.warning("billing event for an unknown customer (email=%s)", email)
+        return 200  # nothing to act on; ack rather than trigger endless retries
+    # 500 on a failed write so Lemon Squeezy retries; 200 on a real update.
+    return 200 if customers_mod.set_status(customer_id, status) else 500
+
+
+@app.post("/billing/lemonsqueezy")
+async def billing_lemonsqueezy(request: Request):
+    raw = await request.body()
+    secret = os.getenv("LEMONSQUEEZY_WEBHOOK_SECRET", "")
+    if not billing_mod.verify_signature(raw, request.headers.get("x-signature", ""), secret):
+        return JSONResponse(status_code=401, content={"error": "invalid_signature"})
+    try:
+        payload = json.loads(raw)
+    except (ValueError, TypeError):
+        return JSONResponse(status_code=400, content={"error": "invalid_json"})
+    code = _apply_billing(payload)
+    return JSONResponse(status_code=code, content={"ok": code == 200})
 
 
 @app.get("/g/{token}/")
