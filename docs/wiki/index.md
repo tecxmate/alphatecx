@@ -9,12 +9,14 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 *Things that can make decisions: people, teams, organizations, regulators, agents, automations.*
 
 - [Niko](stakeholders/niko.md) — project owner, strategy & trading decisions (owner)
+- [Brian](stakeholders/brian.md) — co-founder, commercial product direction & safety posture (internal)
 - [Antigravity Agent](stakeholders/antigravity-agent.md) — Claude agent, wiki curation & implementation (agent)
 - [Codex Agent](stakeholders/codex-agent.md) — Codex agent, implementation and operational debugging (agent)
 - [Gemini Agent](stakeholders/gemini-agent.md) — Google Gemini agent, initial architecture & strategy proposal (agent)
 - [Claude Agent](stakeholders/claude-agent.md) — Claude Code agent, database operations & implementation (agent)
 
 ## Decisions
+- [2026-08-08 — Commercialization direction](decisions/2026-08-08-commercialization-direction.md) — *(proposed)* sell to funded, finance-averse investors who consult Claude; Phase 1 = Stripe-gated remote MCP connector (Apollo/WordPress model, ~80% built), Phase 2 = headless web app embedding Claude for guardrails, mobile deferred; open gate = investment-advice licensing (needs a lawyer)
 - [2026-05-07 — Stateful Upgrade](decisions/2026-05-07-stateful-upgrade.md) — upgrade from stateless MCP to systematic Postgres pipeline
 - [2026-05-07 — v2 Implementation Decisions](decisions/2026-05-07-v2-implementation-decisions.md) — Supabase confirmed, Telegram alerts, historical backfill, v1 coexistence, Claude Code as tech team
 - [2026-05-07 — Neon over Supabase](decisions/2026-05-07-neon-over-supabase.md) — switched to Neon Postgres (v1's DB); Supabase not necessary for standard Postgres workloads
@@ -40,6 +42,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 ## Topics
 *Areas, products, events, and synthesised concepts. Topics don't make decisions; stakeholders do.*
 
+- [Commercial productization](topics/commercial-productization.md) — paid connector plan: MoR payments (Stripe can't be merchant from VN/TW), multi-tenant OAuth, per-customer metering, `_disclaimer` on `_stamp()`
 - [alphatecx](topics/alphatecx.md) — Taiwan AI supply chain analysis & trading system (project overview)
 - [alphatecx v1](topics/alphatecx-v1.md) — existing system: APEX TW strategy, TWSE MCP, Telegram alerts
 - [Taiwan AI Supply Chain Map](topics/taiwan-ai-supply-chain.md) — 4-pillar strategic map (Semiconductor, Equipment, Infrastructure, Energy)
