@@ -52,6 +52,7 @@ sql_files = [
     "sql/017_finmind.sql",
     "sql/018_riskguard.sql",
     "sql/019_customers.sql",
+    "sql/020_usage.sql",
 ]
 if args.rls:
     pw = os.getenv("MCP_VIEWER_PASSWORD")
@@ -79,6 +80,10 @@ if args.rls:
     # here, after 003, so the grant actually lands. SELECT survives 003's
     # blanket REVOKE, so — unlike 018 — no INSERT re-grant is needed.
     sql_files.append("sql/019_customers.sql")
+    # 020 grants mcp_viewer INSERT+UPDATE on usage_monthly (metering writes from
+    # the read role). That write grant IS stripped by 003's blanket REVOKE, so
+    # like 018 it must run last. Re-append here.
+    sql_files.append("sql/020_usage.sql")
 
 print(f"Connecting to: {DATABASE_URL[:50]}...")
 

@@ -84,5 +84,64 @@ class SubjectStillValidTests(unittest.TestCase):
             self.assertFalse(index._subject_still_valid("cust_gone"))
 
 
+@unittest.skipIf(index is None, "server deps not installed")
+class MeteringStampTests(unittest.TestCase):
+    """_stamp counts the call against the current customer, and only a customer."""
+
+    def tearDown(self):
+        index.current_customer.set(None)
+
+    def test_customer_call_is_metered(self):
+        index.current_customer.set("cust_9")
+        with patch.object(index.usage_mod, "record") as record:
+            index._stamp({"x": 1}, "view_x", "2026-08-09", "T+1")
+            record.assert_called_once_with("cust_9")
+
+    def test_owner_is_not_metered(self):
+        index.current_customer.set("owner")
+        with patch.object(index.usage_mod, "record") as record:
+            index._stamp({"x": 1}, "view_x", "2026-08-09", "T+1")
+            record.assert_not_called()
+
+    def test_anonymous_context_is_not_metered(self):
+        index.current_customer.set(None)
+        with patch.object(index.usage_mod, "record") as record:
+            index._stamp({"x": 1}, "view_x", "2026-08-09", "T+1")
+            record.assert_not_called()
+
+
+@unittest.skipIf(index is None, "server deps not installed")
+class CustomerGateTests(unittest.TestCase):
+    """Per-session gate: active + under quota passes; else 402/429."""
+
+    def test_active_under_quota_passes(self):
+        with patch.object(index.customers_mod, "get",
+                          return_value={"id": "c", "status": "active", "monthly_quota": 100}), \
+             patch.object(index.usage_mod, "calls_this_month", return_value=10):
+            self.assertIsNone(index._customer_gate("c"))
+
+    def test_unlimited_quota_passes_without_a_usage_read(self):
+        with patch.object(index.customers_mod, "get",
+                          return_value={"id": "c", "status": "active", "monthly_quota": None}), \
+             patch.object(index.usage_mod, "calls_this_month") as calls:
+            self.assertIsNone(index._customer_gate("c"))
+            calls.assert_not_called()
+
+    def test_inactive_customer_gets_402(self):
+        with patch.object(index.customers_mod, "get",
+                          return_value={"id": "c", "status": "suspended", "monthly_quota": 100}):
+            self.assertEqual(index._customer_gate("c").status_code, 402)
+
+    def test_missing_customer_gets_402(self):
+        with patch.object(index.customers_mod, "get", return_value=None):
+            self.assertEqual(index._customer_gate("c").status_code, 402)
+
+    def test_over_quota_gets_429(self):
+        with patch.object(index.customers_mod, "get",
+                          return_value={"id": "c", "status": "active", "monthly_quota": 100}), \
+             patch.object(index.usage_mod, "calls_this_month", return_value=100):
+            self.assertEqual(index._customer_gate("c").status_code, 429)
+
+
 if __name__ == "__main__":
     unittest.main()

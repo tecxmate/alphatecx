@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import os
 import sys
+from contextvars import ContextVar
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -51,13 +52,21 @@ from rg import stops as rg_stops
 try:
     import customers as customers_mod
     import oauth as oauth_mod
-    from security import bearer_token_valid, is_authorized_path, token_matches
+    import usage as usage_mod
+    from security import is_authorized_path, token_matches
 except ModuleNotFoundError:  # package import path used by local tests
     from . import customers as customers_mod
     from . import oauth as oauth_mod
-    from .security import bearer_token_valid, is_authorized_path, token_matches
+    from . import usage as usage_mod
+    from .security import is_authorized_path, token_matches
 
 MCP_BEARER_TOKEN = os.getenv("MCP_BEARER_TOKEN", "")
+
+# Set by the auth gate to the authenticated token subject (a customer id, or
+# "owner"), so _stamp() can meter the call without threading identity through
+# all ~45 tool signatures. FastMCP runs each tool in the same asyncio task as
+# the request, so a value set before call_next is visible inside the tool.
+current_customer: ContextVar[str | None] = ContextVar("current_customer", default=None)
 
 # Compliance line carried on every tool response so the consulting model always
 # has it in front of it. Env-overridable so legal can adjust wording (and add a
@@ -72,7 +81,15 @@ DISCLAIMER = os.environ.get(
 
 
 def _stamp(payload: dict, source: str, as_of: str | None, freshness: str) -> dict:
-    """Annotate a response with provenance + freshness + the compliance line."""
+    """Annotate a response with provenance + freshness + the compliance line.
+
+    Every tool response funnels through here, so this is also the per-call
+    metering choke point: count the call against the authenticated customer.
+    Owner traffic (URL-secret path, or sub="owner") is not metered. record() is
+    best-effort and never raises."""
+    cust = current_customer.get()
+    if cust and cust != "owner":
+        usage_mod.record(cust)
     return {
         "_source": source,
         "_disclaimer": DISCLAIMER,
@@ -2136,30 +2153,64 @@ async def auth_gate(request: Request, call_next):
     # WWW-Authenticate header is what starts discovery. Everything else keeps
     # 404-ing, so /g, /d, /h, /t and /mcp/<token> stay hidden.
     if path == "/mcp" or path.startswith("/mcp/"):
-        if bearer_token_valid(request.headers.get("authorization", "")):
-            # Serve /mcp as if it were /mcp/ rather than letting Starlette's
-            # mount emit a 307. Connectors that have just completed the OAuth
-            # dance do not reliably re-issue a POST (with body and
-            # Authorization) against the redirect target, so the handshake
-            # fails right after a successful authorization — which is exactly
-            # what "your account was authorized, but the server returned an
-            # error" looks like from the client side.
-            if path == "/mcp":
-                request.scope["path"] = "/mcp/"
-                request.scope["raw_path"] = b"/mcp/"
+        claims = _access_claims(request.headers.get("authorization", ""))
+        if claims is None:
+            return JSONResponse(
+                status_code=401,
+                content={"error": "invalid_token"},
+                headers={
+                    "WWW-Authenticate": (
+                        'Bearer resource_metadata='
+                        f'"{_base_url(request)}/.well-known/oauth-protected-resource"'
+                    )
+                },
+            )
+        sub = claims.get("sub", "owner")
+        # Per-session gate for customers. This also closes the residual from the
+        # refresh fix: a suspended customer is now blocked at the read path, not
+        # only at token refresh, so revocation bites within the access-token TTL.
+        if sub != "owner":
+            denial = _customer_gate(sub)
+            if denial is not None:
+                return denial
+        # Serve /mcp as if it were /mcp/ rather than letting Starlette's mount
+        # emit a 307. Connectors that just completed the OAuth dance do not
+        # reliably re-issue a POST (with body and Authorization) against the
+        # redirect target, so the handshake fails right after a successful
+        # authorization — which is exactly what "your account was authorized,
+        # but the server returned an error" looks like from the client side.
+        if path == "/mcp":
+            request.scope["path"] = "/mcp/"
+            request.scope["raw_path"] = b"/mcp/"
+        tok = current_customer.set(sub)
+        try:
             return await call_next(request)
-        return JSONResponse(
-            status_code=401,
-            content={"error": "invalid_token"},
-            headers={
-                "WWW-Authenticate": (
-                    'Bearer resource_metadata='
-                    f'"{_base_url(request)}/.well-known/oauth-protected-resource"'
-                )
-            },
-        )
+        finally:
+            current_customer.reset(tok)
 
     return JSONResponse(status_code=404, content={"error": "not_found"})
+
+
+def _access_claims(header: str) -> dict | None:
+    """Verified claims from an `Authorization: Bearer <access token>` header, or
+    None. Refresh tokens are rejected (kind mismatch), same as the old
+    bearer_token_valid, but here we keep the claims so the caller learns `sub`."""
+    if not header or not header.lower().startswith("bearer "):
+        return None
+    return oauth_mod.verify(header[7:].strip(), "access")
+
+
+def _customer_gate(sub: str):
+    """Per-session enforcement for a customer subject. Returns a JSONResponse to
+    deny, or None to allow. Account state is authoritative (402 if not active);
+    the monthly quota is a soft ceiling on top (429 when reached)."""
+    customer = customers_mod.get(sub)
+    if not customer or customer.get("status") != customers_mod.STATUS_ACTIVE:
+        return JSONResponse(status_code=402, content={"error": "account_inactive"})
+    quota = customer.get("monthly_quota")
+    if quota is not None and usage_mod.calls_this_month(sub) >= quota:
+        return JSONResponse(status_code=429, content={"error": "quota_exceeded"})
+    return None
 
 
 # ── OAuth 2.1 + PKCE (cloud connectors / mobile) ──────────────────────────
