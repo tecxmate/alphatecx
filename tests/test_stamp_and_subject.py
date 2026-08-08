@@ -59,5 +59,30 @@ class ResolveSubjectTests(unittest.TestCase):
             self.assertIsNone(index._resolve_subject("garbage"))
 
 
+@unittest.skipIf(index is None, "server deps not installed")
+class SubjectStillValidTests(unittest.TestCase):
+    """Refresh must re-check status so a suspended customer can't refresh forever."""
+
+    def test_owner_is_always_valid_without_a_db_lookup(self):
+        with patch.object(index.customers_mod, "get") as get:
+            self.assertTrue(index._subject_still_valid("owner"))
+            get.assert_not_called()
+
+    def test_active_customer_is_valid(self):
+        with patch.object(index.customers_mod, "get",
+                          return_value={"id": "cust_1", "status": "active"}):
+            self.assertTrue(index._subject_still_valid("cust_1"))
+
+    def test_suspended_customer_is_refused(self):
+        with patch.object(index.customers_mod, "get",
+                          return_value={"id": "cust_1", "status": "suspended"}):
+            self.assertFalse(index._subject_still_valid("cust_1"))
+
+    def test_deleted_or_unresolvable_customer_fails_closed(self):
+        # get() returns None for a missing row or on a swallowed DB error.
+        with patch.object(index.customers_mod, "get", return_value=None):
+            self.assertFalse(index._subject_still_valid("cust_gone"))
+
+
 if __name__ == "__main__":
     unittest.main()

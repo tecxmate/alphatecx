@@ -64,15 +64,17 @@ decision.
   security-reviewer agent covered that. Result: **1 HIGH**, everything else clean (SQLi,
   fail-closed auth, hashing, credential enumeration, sub-forgery/privilege-escalation to owner,
   secret leakage, RLS grants all verified correct).
-- **HIGH — refresh doesn't re-check status; the "known gap" was understated.** `oauth.refresh()`
-  re-mints a 1h access token **and a fresh 90-day refresh token** with no DB lookup, so a suspended
-  customer whose client keeps refreshing (normal connector behaviour) stays alive **indefinitely** —
-  not "until token TTL" as the commit said. `status="suspended"` is therefore not a real enforcement
-  lever yet. **Fix before provisioning any suspended customer:** re-check status at the `/token`
-  refresh boundary in `index.py` (keeps `oauth.py` DB-free), and/or pull the Layer-1 session gate
-  forward to gate refresh. Runtime exposure today is nil (multi-tenancy undeployed, no customers
-  provisioned) — this is a fix-before-go-live, not an incident. Also: `customers.secret_matches()`
-  is defined but unused (dead code, safe cleanup, not a vuln).
+- **HIGH — refresh doesn't re-check status — FIXED 2026-08-09 (commit-pending).** `oauth.refresh()`
+  re-minted a 1h access token **and a fresh 90-day refresh token** with no DB lookup, so a suspended
+  customer whose client keeps refreshing (normal connector behaviour) stayed alive **indefinitely** —
+  not "until token TTL" as the original commit said. **Fix:** the `/token` refresh grant in
+  `index.py` now calls `_subject_still_valid(sub)` before re-minting — owner always passes (no DB;
+  revoked by rotating `OAUTH_PASSWORD`), a customer must still exist and be `active`, and it **fails
+  closed** (deleted/suspended/DB-blip ⇒ refused). `oauth.py` stays DB-free (`verify` is pure). This
+  bounds a suspended customer to ≤ the 1h access-token TTL instead of forever; the residual ≤1h
+  window on an already-issued *access* token closes fully with Layer-1's per-session gate. 4 new
+  tests (`SubjectStillValidTests`). Still-open dead code: `customers.secret_matches()` unused (safe
+  cleanup, not a vuln).
 
 ## Handoff — how to continue (for any agent picking this up)
 

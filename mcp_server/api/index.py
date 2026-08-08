@@ -2236,6 +2236,20 @@ def _resolve_subject(credential: str) -> str | None:
     return customer["id"] if customer else None
 
 
+def _subject_still_valid(sub: str) -> bool:
+    """Whether a token subject may still be re-minted at refresh time.
+
+    Owner is always valid — its credential is the shared OAUTH_PASSWORD, revoked
+    by rotating the env var, not the DB. A customer subject must still exist and
+    be active; fails closed, so an unresolvable subject (deleted, suspended, or
+    a DB blip that makes `get` return None) is refused rather than resurrected.
+    """
+    if sub == "owner":
+        return True
+    customer = customers_mod.get(sub)
+    return bool(customer) and customer.get("status") == customers_mod.STATUS_ACTIVE
+
+
 @app.post("/authorize")
 async def oauth_authorize_submit(request: Request):
     form = await request.form()
@@ -2271,7 +2285,17 @@ async def oauth_token(request: Request):
             str(form.get("redirect_uri", "")),
         )
     elif grant == "refresh_token":
-        result = oauth_mod.refresh(str(form.get("refresh_token", "")))
+        rt = str(form.get("refresh_token", ""))
+        # Re-check the subject on every refresh. Without this a suspended
+        # customer's client keeps refreshing (new 90-day token each time) and is
+        # never cut off — revocation would only bound access to the 1h access
+        # TTL if we stop RE-MINTING here. Kept in the HTTP layer so oauth.py
+        # stays DB-free; `verify` is pure, the status lookup is the only DB hit.
+        claims = oauth_mod.verify(rt, "refresh")
+        if claims is None or not _subject_still_valid(claims.get("sub", "owner")):
+            result = None
+        else:
+            result = oauth_mod.refresh(rt)
     else:
         return JSONResponse(status_code=400,
                             content={"error": "unsupported_grant_type"})
