@@ -51,6 +51,7 @@ sql_files = [
     "sql/016_dividends.sql",
     "sql/017_finmind.sql",
     "sql/018_riskguard.sql",
+    "sql/019_customers.sql",
 ]
 if args.rls:
     pw = os.getenv("MCP_VIEWER_PASSWORD")
@@ -73,6 +74,11 @@ if args.rls:
     # Safe twice: every statement in 018 is CREATE TABLE IF NOT EXISTS or a
     # role-guarded DO $$ GRANT.
     sql_files.append("sql/018_riskguard.sql")
+    # 019 grants mcp_viewer SELECT on customers behind a role guard, so on the
+    # base pass (before 003 creates the role) the grant is skipped. Re-run it
+    # here, after 003, so the grant actually lands. SELECT survives 003's
+    # blanket REVOKE, so — unlike 018 — no INSERT re-grant is needed.
+    sql_files.append("sql/019_customers.sql")
 
 print(f"Connecting to: {DATABASE_URL[:50]}...")
 

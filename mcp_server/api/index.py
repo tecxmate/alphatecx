@@ -49,19 +49,33 @@ from rg import db as rg_db
 from rg import stops as rg_stops
 
 try:
+    import customers as customers_mod
     import oauth as oauth_mod
     from security import bearer_token_valid, is_authorized_path, token_matches
 except ModuleNotFoundError:  # package import path used by local tests
+    from . import customers as customers_mod
     from . import oauth as oauth_mod
     from .security import bearer_token_valid, is_authorized_path, token_matches
 
 MCP_BEARER_TOKEN = os.getenv("MCP_BEARER_TOKEN", "")
 
+# Compliance line carried on every tool response so the consulting model always
+# has it in front of it. Env-overridable so legal can adjust wording (and add a
+# localised/bilingual version) without a code deploy. Not a substitute for the
+# investment-advice-licensing question — see
+# docs/wiki/topics/commercial-productization.md.
+DISCLAIMER = os.environ.get(
+    "ALPHATECX_DISCLAIMER",
+    "Informational market data only — not investment, legal, or tax advice. "
+    "Verify independently before acting.",
+)
+
 
 def _stamp(payload: dict, source: str, as_of: str | None, freshness: str) -> dict:
-    """Annotate a response with provenance + freshness."""
+    """Annotate a response with provenance + freshness + the compliance line."""
     return {
         "_source": source,
+        "_disclaimer": DISCLAIMER,
         "_as_of": as_of,
         "_freshness": freshness,
         **payload,
@@ -2207,6 +2221,21 @@ def oauth_authorize_form(client_id: str = "", redirect_uri: str = "",
                                         code_challenge))
 
 
+def _resolve_subject(credential: str) -> str | None:
+    """Map a login credential to a token subject, or None to reject.
+
+    The shared OAUTH_PASSWORD is the owner login (checked first, needs no DB, so
+    owner access survives a customers-table outage). Any other credential is
+    tried as a per-customer connector secret. This is where single-tenant
+    ("everyone is owner") becomes multi-tenant — kept in the HTTP layer so
+    oauth.py stays DB-free and its stateless tests are unaffected.
+    """
+    if oauth_mod.password_ok(credential):
+        return "owner"
+    customer = customers_mod.authenticate(credential)
+    return customer["id"] if customer else None
+
+
 @app.post("/authorize")
 async def oauth_authorize_submit(request: Request):
     form = await request.form()
@@ -2214,7 +2243,8 @@ async def oauth_authorize_submit(request: Request):
     redirect_uri = str(form.get("redirect_uri", ""))
     if not oauth_mod.client_id_matches(client_id, [redirect_uri]):
         return JSONResponse(status_code=400, content={"error": "invalid_client"})
-    if not oauth_mod.password_ok(str(form.get("password", ""))):
+    sub = _resolve_subject(str(form.get("password", "")))
+    if sub is None:
         return HTMLResponse(
             _authorize_html(client_id, redirect_uri, str(form.get("state", "")),
                             str(form.get("code_challenge", "")),
@@ -2222,7 +2252,7 @@ async def oauth_authorize_submit(request: Request):
             status_code=401,
         )
     code = oauth_mod.make_code(client_id, redirect_uri,
-                               str(form.get("code_challenge", "")))
+                               str(form.get("code_challenge", "")), sub=sub)
     sep = "&" if "?" in redirect_uri else "?"
     target = f"{redirect_uri}{sep}code={quote_plus(code)}"
     if form.get("state"):

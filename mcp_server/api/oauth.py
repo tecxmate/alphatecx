@@ -140,11 +140,14 @@ def password_ok(candidate: str) -> bool:
 
 # ── Grant flow ────────────────────────────────────────────────────────────
 
-def make_code(client_id: str, redirect_uri: str, code_challenge: str) -> str:
-    """Bind the redirect URI and PKCE challenge into the code itself, so
-    `/token` can re-check both without storing anything."""
+def make_code(client_id: str, redirect_uri: str, code_challenge: str,
+              sub: str = "owner") -> str:
+    """Bind the redirect URI, PKCE challenge, and subject into the code itself,
+    so `/token` can re-check the first two and carry the third without storing
+    anything. `sub` is decided at authorize time (which credential logged in)
+    but the token is minted at `/token`, so it has to ride inside the code."""
     return issue("code", ttl=CODE_TTL, client_id=client_id,
-                 redirect_uri=redirect_uri, code_challenge=code_challenge)
+                 redirect_uri=redirect_uri, code_challenge=code_challenge, sub=sub)
 
 
 def _pkce_ok(verifier: str, challenge: str) -> bool:
@@ -165,19 +168,22 @@ def exchange_code(code: str, verifier: str, redirect_uri: str) -> dict | None:
         return None
     if not consume(code):          # single-use, checked last so a failed
         return None                # attempt cannot burn a legitimate code
-    return _token_response()
+    return _token_response(claims.get("sub", "owner"))
 
 
 def refresh(refresh_token: str) -> dict | None:
-    if verify(refresh_token, "refresh") is None:
+    claims = verify(refresh_token, "refresh")
+    if claims is None:
         return None
-    return _token_response()
+    # Preserve the subject across refresh — otherwise a customer's refresh would
+    # silently downgrade them to "owner".
+    return _token_response(claims.get("sub", "owner"))
 
 
-def _token_response() -> dict:
+def _token_response(sub: str = "owner") -> dict:
     return {
-        "access_token": issue("access", ttl=ACCESS_TTL, sub="owner"),
-        "refresh_token": issue("refresh", ttl=REFRESH_TTL, sub="owner"),
+        "access_token": issue("access", ttl=ACCESS_TTL, sub=sub),
+        "refresh_token": issue("refresh", ttl=REFRESH_TTL, sub=sub),
         "token_type": "Bearer",
         "expires_in": ACCESS_TTL,
     }
