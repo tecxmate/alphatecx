@@ -3,7 +3,7 @@ title: Infrastructure accounts
 type: topic
 slug: infrastructure-accounts
 date: 2026-05-08
-updated: 2026-06-17
+updated: 2026-08-08
 belongs_to: [system-architecture]
 source: synthesis
 status: active
@@ -46,6 +46,25 @@ Where the production resources live and which login/org owns each. Recorded so f
   - `alphatecx-v2-mcp` — v2 MCP, lives at `/Users/niko/antigravity/alphatecx-2/mcp_server`. Public URL: <https://alphatecx-v2-mcp.vercel.app>.
 - **Env vars (v2 production):** `MCP_DATABASE_URL`, `MCP_BEARER_TOKEN`. `DATABASE_URL` is intentionally NOT set in production — would leak writer creds onto the public function.
 
+## GitHub repository
+
+- **Canonical remote (since 2026-08-08):** `https://github.com/tecxmate/alphatecx.git` — the repo
+  now lives under the **`tecxmate` org**.
+- **Old personal remote:** `https://github.com/nikolasdoan/alphatecx.git`. Still works via GitHub's
+  automatic redirect, but that is fragile — update local clones:
+  ```
+  git remote set-url origin https://github.com/tecxmate/alphatecx.git
+  ```
+  Observed 2026-08-08: a `git push` from a clone still pointing at the personal URL succeeded but
+  printed `remote: This repository moved. Please use the new location: …/tecxmate/alphatecx.git`.
+- **History nuance / caution:** this reverses the earlier direction. The wiki previously logged
+  "repo moved back to personal" (commit `75e40b7`), and the **Neon DB was migrated *off* a
+  Tecxmate-affiliated account in 2026-05-08 precisely because [niko] could not log into it** (see
+  the Neon "Old project" note above). So before relying on the tecxmate GitHub org, **confirm [niko]
+  has durable access to it** — the same access trap bit the Neon side once.
+- **Open questions:** who initiated the move and why; whether it affects any deploy/CI access
+  (GitHub Actions secrets, Zeabur's repo binding if it ever gets one). Not yet answered.
+
 ## Telegram
 
 - Bot token + chat id in root `.env` (`TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`); reused from v1.
@@ -58,6 +77,8 @@ Where the production resources live and which login/org owns each. Recorded so f
 - 2026-04-29 — Neon project provisioned for v1.
 - 2026-05-07 — v2 schema applied; `mcp_viewer` role provisioned ([decision](../decisions/2026-05-07-v2-review-fixes.md)).
 - 2026-05-08 — Vercel `alphatecx-v2-mcp` project created; MCP deployed pointing at `mcp_viewer` DSN.
+- 2026-08-08 — GitHub repo moved to the `tecxmate` org (`github.com/tecxmate/alphatecx`); local
+  clone still on the personal URL and reaching it via GitHub's redirect.
 - 2026-05-27 — Scheduled GitHub Actions harvest/news crons disabled to reduce Vercel CPU-hour usage; workflows remain manually runnable ([decision](../decisions/2026-05-27-disable-scheduled-harvest-crons.md)).
 - 2026-06-11 — Neon reached the free-tier storage cap at 490 MB. Pruned old all-market raw rows, compacted affected tables with `VACUUM FULL`, and reduced the database to 158 MB ([decision](../decisions/2026-06-11-neon-retention-prune.md)).
 - 2026-06-11 — Neon docs confirmed console usage is broken down by root storage, child-branch storage, instant-restore/history storage, compute, and transfer; a top-level monthly storage banner can lag or reflect project/account usage beyond the current active database size.

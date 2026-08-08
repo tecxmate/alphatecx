@@ -60,6 +60,33 @@ decision.
   unrelated failure (`test_news_watch::…second_cycle_alerts…`, date-dependent, fails on clean HEAD).
 - **Layer 1 (metering) not started** — deferred until the connector-vs-app call is locked.
 
+## Handoff — how to continue (for any agent picking this up)
+
+**Repo:** now under the `tecxmate` GitHub org — `github.com/tecxmate/alphatecx`. If your clone still
+points at `nikolasdoan/alphatecx`, run `git remote set-url origin https://github.com/tecxmate/alphatecx.git`
+(see [infrastructure-accounts](infrastructure-accounts.md) → GitHub repository). L0+L2 landed on
+`main` as commits `141bb06` (feat) + `18d8a60` (wiki), pushed 2026-08-08.
+
+**State:** L0+L2 code is on `main` but **dormant in production** — the Zeabur `mcp` service is
+manual-deploy (CLI-uploaded, no repo binding), so a push changes nothing live. To activate:
+
+1. `zeabur deploy --service-id <mcp>` — ships the code; the `_disclaimer` field goes live on every
+   tool response at this point (review `ALPHATECX_DISCLAIMER` wording first).
+2. Apply the migration to the Zeabur DB — `python apply_schema.py` (the customers grant needs the
+   `--rls` pass ordering already wired in). Creates the `customers` table.
+3. `python scripts/provision_customer.py --email <who>` — mint a customer + one-time connector
+   secret. Until this runs, only the owner login (shared `OAUTH_PASSWORD`) works — i.e. today's
+   behaviour. Order is safe either way: the code fails closed if the table is absent.
+
+**Decision still open (do not skip):** connector-first ([niko]) vs app-first ([brian]) is `proposed`,
+not settled — see [2026-08-08-commercialization-direction](../decisions/2026-08-08-commercialization-direction.md).
+**Layer 1 (metering) is deliberately not built** until that is locked, because metering only matters
+once charging. When ready, Layer 1 = ContextVar in the `auth_gate` middleware (`index.py`) → count
+in `_stamp()` → `usage_monthly` table → session gate (402/429) + soft quota flip.
+
+**Compliance gate (blocking before taking money):** investment-advice licensing (RIA / SFC-type) —
+lawyer read required; the connector "data provider, not advisor" framing is the lower-liability posture.
+
 ## The plan (metering + disclaimer)
 
 - **Layer 0 — multi-tenant identity (prerequisite).** `sql/019_customers.sql`:
