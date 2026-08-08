@@ -21,7 +21,12 @@ def _row(**kw) -> dict:
         "title": "some headline",
         "title_hash": "abc123",
         "raw_summary": None,
-        "published_at": datetime(2026, 7, 31, 12, 0, tzinfo=UTC),
+        # Recent by default so RunPrimingTests, which exercises the real run()
+        # loop against the wall clock, stays inside MAX_ALERT_AGE. A fixed
+        # calendar date here rots: run() drops anything older than the window,
+        # so the alert stopped firing once that date aged out. is_recent tests
+        # pass their own published_at and are unaffected.
+        "published_at": datetime.now(UTC) - timedelta(minutes=5),
     }
     base.update(kw)
     return base
