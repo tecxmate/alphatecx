@@ -68,10 +68,13 @@ decision.
   `monthly_quota` reached. The gate **also closes the ≤1h residual** from the refresh fix — a
   suspended customer is now blocked at the read path per session, not only at refresh. 16 new tests;
   suite 405 pass, ruff clean.
-- **Pre-existing bug found (not fixed):** the `watchlist` INSERT+UPDATE grant (`003_rls.sql:119`) is
-  itself stripped by the blanket `REVOKE` at `003_rls.sql:154` with **no re-append** — so after an
-  `apply_schema.py --rls` run, `w_add`/`w_remove` writes would hit `permission denied` (same class as
-  the 018/rg_journal bug). Flagged for a separate fix; 020 sidesteps it via the re-append.
+- **2026-08-09 — pre-existing watchlist grant bug FIXED.** The `watchlist` INSERT+UPDATE grant
+  (`003_rls.sql:119`) was stripped by the blanket `REVOKE` at `003_rls.sql:154` with no re-append, so
+  after an `apply_schema.py --rls` run `w_add`/`w_remove` hit `permission denied` (same class as the
+  018/rg_journal bug). Fixed by `sql/021_watchlist_grant.sql` (grant-only, role/table-guarded,
+  idempotent), re-appended after 003 like 018/020. Re-running 003 couldn't fix it — it ends with the
+  REVOKE — hence a separate file. RLS policies from 003 survive the REVOKE, so only the privilege
+  needed re-issuing.
 - **2026-08-08 — security review (AgentShield + security-reviewer agent).** AgentShield: Grade **A
   (98/100)**, 0 crit/high — but it only scans agent-configs, not the Python auth code, so the
   security-reviewer agent covered that. Result: **1 HIGH**, everything else clean (SQLi,

@@ -84,6 +84,11 @@ if args.rls:
     # the read role). That write grant IS stripped by 003's blanket REVOKE, so
     # like 018 it must run last. Re-append here.
     sql_files.append("sql/020_usage.sql")
+    # 021 re-grants mcp_viewer INSERT+UPDATE on watchlist. 003 grants it (line
+    # 119) then strips it with the same blanket REVOKE (line 154) — with no
+    # re-append, w_add/w_remove fail `permission denied` after any --rls run.
+    # Grant-only (RLS policies from 003 survive the REVOKE), role/table-guarded.
+    sql_files.append("sql/021_watchlist_grant.sql")
 
 print(f"Connecting to: {DATABASE_URL[:50]}...")
 
