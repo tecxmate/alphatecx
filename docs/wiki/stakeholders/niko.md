@@ -3,17 +3,23 @@ title: Niko
 type: stakeholder
 slug: niko
 date: 2026-05-07
-updated: 2026-05-07
+updated: 2026-08-08
 role: owner
 source: chat
 status: active
-tags: [owner, strategy, trading]
-related: [alphatecx, taiwan-ai-supply-chain]
+tags: [owner, strategy, trading, tecxmate, ceo]
+related: [alphatecx, taiwan-ai-supply-chain, brian, commercial-productization]
 ---
 
 ## Summary
 
-Project owner and primary decision-maker for alphatecx. Drives strategy, feature requirements, and architecture decisions. Based in Asia/Taipei timezone (UTC+8).
+Project owner and primary decision-maker for alphatecx. **CEO of Tecxmate** — the org that now
+owns the GitHub repo (`github.com/tecxmate/alphatecx`). Drives strategy, feature requirements, and
+architecture decisions. Based in Asia/Taipei timezone (UTC+8). Full name: Nikolas.
+
+On commercialization: favours the **connector-first** model (sell a subscription to the data/tools);
+co-founder [brian] pushes app-first — see
+[2026-08-08-commercialization-direction](../decisions/2026-08-08-commercialization-direction.md).
 
 ## Areas of Responsibility
 

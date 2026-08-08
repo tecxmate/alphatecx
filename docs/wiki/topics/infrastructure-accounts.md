@@ -57,13 +57,12 @@ Where the production resources live and which login/org owns each. Recorded so f
   ```
   Observed 2026-08-08: a `git push` from a clone still pointing at the personal URL succeeded but
   printed `remote: This repository moved. Please use the new location: …/tecxmate/alphatecx.git`.
-- **History nuance / caution:** this reverses the earlier direction. The wiki previously logged
-  "repo moved back to personal" (commit `75e40b7`), and the **Neon DB was migrated *off* a
-  Tecxmate-affiliated account in 2026-05-08 precisely because [niko] could not log into it** (see
-  the Neon "Old project" note above). So before relying on the tecxmate GitHub org, **confirm [niko]
-  has durable access to it** — the same access trap bit the Neon side once.
-- **Open questions:** who initiated the move and why; whether it affects any deploy/CI access
-  (GitHub Actions secrets, Zeabur's repo binding if it ever gets one). Not yet answered.
+- **Deliberate move — access is fine.** [niko] (Nikolas) moved the repo to the tecxmate org
+  himself; **he is the CEO of Tecxmate**, and the move was made specifically so co-founder [brian]
+  can have access. This is *not* the access trap that hit the Neon side in 2026-05-08 (that was an
+  orphaned Tecxmate-affiliated Neon login [niko] couldn't reach). The org is under [niko]'s control.
+  It does reverse the earlier "repo moved back to personal" (commit `75e40b7`) — now the org is the
+  intended home because the project is going commercial with a co-founder.
 
 ## Telegram
 

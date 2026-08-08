@@ -17,7 +17,8 @@ related: [2026-08-08-commercialization-direction]
 
 Co-founder / internal partner alongside [niko] on the commercialization of alphatecx.
 Referenced by GitHub handle `BrianNguyen291` (author of the RiskGuard, OAuth, and self-host
-work merged up to 2026-08-08).
+work merged up to 2026-08-08). Has access to the repo via the **tecxmate GitHub org**
+(`github.com/tecxmate/alphatecx`), which [niko] — CEO of Tecxmate — set up so Brian can collaborate.
 
 ## Areas of responsibility
 
