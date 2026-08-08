@@ -59,6 +59,20 @@ decision.
   `test_oauth_multitenant`, `test_stamp_and_subject`); full suite 385 pass, 1 **pre-existing**
   unrelated failure (`test_news_watch::…second_cycle_alerts…`, date-dependent, fails on clean HEAD).
 - **Layer 1 (metering) not started** — deferred until the connector-vs-app call is locked.
+- **2026-08-08 — security review (AgentShield + security-reviewer agent).** AgentShield: Grade **A
+  (98/100)**, 0 crit/high — but it only scans agent-configs, not the Python auth code, so the
+  security-reviewer agent covered that. Result: **1 HIGH**, everything else clean (SQLi,
+  fail-closed auth, hashing, credential enumeration, sub-forgery/privilege-escalation to owner,
+  secret leakage, RLS grants all verified correct).
+- **HIGH — refresh doesn't re-check status; the "known gap" was understated.** `oauth.refresh()`
+  re-mints a 1h access token **and a fresh 90-day refresh token** with no DB lookup, so a suspended
+  customer whose client keeps refreshing (normal connector behaviour) stays alive **indefinitely** —
+  not "until token TTL" as the commit said. `status="suspended"` is therefore not a real enforcement
+  lever yet. **Fix before provisioning any suspended customer:** re-check status at the `/token`
+  refresh boundary in `index.py` (keeps `oauth.py` DB-free), and/or pull the Layer-1 session gate
+  forward to gate refresh. Runtime exposure today is nil (multi-tenancy undeployed, no customers
+  provisioned) — this is a fix-before-go-live, not an incident. Also: `customers.secret_matches()`
+  is defined but unused (dead code, safe cleanup, not a vuln).
 
 ## Handoff — how to continue (for any agent picking this up)
 
