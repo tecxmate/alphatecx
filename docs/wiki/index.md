@@ -43,6 +43,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 *Areas, products, events, and synthesised concepts. Topics don't make decisions; stakeholders do.*
 
 - [Commercial productization](topics/commercial-productization.md) — paid connector plan: MoR payments (Stripe can't be merchant from VN/TW), multi-tenant OAuth, per-customer metering, `_disclaimer` on `_stamp()`
+- [Paid connector — deploy checklist](topics/paid-connector-deploy.md) — runbook to take Layers 0–2 + metering + billing live: migrate → deploy → provision → verify; billing + rollback
 - [alphatecx](topics/alphatecx.md) — Taiwan AI supply chain analysis & trading system (project overview)
 - [alphatecx v1](topics/alphatecx-v1.md) — existing system: APEX TW strategy, TWSE MCP, Telegram alerts
 - [Taiwan AI Supply Chain Map](topics/taiwan-ai-supply-chain.md) — 4-pillar strategic map (Semiconductor, Equipment, Infrastructure, Energy)

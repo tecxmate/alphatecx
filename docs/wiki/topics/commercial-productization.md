@@ -94,6 +94,9 @@ decision.
 
 ## Handoff — how to continue (for any agent picking this up)
 
+**To take it live:** follow [paid-connector-deploy](paid-connector-deploy.md) — the step-by-step
+runbook (migrate → set env → deploy → provision → verify → optional billing → rollback).
+
 **Repo:** now under the `tecxmate` GitHub org — `github.com/tecxmate/alphatecx`. If your clone still
 points at `nikolasdoan/alphatecx`, run `git remote set-url origin https://github.com/tecxmate/alphatecx.git`
 (see [infrastructure-accounts](infrastructure-accounts.md) → GitHub repository). L0+L2 landed on
