@@ -56,7 +56,7 @@ Rewrite these ~10 before the long tail; they're what a retail user hits first:
 5. `flow_leaders_scan` · 6. `rg_status` · 7. `price_history` · 8. `n_for_ticker` ·
 9. `sc_ticker_momentum` · 10. `ticker_lookup`
 
-Then the five overlapping screeners get a "when NOT to use / use X instead" line each, since
+**Done 2026-08-09.** The five overlapping screeners each got a "which screener?" line, since
 disambiguation is where selection accuracy is won.
 
 ## Where each layer lives (don't mix them up)

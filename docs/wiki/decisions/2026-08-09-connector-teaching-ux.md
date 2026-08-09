@@ -34,14 +34,15 @@ onboards a non-expert retail investor well.
      [tool-description-style](../topics/tool-description-style.md).
   3. **`start_here` tool** — a plain-language menu (what to ask → which tool) + beginner glossary,
      for first-reply orientation. Complements the technical `sc_capabilities`.
-  4. **Optional** — selective `_glossary` in responses; consolidate the 5 overlapping screeners
-     (the one place fewer tools genuinely helps selection).
+  4. **Done** — selective `_glossary` on beginner-tool responses (`_stamp` gained an optional
+     `glossary`); the 5 overlapping screeners each got a "which screener?" disambiguation line
+     (kept all 5 — disambiguation, not a risky merge).
 
 ## Built this turn (steps 1 + 3)
 
 Server `instructions` set; `start_here` tool added (first tool). 5 new tests; suite 436 pass, ruff
 clean. Step 2 (the top-10 description rewrite) is **done** (2026-08-09) — each now leads with a plain-
-language question + a jargon gloss. Step 4 deferred.
+language question + a jargon gloss. Step 4 **done** (2026-08-09): selective `_glossary` on beginner tools + "which screener?" disambiguation lines on all 5 overlapping screeners.
 
 ## Rationale
 

@@ -34,6 +34,11 @@ class DisclaimerStampTests(unittest.TestCase):
         self.assertEqual(out["_source"], "view_x")
         self.assertEqual(out["_as_of"], "2026-08-08")
 
+    def test_glossary_attached_only_when_given(self):
+        self.assertNotIn("_glossary", index._stamp({"x": 1}, "s", None, "T+1"))
+        out = index._stamp({"x": 1}, "s", None, "T+1", glossary={"pe": "…"})
+        self.assertEqual(out["_glossary"], {"pe": "…"})
+
 
 @unittest.skipIf(index is None, "server deps not installed")
 class ResolveSubjectTests(unittest.TestCase):

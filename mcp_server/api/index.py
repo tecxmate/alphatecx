@@ -86,23 +86,48 @@ DISCLAIMER = os.environ.get(
 )
 
 
-def _stamp(payload: dict, source: str, as_of: str | None, freshness: str) -> dict:
+def _stamp(payload: dict, source: str, as_of: str | None, freshness: str,
+           glossary: dict | None = None) -> dict:
     """Annotate a response with provenance + freshness + the compliance line.
 
     Every tool response funnels through here, so this is also the per-call
     metering choke point: count the call against the authenticated customer.
     Owner traffic (URL-secret path, or sub="owner") is not metered. record() is
-    best-effort and never raises."""
+    best-effort and never raises.
+
+    `glossary` (optional) attaches a `_glossary` defining the jargon in THIS
+    response, so the model labels metrics correctly instead of guessing. Use it
+    selectively on beginner-facing tools — don't bloat every response."""
     cust = current_customer.get()
     if cust and cust != "owner":
         usage_mod.record(cust)
-    return {
+    stamped = {
         "_source": source,
         "_disclaimer": DISCLAIMER,
         "_as_of": as_of,
         "_freshness": freshness,
-        **payload,
     }
+    if glossary:
+        stamped["_glossary"] = glossary
+    stamped.update(payload)
+    return stamped
+
+
+# Small, response-scoped glossaries for the beginner-facing tools (passed to
+# _stamp). Kept here so the definitions stay consistent with start_here's.
+_GLOSS_VALUATION = {
+    "pe": "P/E — price per $1 of yearly earnings; lower can mean cheaper, or slower growth",
+    "pb": "P/B — price per $1 of net assets (book value)",
+    "dividend_yield": "yearly dividend as a % of the share price",
+}
+_GLOSS_STOCK_CARD = {
+    **_GLOSS_VALUATION,
+    "flow": "net shares bought minus sold by institutions (foreign / trust / dealer)",
+}
+_GLOSS_RISK_LIGHT = {
+    "risk_light": "green/yellow/red whole-market caution gauge (not about one stock)",
+    "risk_score": "higher = more caution; drives the light",
+}
 
 
 def _today_iso() -> str:
@@ -498,10 +523,12 @@ def sc_accumulation_screen(
     pillar: str | None = None,
     top_n: int = 20,
 ) -> dict:
-    """Screen for tickers with sustained foreign accumulation.
+    """Which AI-supply-chain names are foreigners steadily buying? (simple streak screen)
 
-    Finds stocks where foreign investors have been consistently net buying.
-    Combines consecutive buy days with absolute flow volume.
+    When to use: a quick list within the curated AI universe, ranked by
+    consecutive foreign buy days + flow volume. Which screener? For the *whole*
+    market (incl. non-AI names) use `market_flow_screener`; for pre-move,
+    still-cheap "sleepers" use `flow_leaders_scan`.
 
     Args:
         min_streak: Minimum consecutive days of foreign net buying (default 3).
@@ -541,12 +568,13 @@ def market_flow_screener(
     sort_direction: str = "desc",
     top_n: int = 50,
 ) -> dict:
-    """Screen the full Taiwan market by institutional flow momentum.
+    """Rank/filter the WHOLE Taiwan market by institutional flow momentum.
 
-    Unlike the `sc_*` supply-chain tools, this searches every ticker present
-    in the TWSE/TPEX T86 institutional-flow feed. Non-AI names are labelled
-    `unclassified`, so use `classification='unclassified'` to look outside
-    the curated AI universe.
+    When to use: "who is getting bought across the market", by net-flow size,
+    including non-AI names (labelled `unclassified`). Unlike the `sc_*` supply-
+    chain tools this searches every ticker in the TWSE/TPEX T86 feed. Which
+    screener? For pre-move, still-cheap sleepers use `flow_leaders_scan`; for
+    technical setups (RSI/MACD/near-highs) use `q_screener`.
 
     Args:
         market: Optional exchange filter: 'TWSE' or 'TPEX'.
@@ -860,6 +888,11 @@ def flow_leaders_scan(
     `sleeper_score` (0-100), `sleeper_flags`, and a `triage` verdict
     (sleeper / watch / chase). Gloss: a "sleeper" is a quietly-bought, not-yet-
     moved name — higher risk than a proven leader; say so when you present one.
+
+    Which screener? This one = pre-move, still-cheap sleepers. Whole-market flow
+    ranking → `market_flow_screener`; simple foreign buy-streak in the AI names →
+    `sc_accumulation_screen`; technical setups → `q_screener`; statistical alpha
+    → `q_factor_screen`.
 
     Scoreable universe = names with both institutional-flow history (T86,
     all-market) and a harvested price (TWSE BWIBBU close + the OHLCV top-500).
@@ -1305,6 +1338,7 @@ def beginner_stock_card(ticker_id: str) -> dict:
         source="beginner_stock_card",
         as_of=str(payload.get("as_of") or _today_iso()),
         freshness="T+1",
+        glossary=_GLOSS_STOCK_CARD,
     )
 
 
@@ -1347,9 +1381,12 @@ def q_screener(
     pct_below_52w_high_below: float | None = None,
     universe: str = "classified",
 ) -> dict:
-    """Filter signal-covered tickers by indicator conditions (AND-combined).
+    """Filter tickers by TECHNICAL / indicator setup (AND-combined).
 
-    Combines technical + flow signals. Examples:
+    When to use: the user wants a technical pattern — oversold, momentum,
+    near-highs. Which screener? For raw institutional-flow ranking use
+    `market_flow_screener` or `flow_leaders_scan`; for statistical alpha use
+    `q_factor_screen`. Combines technical + flow signals. Examples:
       - oversold-in-uptrend: rsi_below=40, above_sma_200=true, macd_hist_above=0
       - foreign-buying surge: foreign_z_above=1.5
       - near-highs momentum: pct_below_52w_high_above=-3, rs_above=1.0
@@ -1677,6 +1714,7 @@ def q_valuation(
         source="raw_twse_valuation",
         as_of=asof,
         freshness="daily",
+        glossary=_GLOSS_VALUATION,
     )
 
 
@@ -1891,13 +1929,15 @@ def q_factor_screen(
     sort_by: str = "alpha_tstat",
     top_n: int = 25,
 ) -> dict:
-    """Cross-sectional alpha hunting across the classified universe.
+    """Statistically real idiosyncratic alpha across the classified universe.
 
-    Runs the same factor regression as `q_factor_alpha` (market + sector +
-    flow) on every ticker matching the filter, in one DB roundtrip, then
-    returns them ranked. Use this to find names with statistically real
-    idiosyncratic alpha — the t-stat (|t|>2 → significant) is the primary
-    signal, not the raw alpha number (which is noisy at short windows).
+    When to use: the most ADVANCED screener — for a beginner asking "what looks
+    good", prefer `flow_leaders_scan` or `beginner_stock_card` instead. Runs the
+    same factor regression as `q_factor_alpha` (market + sector + flow) on every
+    ticker matching the filter, in one DB roundtrip, then returns them ranked to
+    find names with statistically real idiosyncratic alpha — the t-stat (|t|>2 →
+    significant) is the primary signal, not the raw alpha number (noisy at short
+    windows).
 
     Args:
         pillar: filter by AI pillar — 'semiconductor' | 'infrastructure' |
@@ -2222,6 +2262,7 @@ def rg_status() -> dict:
         source="rg_market_daily",
         as_of=market.get("date"),
         freshness="T+0 post-close",
+        glossary=_GLOSS_RISK_LIGHT,
     )
 
 
