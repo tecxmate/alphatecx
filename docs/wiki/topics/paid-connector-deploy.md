@@ -26,17 +26,30 @@ before a customer hits the server), then deploy, then provision.
 - The Zeabur `mcp` service already has `OAUTH_SIGNING_KEY` + `OAUTH_PASSWORD` (shipped with the OAuth
   work) and `MCP_DATABASE_URL` + `MCP_BEARER_TOKEN`. Confirm they're set.
 
-## 1. Apply the DB migrations (owner)
+## 1. Apply the DB migrations (owner) — use `apply_delta.py`, target ZEABUR
 
-From the repo root, against the Zeabur Postgres:
+> **Gotcha (2026-08-09):** the local `.env` `DATABASE_URL` (and `mcp_server/.env` `MCP_DATABASE_URL`)
+> point at **Neon** — the legacy rollback DB, NOT production. The live server reads the **Zeabur**
+> Postgres (its env vars are set *in Zeabur*, `postgresql.zeabur.internal`, not from these files).
+> Migrations MUST target the Zeabur **public** owner DSN (the `postgresql` service's "Connection
+> String" in the dashboard — the same endpoint the GitHub-Actions writers use). Do not run migrations
+> off the local `.env` or you'll hit Neon.
+
+> **Do NOT use `apply_schema.py` on a populated DB.** It re-runs every file from `001` and rebuilds
+> views; `004` used to drop `view_latest_signals` without CASCADE and died on the dependent
+> `view_universe` (fixed 2026-08-09 by adding CASCADE, but the full re-run is still heavy/unnecessary
+> for a delta).
+
+Apply only the additive connector migrations against the Zeabur owner DSN:
 
 ```bash
-python apply_schema.py --rls        # needs MCP_VIEWER_PASSWORD in env
+ZEABUR_DATABASE_URL='postgres://<owner>@<zeabur-public-host>:<port>/zeabur' \
+  python apply_delta.py            # prints only the host; confirms before writing
 ```
 
-This lands, in the right order, the new tables + the grants that 003's blanket REVOKE would otherwise
-strip (all re-appended after 003): `019` customers (SELECT), `020` usage_monthly (SELECT/INSERT/UPDATE),
-`021` watchlist write-grant restore, `022` customers `UPDATE(status)`. Idempotent — safe to re-run.
+It applies `019` customers, `020` usage_monthly, `021` watchlist write-grant, `022`
+customers `UPDATE(status)`, `023` risk_profile — all `IF NOT EXISTS` / role-guarded / idempotent, and
+verifies the tables/columns exist. The `mcp_viewer` role already exists on Zeabur, so the grants land.
 
 **Verify** (as `mcp_viewer`):
 ```sql

@@ -30,7 +30,11 @@ CREATE INDEX IF NOT EXISTS idx_sv_signal_date
 -- Pivots signal_value so callers can read RSI/MACD/etc together. Materialized
 -- because we read it more than we write it (signals computed daily, queries
 -- many times). Refresh via refresh_quant_views() after compute_signals.
-DROP MATERIALIZED VIEW IF EXISTS view_latest_signals;
+-- CASCADE because view_universe (sql/008) depends on this matview; on a re-run
+-- against a populated DB a bare DROP fails ("other objects depend on it"). 008
+-- recreates view_universe afterwards, so cascading is safe and keeps
+-- apply_schema.py idempotent.
+DROP MATERIALIZED VIEW IF EXISTS view_latest_signals CASCADE;
 
 CREATE MATERIALIZED VIEW view_latest_signals AS
 WITH ranked AS (
