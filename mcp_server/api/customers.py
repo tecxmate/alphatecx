@@ -133,6 +133,19 @@ def get_by_email(email: str) -> dict | None:
     return rows[0] if rows else None
 
 
+def list_all() -> list[dict]:
+    """Every customer, oldest first — the admin CLI's read. Read-only; returns
+    [] on error rather than raising, so a listing never crashes on a DB blip."""
+    try:
+        return db._fetch(
+            "SELECT id, email, plan, status, monthly_quota, created_at "
+            "FROM customers ORDER BY created_at",
+        )
+    except Exception:               # noqa: BLE001
+        log.exception("customer list_all failed")
+        return []
+
+
 def set_status(customer_id: str, status: str) -> bool:
     """Set a customer's status (the billing webhook's write). Returns whether a
     row was updated. Runs through the read pool: mcp_viewer holds a narrow,

@@ -77,13 +77,21 @@ python scripts/provision_customer.py --email investor@example.com --plan private
 
 `--quota` omitted ⇒ unlimited. Hand the secret to the customer; they paste it as the password on the
 OAuth authorize screen (bare `/mcp` cloud-connector flow, which is what claude.ai web/mobile use).
+Give them the client-facing steps in [`docs/CLIENT-CONNECT.md`](../../CLIENT-CONNECT.md).
+
+**Manual client ops** (the private wire-money-then-flip-access loop, no raw SQL):
+```bash
+python scripts/manage_customer.py list                        # everyone + usage this month
+python scripts/manage_customer.py suspend client@example.com  # non-payment / end of term
+python scripts/manage_customer.py activate client@example.com # money arrived -> back on
+```
 
 ## 5. Verify multi-tenancy + metering end-to-end
 
 - Customer authenticates → token carries `sub=<customer_id>` (not `owner`).
 - A few tool calls → `select calls from usage_monthly where customer_id='<id>';` increments.
-- Suspend test: `update customers set status='suspended' where id='<id>';` → the customer's next
-  session is refused **402** (and a refresh is refused too — the gate re-checks status per session).
+- Suspend test: `python scripts/manage_customer.py suspend <email>` → the customer's next session is
+  refused **402** (and a refresh is refused too — the gate re-checks status per session).
 - Quota test: set `monthly_quota` below current `calls` → next session **429**.
 
 ## 6. Billing (optional — only for self-serve paid signups)

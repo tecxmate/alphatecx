@@ -101,6 +101,17 @@ class GetByEmailTests(unittest.TestCase):
 
 
 @unittest.skipIf(customers is None, "psycopg_pool is not installed")
+class ListAllTests(unittest.TestCase):
+    def test_returns_rows(self):
+        with patch.object(customers.db, "_fetch", return_value=[_row(), _row(id="cust_y")]):
+            self.assertEqual(len(customers.list_all()), 2)
+
+    def test_db_error_returns_empty_list(self):
+        with patch.object(customers.db, "_fetch", side_effect=RuntimeError("db down")):
+            self.assertEqual(customers.list_all(), [])
+
+
+@unittest.skipIf(customers is None, "psycopg_pool is not installed")
 class SetStatusTests(unittest.TestCase):
     def _pool_returning(self, rowcount):
         conn = MagicMock()
