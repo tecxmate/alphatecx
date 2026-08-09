@@ -111,8 +111,40 @@ def _today_iso() -> str:
 
 # ── MCP server ──────────────────────────────────────────────────────────────
 
+# Connector-wide guidance Claude reads once on connect (MCP `instructions`). This
+# is the single place for the persona — do NOT repeat "act like a teacher" in
+# every tool description. Keep it tight; it rides in context for the session.
+CONSULTANT_INSTRUCTIONS = """\
+alphatecx is a Taiwan-equity (TWSE/TPEX) market-data service. You are using it to
+consult for a NON-EXPERT retail investor. Be a clear teacher and analyst — not a
+quant, and not a broker.
+
+How to work:
+- Start from the person's question in plain words. They won't know tool names or
+  jargon; you choose the tools and the order.
+- For a new user or an open-ended question, call `start_here` first to orient,
+  then pick the simplest tool that answers what they actually asked.
+- Define every finance term the first time you use it, in one plain sentence
+  (e.g. "P/E — the price paid per $1 of the company's yearly earnings").
+- Explain what the numbers MEAN and what to watch next — not just the raw figures.
+- Chain tools when it helps: e.g. `ticker_lookup` to find the code, then
+  `beginner_stock_card` for an overview, then `q_valuation` or
+  `sc_ticker_momentum` to go deeper. `sc_capabilities` is the full technical map.
+
+Boundaries and honesty:
+- This is informational market data, NOT investment advice. Never tell the user to
+  buy, sell, or hold — help them understand so they decide. Every response also
+  carries a `_disclaimer`.
+- Data is Taiwan-market and mostly T+1 (previous trading day) on Taipei time. Say
+  so when it matters and cite the `_as_of` date. If data is missing or stale, say
+  that plainly rather than guessing.
+- Coverage is deepest on ~27 AI-supply-chain names; be honest about limits
+  elsewhere.
+"""
+
 mcp = FastMCP(
     "alphatecx-v2",
+    instructions=CONSULTANT_INSTRUCTIONS,
     streamable_http_path="/",
     stateless_http=True,
     json_response=True,
@@ -120,6 +152,57 @@ mcp = FastMCP(
         enable_dns_rebinding_protection=False,
     ),
 )
+
+
+# ── Tool: Start Here (onboarding) ──────────────────────────────────────────
+
+@mcp.tool()
+def start_here() -> dict:
+    """START HERE for a new user or any open-ended / beginner question.
+
+    Returns a plain-language menu — what a non-expert can ask, which tool answers
+    each, and a beginner glossary — so you can orient the user and pick the right
+    tool without them knowing any jargon. For the full technical tool map (AI
+    supply-chain structure, all 44 tools), use `sc_capabilities` instead.
+    """
+    return _stamp(
+        {
+            "how_to_talk_to_me": (
+                "Describe what you want in plain words — you don't need tool names "
+                "or finance jargon. I'll pick the right data and explain it."
+            ),
+            "what_you_can_ask": [
+                {"ask": "Give me a plain overview of a stock",
+                 "use": "beginner_stock_card",
+                 "note": "price, trend, who's buying, valuation and dividend in one card"},
+                {"ask": "Is this stock cheap or expensive?", "use": "q_valuation",
+                 "note": "P/E, P/B and dividend yield vs the stock's own history"},
+                {"ask": "Who's buying or selling it?", "use": "sc_ticker_momentum",
+                 "note": "foreign / trust / dealer net flow and buy streaks"},
+                {"ask": "What's the price, and recent prices?", "use": "quote, price_history"},
+                {"ask": "Which stocks are institutions accumulating?", "use": "flow_leaders_scan"},
+                {"ask": "When are dividends paid, and how much?", "use": "dividend_calendar"},
+                {"ask": "Is the market risky right now?", "use": "rg_status",
+                 "note": "a market-risk light plus what's driving it"},
+                {"ask": "Any recent news on a company?", "use": "n_for_ticker"},
+                {"ask": "I don't know the stock code", "use": "ticker_lookup",
+                 "note": "find the TWSE code from a company name"},
+            ],
+            "glossary": {
+                "P/E ratio": "Price per $1 of the company's yearly earnings. Lower can mean cheaper — or slower growth.",
+                "P/B ratio": "Price per $1 of the company's net assets (book value).",
+                "Dividend yield": "The yearly dividend as a percentage of the share price.",
+                "Foreign flow": "Net buying/selling by foreign institutional investors (FINI) — a major driver in Taiwan.",
+                "Investment trust / dealer": "Local Taiwan institutions; their net flow signals domestic conviction.",
+                "Margin balance": "How much investors have borrowed to buy shares; unusually high levels can signal froth.",
+                "T+1 data": "Most figures reflect the previous trading day, on Taipei time.",
+            },
+            "remember": "This is data to help you understand — not advice to buy or sell.",
+        },
+        source="onboarding_guide",
+        as_of=None,
+        freshness="static",
+    )
 
 
 # ── Tool: Sector Momentum ──────────────────────────────────────────────────

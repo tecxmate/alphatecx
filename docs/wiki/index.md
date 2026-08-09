@@ -16,6 +16,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [Claude Agent](stakeholders/claude-agent.md) — Claude Code agent, database operations & implementation (agent)
 
 ## Decisions
+- [2026-08-09 — Connector teaching UX](decisions/2026-08-09-connector-teaching-ux.md) — keep ~44 tools (context is fine on 1M); teaching lives in server `instructions` (persona) + tool descriptions + a `start_here` tool, not fewer tools
 - [2026-08-08 — Commercialization direction](decisions/2026-08-08-commercialization-direction.md) — *(proposed)* sell to funded, finance-averse investors who consult Claude; Phase 1 = Stripe-gated remote MCP connector (Apollo/WordPress model, ~80% built), Phase 2 = headless web app embedding Claude for guardrails, mobile deferred; open gate = investment-advice licensing (needs a lawyer)
 - [2026-05-07 — Stateful Upgrade](decisions/2026-05-07-stateful-upgrade.md) — upgrade from stateless MCP to systematic Postgres pipeline
 - [2026-05-07 — v2 Implementation Decisions](decisions/2026-05-07-v2-implementation-decisions.md) — Supabase confirmed, Telegram alerts, historical backfill, v1 coexistence, Claude Code as tech team
@@ -44,6 +45,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 
 - [Commercial productization](topics/commercial-productization.md) — paid connector plan: MoR payments (Stripe can't be merchant from VN/TW), multi-tenant OAuth, per-customer metering, `_disclaimer` on `_stamp()`
 - [Paid connector — deploy checklist](topics/paid-connector-deploy.md) — runbook to take Layers 0–2 + metering + billing live: migrate → deploy → provision → verify; billing + rollback
+- [Tool description style](topics/tool-description-style.md) — template for writing MCP tool docstrings the model-as-consultant can select and teach from; step-2 priority list
 - [alphatecx](topics/alphatecx.md) — Taiwan AI supply chain analysis & trading system (project overview)
 - [alphatecx v1](topics/alphatecx-v1.md) — existing system: APEX TW strategy, TWSE MCP, Telegram alerts
 - [Taiwan AI Supply Chain Map](topics/taiwan-ai-supply-chain.md) — 4-pillar strategic map (Semiconductor, Equipment, Infrastructure, Energy)
