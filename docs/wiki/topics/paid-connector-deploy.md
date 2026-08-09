@@ -67,19 +67,21 @@ select count(*) from customers;   -- table exists
 - `LEMONSQUEEZY_WEBHOOK_SECRET` — **only if** turning on self-serve billing now (see §6). Omit while
   private; the webhook simply refuses every call (fails closed) until it's set.
 
-## 3. Deploy the server
+## 3. Deploy the server — AUTOMATIC on push (corrected 2026-08-09)
 
-CLI-uploaded services can't `redeploy` in place (`CANNOT_REDEPLOY_INPLACE`):
+**The `mcp` Zeabur service is git-connected and auto-deploys every push to `main`.** The old
+"CLI-uploaded / `CANNOT_REDEPLOY_INPLACE`" note (from the 2026-07-31 move) is **outdated** — the repo
+was connected to Zeabur since. `zeabur deployment list --service-id 6a6c4b0ed3dbd8abbc44eebb` shows
+one RUNNING deployment per recent commit (source `refs/heads/main`, plan `docker`). So **no manual
+`zeabur deploy` is needed** — merging to `main` ships the code. First boot pulls the image (~2 min);
+health checks before that read 502 and look like a crash loop — check `zeabur deployment log` first.
 
-```bash
-zeabur deploy --service-id 6a6c4b0ed3dbd8abbc44eebb   # confirm the id in the Zeabur dashboard
-```
+Because deploy is automatic, code lands **before** its migrations do; the server fails closed on a
+missing table, so run §1 (`apply_delta.py`) promptly after a schema-touching push.
 
-First boot pulls the image (~2 min); health checks before that read 502 and look like a crash loop —
-check `zeabur deployment log -t runtime` before diagnosing.
-
-**Verify** the disclaimer shipped: any tool response now carries `_disclaimer`. Owner access is
-unchanged (URL-secret `/mcp/<MCP_BEARER_TOKEN>/` **with trailing slash**, or bare `/mcp` via OAuth).
+**Verify:** `curl https://alphatecx-mcp.zeabur.app/health` → `{"ok":true,...}`; any tool response now
+carries `_disclaimer`. Owner access unchanged (URL-secret `/mcp/<MCP_BEARER_TOKEN>/` **with trailing
+slash**, or bare `/mcp` via OAuth).
 
 ## 4. Provision a customer (owner)
 

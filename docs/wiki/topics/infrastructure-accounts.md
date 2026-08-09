@@ -64,6 +64,8 @@ Where the production resources live and which login/org owns each. Recorded so f
   It does reverse the earlier "repo moved back to personal" (commit `75e40b7`) — now the org is the
   intended home because the project is going commercial with a co-founder.
 
+- **Zeabur `mcp` service auto-deploys from `main`** (git-connected to `tecxmate/alphatecx`; confirmed 2026-08-09 via `zeabur deployment list` — one RUNNING deployment per commit, source `refs/heads/main`). The earlier "CLI-uploaded, manual deploy" note is superseded. `apply_delta.py` still applies DB migrations manually to the Zeabur public owner endpoint (`8.209.197.81:32046/zeabur`).
+
 ## Telegram
 
 - Bot token + chat id in root `.env` (`TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`); reused from v1.
