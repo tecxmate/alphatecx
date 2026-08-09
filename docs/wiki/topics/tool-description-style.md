@@ -48,7 +48,7 @@ essay; move deep mechanics to a `# comment` if needed.
 > **Fields:** `pe`, `pb`, `dividend_yield`, `close`, `pillar`. Sorted cheapest-first by P/B.
 > A NULL P/E means no positive earnings (excluded when `max_pe` is set). Data is daily, T+1.
 
-## The step-2 pass — priority order (beginner-facing first)
+## The step-2 pass — DONE 2026-08-09 (priority order below)
 
 Rewrite these ~10 before the long tail; they're what a retail user hits first:
 

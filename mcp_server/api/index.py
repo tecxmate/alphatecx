@@ -250,11 +250,13 @@ def sc_ticker_momentum(
     top_n: int = 15,
     min_streak: int = 0,
 ) -> dict:
-    """Get per-ticker institutional flow momentum with consecutive buy streak tracking.
+    """Who is buying or selling a stock? — per-ticker institutional flow.
 
-    Drill down to individual stocks within a supply chain pillar or node.
-    Shows multi-day net flows and how many consecutive days foreign investors
-    have been net buying.
+    When to use: the user asks who's behind a stock's move, or whether "big
+    money" is buying. Shows multi-day net flows and the current consecutive
+    foreign buy streak, for one ticker or across a pillar/node. Gloss: "flow" =
+    net shares bought minus sold by institutions (foreign investors, investment
+    trusts, dealers); a long buy streak signals sustained institutional demand.
 
     Args:
         pillar: Filter by AI pillar: 'semiconductor', 'equipment',
@@ -316,11 +318,11 @@ def sc_supply_chain_map(
 
 @mcp.tool()
 def ticker_lookup(query: str, limit: int = 8) -> dict:
-    """Search the full Taiwan ticker directory by ticker code or company name.
+    """Find a stock's code from its name (or confirm a code).
 
-    Use this when a user types a Chinese company name, English company name,
-    or ticker-like text and you need the canonical TWSE/TPEX ticker id before
-    calling ticker-specific tools.
+    When to use: the user names a company ("台積電", "TSMC", "that server maker")
+    or you're unsure of the code — resolve it to the canonical TWSE/TPEX ticker
+    id BEFORE calling ticker-specific tools. Often the first call in a chain.
 
     Args:
         query: Ticker code or company name, e.g. '2330' or '台積電'.
@@ -755,14 +757,16 @@ def flow_leaders_scan(
     date: str | None = None,
     limit: int = 50,
 ) -> dict:
-    """Find quiet foreign accumulation into a still-cheap, still-flat price.
+    """Which stocks are institutions quietly accumulating before a move?
 
-    The generative counterpart to `scan_limit_board`: instead of triaging what
-    already moved, this screens the whole market for the pattern that *precedes*
-    a move — sustained institutional net buying (a high buy-day ratio over the
-    window) into a price that has not yet run, in a name that is still cheap
-    (low PE) and under-owned by foreigners. Each hit gets a `sleeper_score`
-    (0-100), `sleeper_flags`, and a `triage` verdict (sleeper / watch / chase).
+    When to use: the user asks for ideas / "what looks interesting" / where smart
+    money is building a position early. Screens the whole market for the pattern
+    that *precedes* a move — sustained institutional net buying (a high buy-day
+    ratio over the window) into a price that has not yet run, in a name that is
+    still cheap (low P/E) and under-owned by foreigners. Each hit gets a
+    `sleeper_score` (0-100), `sleeper_flags`, and a `triage` verdict
+    (sleeper / watch / chase). Gloss: a "sleeper" is a quietly-bought, not-yet-
+    moved name — higher risk than a proven leader; say so when you present one.
 
     Scoreable universe = names with both institutional-flow history (T86,
     all-market) and a harvested price (TWSE BWIBBU close + the OHLCV top-500).
@@ -1008,11 +1012,13 @@ def _quote_via_fugle(codes: list[str], key: str) -> tuple[list[dict], list[str]]
 
 @mcp.tool()
 def quote(symbols: list[str], source: str = "auto") -> dict:
-    """Realtime-ish quotes for a watchlist of Taiwan tickers.
+    """Current price(s) for one or a few named Taiwan tickers — near-realtime.
 
-    Returns last/prev/open/high/low, best bid/ask, and the authoritative
-    **limit-up / limit-down** prices per symbol. A watchlist tool, not a market
-    scanner — use scan_limit_board / flow_leaders_scan for breadth.
+    When to use: the user asks "what's the price of X" for specific stocks they
+    name. NOT a scanner — for "which stocks are…" breadth use flow_leaders_scan
+    / scan_limit_board. Returns last/prev/open/high/low, best bid/ask, and the
+    authoritative **limit-up / limit-down** prices (the daily ±10% caps a Taiwan
+    stock cannot trade past) per symbol.
 
     Two sources: **Fugle** (keyed realtime feed, preferred — richer book, lower
     latency) and **TWSE MIS** (no key, but throttled). `source="auto"` uses
@@ -1081,12 +1087,13 @@ def quote(symbols: list[str], source: str = "auto") -> dict:
 
 @mcp.tool()
 def dividend_calendar(ticker_id: str, date: str | None = None) -> dict:
-    """Answer 'does a buyer today still receive the dividend?' for a TWSE stock.
+    """Does a buyer today still receive the dividend? — for a TWSE stock.
 
-    Returns the most-recent-past and next-upcoming ex-dividend/ex-rights event
-    relative to `date`, from the TWSE 除權除息 calendar. The ex trading date is
-    decisive: buy on or after it and you do NOT get that distribution. This is
-    the exact check that stops quoting an already-ex yield as if it were forward.
+    When to use: the user asks about a stock's dividend, yield, or "if I buy now
+    do I get the payout". Gloss: the *ex-dividend date* is the cutoff — buy on or
+    after it and you do NOT get that distribution, so a headline yield can already
+    be gone. Returns the most-recent-past and next-upcoming ex-dividend/ex-rights
+    event relative to `date`, from the TWSE 除權除息 calendar.
 
     `most_recent.already_ex` is true once the stock has gone ex — its dividend
     is not available to a new buyer. `upcoming` (if any) is a future ex date; a
@@ -1184,12 +1191,17 @@ def q_indicators(ticker_id: str) -> dict:
 
 @mcp.tool()
 def beginner_stock_card(ticker_id: str) -> dict:
-    """Beginner-friendly factual stock card for one ticker.
+    """A plain overview of one stock — the best first tool for a beginner.
 
-    This tool groups price, trend, institutional flow, valuation, and a
-    small chart-ready close series into simple sections. It intentionally
-    avoids buy/sell/quality judgments so product clients can render a clean
-    beginner card without opinionated language.
+    When to use: the user names a stock (or wants "the basics" on one) and you
+    want a single grounded snapshot before going deeper. Groups price, recent
+    trend, who's buying (institutional flow), valuation, and a short close
+    series into simple sections. Factual only — no buy/sell/quality verdict; you
+    supply the plain-language explanation around it.
+
+    Key fields: `price`, `trend`, `flow` (foreign/trust/dealer net buying),
+    `valuation` (P/E = price per $1 of yearly earnings; P/B = price per $1 of
+    net assets), `dividend`, and a close series for a simple chart. Data is T+1.
 
     Args:
         ticker_id: TWSE/TPEX code, e.g. '2330' for TSMC.
@@ -1205,11 +1217,12 @@ def beginner_stock_card(ticker_id: str) -> dict:
 
 @mcp.tool()
 def price_history(ticker_id: str, days: int = 90) -> dict:
-    """Chart-ready OHLCV history for one ticker.
+    """Recent daily prices for one stock — chart-ready history.
 
-    Returns oldest-first rows suitable for rendering a simple line or candle
-    chart in LINE, web, or another product client. This tool returns data
-    only; chart image rendering should happen in the client/product layer.
+    When to use: the user asks how a stock has moved lately ("show me the last
+    3 months", "has it been going up?"). Returns oldest-first daily OHLCV rows
+    for a simple line or candle chart; data only — the client renders the chart.
+    Gloss: OHLCV = each day's open, high, low, close and volume.
 
     Args:
         ticker_id: TWSE/TPEX code, e.g. '2330'.
@@ -1412,12 +1425,13 @@ def n_for_ticker(
     days: int = 14,
     limit: int = 30,
 ) -> dict:
-    """Articles mentioning a specific ticker.
+    """Recent news about a specific company.
 
-    Until the entity-extraction layer (Phase 2b) populates a structured
-    ticker-mentions array, this falls back to text matching: ticker code
-    appearing as a standalone token in the title, OR the company name
-    appearing in title or summary. Company name comes from dim_ticker.
+    When to use: the user asks "any news on X" or what's happening with a stock.
+    Returns recent articles mentioning the ticker (matched by code as a
+    standalone token in the title, or the company name in title/summary until
+    structured entity extraction lands). Treat these as headlines to summarise
+    and explain, not as trading signals.
 
     Args:
         ticker_id: TWSE/TPEX code, e.g. '2330' for TSMC.
@@ -1539,12 +1553,15 @@ def q_valuation(
     min_yield: float | None = None,
     top_n: int = 30,
 ) -> dict:
-    """Latest valuation metrics (P/E, P/B, dividend yield) per ticker.
+    """Is a stock cheap or expensive? — valuation metrics per ticker.
 
-    Sourced from TWSE BWIBBU_d, harvested daily. Filters compose AND-style:
-    e.g. pillar='semiconductor' + max_pb=2 returns AI-semi names trading
-    below 2× book. NULL pe_ratio means the company has no positive
-    earnings — those rows are excluded if max_pe is set.
+    When to use: the user asks whether something is over/under-valued, or wants
+    cheap names in a pillar. Gloss: P/E = price per $1 of yearly earnings (lower
+    can mean cheaper — or slower growth); P/B = price per $1 of net assets;
+    dividend yield = yearly dividend ÷ price. Sourced from TWSE BWIBBU_d, daily.
+    Filters compose AND-style (e.g. pillar='semiconductor' + max_pb=2 → AI-semi
+    names below 2× book). A NULL P/E means no positive earnings (excluded when
+    max_pe is set). Fields: `pe`, `pb`, `dividend_yield`, `close`, `pillar`.
 
     Args:
         ticker_id: Optional single-ticker lookup.
@@ -2060,12 +2077,13 @@ def sc_capabilities() -> dict:
 
 @mcp.tool()
 def rg_status() -> dict:
-    """Today's Risk Guard state: market risk light, its five subitems, and cash.
+    """Is the Taiwan market risky right now? — the market risk light.
 
-    The light is computed post-close by the Risk Guard pipeline and stored; this
-    reads it back. Use it before discussing any Taiwan-market entry — a red
-    light means new positions are off the table regardless of how good the
-    individual name looks.
+    When to use: the user asks whether it's a safe time to invest, or before you
+    discuss ANY new entry — a red light means new positions are off the table no
+    matter how good a single name looks. Gloss: the light (green/yellow/red) is a
+    whole-market caution gauge scored post-close from breadth, flows and futures
+    — it is about market conditions, not any one stock.
 
     Returns the light (green/yellow/red), the score, the per-subitem breakdown
     with the inputs each one saw, upcoming settlement obligations, and the last

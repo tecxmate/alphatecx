@@ -40,8 +40,8 @@ onboards a non-expert retail investor well.
 ## Built this turn (steps 1 + 3)
 
 Server `instructions` set; `start_here` tool added (first tool). 5 new tests; suite 436 pass, ruff
-clean. Step 2 (the top-10 description rewrite) is a fast follow, guided by the template. Step 4
-deferred.
+clean. Step 2 (the top-10 description rewrite) is **done** (2026-08-09) — each now leads with a plain-
+language question + a jargon gloss. Step 4 deferred.
 
 ## Rationale
 
