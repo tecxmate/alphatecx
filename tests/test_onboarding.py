@@ -37,6 +37,39 @@ class ServerInstructionsTests(unittest.TestCase):
         self.assertIn("conservative", text)
         self.assertIn("aggressive", text)
 
+    def test_instructions_point_at_investing_principles(self):
+        self.assertIn("investing_principles", index.mcp.instructions.lower())
+
+
+@unittest.skipIf(index is None, "server deps not installed")
+class InvestingPrinciplesTests(unittest.TestCase):
+    def setUp(self):
+        p = patch.object(index.usage_mod, "record")  # _stamp meters; don't hit the DB
+        p.start()
+        self.addCleanup(p.stop)
+
+    def tearDown(self):
+        index.current_customer.set(None)
+
+    def test_returns_attributed_universal_principles(self):
+        out = index.investing_principles()
+        self.assertTrue(out["principles"])
+        for p in out["principles"]:
+            self.assertIn("principle", p)
+            self.assertIn("from", p)  # attributed, not raw text
+
+    def test_no_profile_gives_no_emphasis(self):
+        index.current_customer.set("owner")
+        self.assertIsNone(index.investing_principles()["emphasis_for_profile"])
+
+    def test_profile_selects_emphasis(self):
+        index.current_customer.set("cust_1")
+        with patch.object(index.customers_mod, "get_risk",
+                          return_value={"risk_profile": "aggressive"}):
+            out = index.investing_principles()
+        self.assertEqual(out["profile"], "aggressive")
+        self.assertIn("guardrails", out["emphasis_for_profile"].lower())
+
 
 @unittest.skipIf(index is None, "server deps not installed")
 class StartHereToolTests(unittest.TestCase):

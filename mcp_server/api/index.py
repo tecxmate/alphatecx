@@ -155,6 +155,9 @@ How to work:
 - Chain tools when it helps: e.g. `ticker_lookup` to find the code, then
   `beginner_stock_card` for an overview, then `q_valuation` or
   `sc_ticker_momentum` to go deeper. `sc_capabilities` is the full technical map.
+- Ground your reasoning in `investing_principles` — durable, school-neutral rules
+  (margin of safety, know what you own, survival first…). Cite the principle and
+  apply it; never preach, and never push one strategy (index vs pick) as gospel.
 
 Risk profile (establish this early):
 - Call `my_profile` near the start. If it returns a saved profile
@@ -265,6 +268,79 @@ def set_my_risk_profile(profile: str, note: str | None = None) -> dict:
         {"saved": ok, "risk_profile": p if ok else None,
          "how_to_adapt": _RISK_GUIDANCE[p] if ok else None},
         source="customer_profile", as_of=None, freshness="static")
+
+
+# ── Investing principles (school-neutral) ──────────────────────────────────
+
+# Durable principles the major schools AGREE on — value, index, growth and
+# trading alike. Deliberately excludes contested doctrine (index-vs-pick,
+# technical analysis, any specific strategy). Distilled in our own words and
+# attributed to the thinkers who articulated each idea — NOT ingested text.
+_PRINCIPLES = [
+    {"principle": "Margin of safety",
+     "says": "Never pay a price that needs everything to go right. Leave a buffer so a wrong assumption costs little.",
+     "from": "Graham; echoed by Housel ('room for error')"},
+    {"principle": "Know what you own",
+     "says": "Only hold what you can explain in plain terms — the business, the risk, why it should pay off. If you can't, you're guessing.",
+     "from": "Lynch, Fisher"},
+    {"principle": "Survival first",
+     "says": "Risk is what you can't afford to be wrong about. Size positions so no single loss can ruin you; staying in the game beats maximizing any one bet.",
+     "from": "Housel; trading-discipline lineage (Douglas)"},
+    {"principle": "Master your own psychology",
+     "says": "The biggest risk is usually your behaviour — fear, greed, herding. Decide your rules before the moment, not during it.",
+     "from": "Douglas, Housel; Graham's 'Mr. Market'"},
+    {"principle": "Price is not value",
+     "says": "The market's quote is a mood, not a verdict. Treat wild swings as opportunities or warnings, not truth about the business.",
+     "from": "Graham"},
+    {"principle": "Beware manias and 'this time is different'",
+     "says": "Crowds plus leverage plus a great story precede most crashes. Extra skepticism exactly when everyone is euphoric.",
+     "from": "Kindleberger; Dalio on cycles"},
+    {"principle": "Time and compounding",
+     "says": "Give good decisions time to compound; don't churn. Short-term volatility is not the same as permanent loss.",
+     "from": "Bogle, Housel"},
+    {"principle": "Costs and taxes compound against you",
+     "says": "Every fee, spread and tax is a certain drag on an uncertain return. Minimize frictions.",
+     "from": "Bogle"},
+    {"principle": "Humility — process over outcome",
+     "says": "You will be wrong often; a good decision can lose and a bad one can win. Judge the reasoning, not the last result.",
+     "from": "Douglas; efficient-market humility"},
+]
+
+# Which universals to STRESS per risk tier — the principles don't change, only
+# the emphasis does.
+_PRINCIPLE_EMPHASIS = {
+    "conservative": "Lead with margin of safety, diversification, low cost, and "
+                    "capital preservation. Volatility they can't stomach is itself a risk.",
+    "balanced": "Weigh margin of safety against opportunity; let quality compound "
+                "while keeping position sizes sane.",
+    "aggressive": "The universal guardrails matter MOST here — survival-first "
+                  "sizing, psychology/discipline, and avoiding manias are what keep "
+                  "high-risk bets from turning into ruin.",
+}
+
+
+@mcp.tool()
+def investing_principles() -> dict:
+    """Durable, school-neutral investing principles to ground your advice.
+
+    Universal principles the major schools agree on (value, index, growth and
+    trading alike) — NOT a specific strategy, and NOT stock-picking-vs-indexing
+    dogma. Use them to frame HOW you explain and advise: name the principle,
+    apply it to the user's situation, and lean hardest on the ones their risk
+    profile most needs. If a `profile` is present, follow `emphasis_for_profile`.
+    """
+    cust = current_customer.get()
+    profile = None
+    if cust and cust != "owner":
+        profile = customers_mod.get_risk(cust).get("risk_profile")
+    return _stamp(
+        {"principles": _PRINCIPLES,
+         "profile": profile,
+         "emphasis_for_profile": _PRINCIPLE_EMPHASIS.get(profile) if profile else None,
+         "use": "Ground advice in these. They are universal — apply them within "
+                "whatever the user is doing; don't turn them into a sales pitch "
+                "for one strategy, and don't preach."},
+        source="investing_principles", as_of=None, freshness="static")
 
 
 # ── Tool: Start Here (onboarding) ──────────────────────────────────────────

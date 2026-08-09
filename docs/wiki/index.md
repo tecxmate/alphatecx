@@ -46,6 +46,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 
 - [Commercial productization](topics/commercial-productization.md) — paid connector plan: MoR payments (Stripe can't be merchant from VN/TW), multi-tenant OAuth, per-customer metering, `_disclaimer` on `_stamp()`
 - [Paid connector — deploy checklist](topics/paid-connector-deploy.md) — runbook to take Layers 0–2 + metering + billing live: migrate → deploy → provision → verify; billing + rollback
+- [Investing principles](topics/investing-principles.md) — school-neutral universal principles as a reasoning layer (distilled + attributed, not ingested); `investing_principles` tool, tier-aware emphasis; data tools stay clean
 - [Tool description style](topics/tool-description-style.md) — template for writing MCP tool docstrings the model-as-consultant can select and teach from; step-2 priority list
 - [alphatecx](topics/alphatecx.md) — Taiwan AI supply chain analysis & trading system (project overview)
 - [alphatecx v1](topics/alphatecx-v1.md) — existing system: APEX TW strategy, TWSE MCP, Telegram alerts
