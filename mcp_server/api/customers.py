@@ -33,6 +33,7 @@ log = logging.getLogger("customers")
 
 STATUS_ACTIVE = "active"
 VALID_STATUSES = frozenset({"active", "suspended", "trial"})
+VALID_RISK = frozenset({"conservative", "balanced", "aggressive"})
 SECRET_PREFIX = "atx_"          # recognisable in logs/support without revealing the secret
 ID_PREFIX = "cust_"
 
@@ -138,12 +139,51 @@ def list_all() -> list[dict]:
     [] on error rather than raising, so a listing never crashes on a DB blip."""
     try:
         return db._fetch(
-            "SELECT id, email, plan, status, monthly_quota, created_at "
+            "SELECT id, email, plan, status, monthly_quota, risk_profile, created_at "
             "FROM customers ORDER BY created_at",
         )
     except Exception:               # noqa: BLE001
         log.exception("customer list_all failed")
         return []
+
+
+def get_risk(customer_id: str) -> dict:
+    """{'risk_profile': …, 'risk_note': …} for a customer, or {}. Fails SOFT —
+    returns {} on any error (including the columns not existing pre-migration),
+    so the profile tool degrades to "not set" rather than breaking."""
+    if not customer_id:
+        return {}
+    try:
+        rows = db._fetch(
+            "SELECT risk_profile, risk_note FROM customers WHERE id = %s LIMIT 1",
+            (customer_id,),
+        )
+    except Exception:               # noqa: BLE001
+        log.exception("customer get_risk failed")
+        return {}
+    return rows[0] if rows else {}
+
+
+def set_risk_profile(customer_id: str, profile: str, note: str | None = None) -> bool:
+    """Persist a customer's risk tolerance. Writes through the read pool via the
+    column-scoped UPDATE grant on customers (sql/023). Returns whether a row was
+    updated; logs and returns False on error."""
+    if profile not in VALID_RISK:
+        raise ValueError(f"invalid risk profile {profile!r}; expected one of {sorted(VALID_RISK)}")
+    if not customer_id:
+        return False
+    try:
+        with db.pool().connection() as conn:
+            cur = conn.execute(
+                "UPDATE customers SET risk_profile = %s, risk_note = %s, updated_at = now() "
+                "WHERE id = %s",
+                (profile, note, customer_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+    except Exception:               # noqa: BLE001
+        log.exception("customer set_risk_profile failed for %s", customer_id)
+        return False
 
 
 def set_status(customer_id: str, status: str) -> bool:

@@ -16,6 +16,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [Claude Agent](stakeholders/claude-agent.md) — Claude Code agent, database operations & implementation (agent)
 
 ## Decisions
+- [2026-08-09 — Risk-profile personalization](decisions/2026-08-09-risk-profile-personalization.md) — per-user risk tier (conservative/balanced/aggressive) stored on the customer; set at onboarding via `set_my_risk_profile` / `--risk`; AI reads `my_profile` and adapts framing
 - [2026-08-09 — Connector teaching UX](decisions/2026-08-09-connector-teaching-ux.md) — keep ~44 tools (context is fine on 1M); teaching lives in server `instructions` (persona) + tool descriptions + a `start_here` tool, not fewer tools
 - [2026-08-08 — Commercialization direction](decisions/2026-08-08-commercialization-direction.md) — *(proposed)* sell to funded, finance-averse investors who consult Claude; Phase 1 = Stripe-gated remote MCP connector (Apollo/WordPress model, ~80% built), Phase 2 = headless web app embedding Claude for guardrails, mobile deferred; open gate = investment-advice licensing (needs a lawyer)
 - [2026-05-07 — Stateful Upgrade](decisions/2026-05-07-stateful-upgrade.md) — upgrade from stateless MCP to systematic Postgres pipeline

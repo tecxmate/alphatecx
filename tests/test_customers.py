@@ -112,6 +112,46 @@ class ListAllTests(unittest.TestCase):
 
 
 @unittest.skipIf(customers is None, "psycopg_pool is not installed")
+class RiskProfileTests(unittest.TestCase):
+    def _pool_returning(self, rowcount):
+        conn = MagicMock()
+        cur = MagicMock()
+        cur.rowcount = rowcount
+        conn.execute.return_value = cur
+        ctx = MagicMock()
+        ctx.__enter__.return_value = conn
+        pool = MagicMock()
+        pool.return_value.connection.return_value = ctx
+        return pool, conn
+
+    def test_get_risk_returns_row(self):
+        with patch.object(customers.db, "_fetch",
+                          return_value=[{"risk_profile": "conservative", "risk_note": None}]):
+            self.assertEqual(customers.get_risk("cust_1")["risk_profile"], "conservative")
+
+    def test_get_risk_fails_soft_to_empty(self):
+        with patch.object(customers.db, "_fetch", side_effect=RuntimeError("no column")):
+            self.assertEqual(customers.get_risk("cust_1"), {})
+
+    def test_set_risk_rejects_invalid_tier(self):
+        with self.assertRaises(ValueError):
+            customers.set_risk_profile("cust_1", "yolo")
+
+    def test_set_risk_updates_and_commits(self):
+        pool, conn = self._pool_returning(1)
+        with patch.object(customers.db, "pool", pool):
+            self.assertTrue(customers.set_risk_profile("cust_1", "aggressive", "small caps ok"))
+        sql, params = conn.execute.call_args.args
+        self.assertIn("risk_profile", sql)
+        self.assertEqual(params, ("aggressive", "small caps ok", "cust_1"))
+        conn.commit.assert_called_once()
+
+    def test_set_risk_db_error_returns_false(self):
+        with patch.object(customers.db, "pool", side_effect=RuntimeError("db down")):
+            self.assertFalse(customers.set_risk_profile("cust_1", "balanced"))
+
+
+@unittest.skipIf(customers is None, "psycopg_pool is not installed")
 class SetStatusTests(unittest.TestCase):
     def _pool_returning(self, rowcount):
         conn = MagicMock()

@@ -7,6 +7,7 @@ provision_customer.py so the wire-money-then-flip-access loop needs no raw SQL:
     python scripts/manage_customer.py list                        # everyone + usage this month
     python scripts/manage_customer.py suspend client@example.com  # non-payment / end of term
     python scripts/manage_customer.py activate client@example.com # money arrived -> back on
+    python scripts/manage_customer.py set-risk niko@x.com conservative  # set risk profile
 
 suspend/activate accept an email OR a cust_… id. A suspended customer is cut off
 at the next session (within the access-token TTL, refresh included). See
@@ -38,12 +39,14 @@ def _cmd_list() -> int:
         print("No customers.")
         return 0
     month = usage.current_yyyymm()
-    print(f"{'id':<20} {'email':<28} {'status':<10} {'quota':>8} {'calls/'+month:>12}")
-    print("-" * 82)
+    hdr = f"{'id':<20} {'email':<26} {'status':<10} {'risk':<12} {'quota':>7} {'calls/'+month:>11}"
+    print(hdr)
+    print("-" * len(hdr))
     for r in rows:
         calls = usage.calls_this_month(r["id"], month)
         quota = "∞" if r["monthly_quota"] is None else r["monthly_quota"]
-        print(f"{r['id']:<20} {r['email']:<28} {r['status']:<10} {str(quota):>8} {calls:>12}")
+        risk = r.get("risk_profile") or "-"
+        print(f"{r['id']:<20} {r['email']:<26} {r['status']:<10} {risk:<12} {str(quota):>7} {calls:>11}")
     return 0
 
 
@@ -59,6 +62,18 @@ def _set(ref: str, status: str) -> int:
     return 1
 
 
+def _set_risk(ref: str, profile: str) -> int:
+    customer = _resolve(ref)
+    if not customer:
+        print(f"No customer matches {ref!r}.")
+        return 1
+    if customers.set_risk_profile(customer["id"], profile):
+        print(f"{customer['email']} ({customer['id']}) → risk: {profile}")
+        return 0
+    print(f"Failed to update {customer['id']}.")
+    return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -66,6 +81,9 @@ def main() -> int:
     for name in ("suspend", "activate"):
         p = sub.add_parser(name, help=f"{name} a customer by email or cust_ id")
         p.add_argument("ref")
+    pr = sub.add_parser("set-risk", help="set a customer's risk profile")
+    pr.add_argument("ref")
+    pr.add_argument("profile", choices=sorted(customers.VALID_RISK))
     args = parser.parse_args()
 
     if args.cmd == "list":
@@ -74,6 +92,8 @@ def main() -> int:
         return _set(args.ref, "suspended")
     if args.cmd == "activate":
         return _set(args.ref, "active")
+    if args.cmd == "set-risk":
+        return _set_risk(args.ref, args.profile)
     return 2
 
 

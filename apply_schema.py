@@ -54,6 +54,7 @@ sql_files = [
     "sql/019_customers.sql",
     "sql/020_usage.sql",
     "sql/022_customers_status_grant.sql",
+    "sql/023_customers_risk_profile.sql",
 ]
 if args.rls:
     pw = os.getenv("MCP_VIEWER_PASSWORD")
@@ -93,6 +94,9 @@ if args.rls:
     # 022 grants mcp_viewer a column-scoped UPDATE(status) on customers for the
     # billing webhook. Same REVOKE trap → re-append after 003.
     sql_files.append("sql/022_customers_status_grant.sql")
+    # 023 extends that column-scoped grant to risk_profile/risk_note. Same trap →
+    # re-append after 003.
+    sql_files.append("sql/023_customers_risk_profile.sql")
 
 print(f"Connecting to: {DATABASE_URL[:50]}...")
 

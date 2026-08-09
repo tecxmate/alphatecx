@@ -131,6 +131,16 @@ How to work:
   `beginner_stock_card` for an overview, then `q_valuation` or
   `sc_ticker_momentum` to go deeper. `sc_capabilities` is the full technical map.
 
+Risk profile (establish this early):
+- Call `my_profile` near the start. If it returns a saved profile
+  (conservative / balanced / aggressive), tailor EVERYTHING to it and follow the
+  `how_to_adapt` it gives back. If it's null, ask the user how much risk they
+  want and save it with `set_my_risk_profile`.
+- conservative → lead with capital preservation, stable dividend-paying names,
+  volatility and downside. aggressive → growth, momentum and higher-risk/
+  higher-reward ideas are in scope, but always name the risk. balanced → weigh
+  both. The same data means different emphasis for different people.
+
 Boundaries and honesty:
 - This is informational market data, NOT investment advice. Never tell the user to
   buy, sell, or hold — help them understand so they decide. Every response also
@@ -152,6 +162,84 @@ mcp = FastMCP(
         enable_dns_rebinding_protection=False,
     ),
 )
+
+
+# ── Risk profile (personalization) ─────────────────────────────────────────
+
+# How the model should adapt its framing to each tier. Returned by the profile
+# tools so the guidance travels with the value.
+_RISK_GUIDANCE = {
+    "conservative": (
+        "Lead with capital preservation. Favour stable, liquid, dividend-paying "
+        "names; surface volatility, drawdown and downside first; avoid "
+        "speculative or thinly-traded ideas unless explicitly asked."
+    ),
+    "balanced": (
+        "Balance growth and safety. Mix quality compounders with some momentum; "
+        "weigh upside against downside evenly."
+    ),
+    "aggressive": (
+        "Optimise for return. Momentum, accumulation and higher-risk/higher-"
+        "reward ideas are in scope — but always name the risk and a position-"
+        "sizing caveat."
+    ),
+}
+_ASK_RISK = ("Not set — ask whether the user is conservative, balanced, or "
+             "aggressive, then call set_my_risk_profile.")
+
+
+@mcp.tool()
+def my_profile() -> dict:
+    """The current user's saved risk profile, so you can tailor everything to it.
+
+    Call this early. If `risk_profile` is null, ASK the user whether they are
+    conservative, balanced, or aggressive and save it with `set_my_risk_profile`.
+    Then follow `how_to_adapt`.
+    """
+    cust = current_customer.get()
+    if not cust or cust == "owner":
+        return _stamp(
+            {"risk_profile": None, "how_to_adapt": _ASK_RISK,
+             "options": sorted(customers_mod.VALID_RISK),
+             "note": "No per-user account on this session — ask their risk "
+                     "tolerance and adapt within the conversation."},
+            source="customer_profile", as_of=None, freshness="static")
+    risk = customers_mod.get_risk(cust)
+    profile = risk.get("risk_profile")
+    return _stamp(
+        {"risk_profile": profile,
+         "risk_note": risk.get("risk_note"),
+         "how_to_adapt": _RISK_GUIDANCE.get(profile, _ASK_RISK),
+         "options": sorted(customers_mod.VALID_RISK)},
+        source="customer_profile", as_of=None, freshness="static")
+
+
+@mcp.tool()
+def set_my_risk_profile(profile: str, note: str | None = None) -> dict:
+    """Save the current user's risk profile once they tell you their tolerance.
+
+    profile: 'conservative' | 'balanced' | 'aggressive'.
+    note: optional free text (e.g. 'dividends only, no small caps').
+    Call this after the user states or confirms how much risk they want.
+    """
+    cust = current_customer.get()
+    if not cust or cust == "owner":
+        return _stamp(
+            {"saved": False,
+             "reason": "No per-user account on this session; can't persist. "
+                       "Adapt within this conversation instead."},
+            source="customer_profile", as_of=None, freshness="static")
+    p = (profile or "").strip().lower()
+    if p not in customers_mod.VALID_RISK:
+        return _stamp(
+            {"saved": False,
+             "error": f"profile must be one of {sorted(customers_mod.VALID_RISK)}"},
+            source="customer_profile", as_of=None, freshness="static")
+    ok = customers_mod.set_risk_profile(cust, p, note)
+    return _stamp(
+        {"saved": ok, "risk_profile": p if ok else None,
+         "how_to_adapt": _RISK_GUIDANCE[p] if ok else None},
+        source="customer_profile", as_of=None, freshness="static")
 
 
 # ── Tool: Start Here (onboarding) ──────────────────────────────────────────
@@ -197,6 +285,11 @@ def start_here() -> dict:
                 "Margin balance": "How much investors have borrowed to buy shares; unusually high levels can signal froth.",
                 "T+1 data": "Most figures reflect the previous trading day, on Taipei time.",
             },
+            "personalize": (
+                "Call `my_profile` — if the user's risk tolerance isn't saved, "
+                "ask whether they're conservative, balanced, or aggressive and "
+                "save it. It tailors how everything below is framed."
+            ),
             "remember": "This is data to help you understand — not advice to buy or sell.",
         },
         source="onboarding_guide",

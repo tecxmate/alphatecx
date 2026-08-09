@@ -71,9 +71,14 @@ unchanged (URL-secret `/mcp/<MCP_BEARER_TOKEN>/` **with trailing slash**, or bar
 ## 4. Provision a customer (owner)
 
 ```bash
-python scripts/provision_customer.py --email investor@example.com --plan private --quota 5000
+python scripts/provision_customer.py --email investor@example.com --plan private --quota 5000 \
+    --risk conservative   # optional; else the AI asks the user at onboarding
 # prints the connector secret ONCE — copy it, it is never stored in plaintext
 ```
+
+Set/change a risk profile later without re-provisioning:
+`python scripts/manage_customer.py set-risk investor@example.com aggressive`
+(`conservative | balanced | aggressive`). The AI reads it via `my_profile` and adapts its framing.
 
 `--quota` omitted ⇒ unlimited. Hand the secret to the customer; they paste it as the password on the
 OAuth authorize screen (bare `/mcp` cloud-connector flow, which is what claude.ai web/mobile use).
