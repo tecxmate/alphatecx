@@ -2539,10 +2539,19 @@ def _access_claims(header: str) -> dict | None:
 
 def _customer_gate(sub: str):
     """Per-session enforcement for a customer subject. Returns a JSONResponse to
-    deny, or None to allow. Account state is authoritative (402 if not active);
-    the monthly quota is a soft ceiling on top (429 when reached)."""
-    customer = customers_mod.get(sub)
-    if not customer or customer.get("status") != customers_mod.STATUS_ACTIVE:
+    deny, or None to allow. Account state is authoritative (402 if not usable);
+    the monthly quota is a soft ceiling on top (429 when reached).
+
+    A store we cannot reach is 503, NOT 402: `account_inactive` is a claim about
+    the customer's subscription, and answering it on a Postgres blip told paying
+    customers their account had lapsed. 503 is honest and reads as transient to
+    every client's retry logic.
+    """
+    try:
+        customer = customers_mod.get(sub)
+    except customers_mod.LookupUnavailable:
+        return JSONResponse(status_code=503, content={"error": "store_unavailable"})
+    if not customer or customer.get("status") not in customers_mod.USABLE_STATUSES:
         return JSONResponse(status_code=402, content={"error": "account_inactive"})
     quota = customer.get("monthly_quota")
     if quota is not None and usage_mod.calls_this_month(sub) >= quota:
@@ -2629,13 +2638,20 @@ def _subject_still_valid(sub: str) -> bool:
 
     Owner is always valid — its credential is the shared OAUTH_PASSWORD, revoked
     by rotating the env var, not the DB. A customer subject must still exist and
-    be active; fails closed, so an unresolvable subject (deleted, suspended, or
-    a DB blip that makes `get` return None) is refused rather than resurrected.
+    hold a usable status.
+
+    Unlike the read gate, this one still fails closed on an unreachable store: a
+    refresh mints a fresh 90-day credential, so declining to issue one during a
+    blip costs a retry, while issuing one wrongly costs three months. Access
+    tokens outlive a short outage anyway, so live sessions are unaffected.
     """
-    if sub == "owner":
+    if sub == OWNER_SUBJECT:
         return True
-    customer = customers_mod.get(sub)
-    return bool(customer) and customer.get("status") == customers_mod.STATUS_ACTIVE
+    try:
+        customer = customers_mod.get(sub)
+    except customers_mod.LookupUnavailable:
+        return False
+    return bool(customer) and customer.get("status") in customers_mod.USABLE_STATUSES
 
 
 @app.post("/authorize")
@@ -2727,19 +2743,32 @@ def _authorize_html(client_id: str, redirect_uri: str, state: str,
 def _apply_billing(payload: dict) -> int:
     """Resolve the customer from an LS subscription event and set their status.
     Returns the HTTP status to answer. Unit-testable by patching customers_mod:
-    the only I/O is the customer lookup/update."""
+    the only I/O is the customer lookup/update.
+
+    The resolution has to CONFIRM the id, not just read it. `custom_data` is
+    whatever was attached at checkout, so an id that no longer exists (or never
+    did) used to skip the email fallback, update zero rows, and return 500 —
+    which Lemon Squeezy retries forever, while the customer the email would have
+    matched is never activated. An id we cannot confirm is treated as no id.
+    """
     mapping = billing_mod.event_to_status(payload)
     if mapping is None:
         return 200  # not a subscription-status event — ack so LS stops retrying
     customer_id, email, status = mapping
-    if not customer_id and email:
-        customer = customers_mod.get_by_email(email)
-        customer_id = customer["id"] if customer else None
-    if not customer_id:
-        log.warning("billing event for an unknown customer (email=%s)", email)
+    try:
+        customer = customers_mod.get(customer_id) if customer_id else None
+        if customer is None and email:
+            customer = customers_mod.get_by_email(email)
+    except customers_mod.LookupUnavailable:
+        # Transient: 500 so LS retries, unlike the permanent "unknown" case.
+        log.warning("billing event deferred — customer store unreachable")
+        return 500
+    if customer is None:
+        log.warning("billing event for an unknown customer "
+                    "(custom_data id=%s, email=%s)", customer_id, email)
         return 200  # nothing to act on; ack rather than trigger endless retries
     # 500 on a failed write so Lemon Squeezy retries; 200 on a real update.
-    return 200 if customers_mod.set_status(customer_id, status) else 500
+    return 200 if customers_mod.set_status(customer["id"], status) else 500
 
 
 @app.post("/billing/lemonsqueezy")

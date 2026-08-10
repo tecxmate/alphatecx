@@ -69,6 +69,18 @@ class AuthenticateTests(unittest.TestCase):
         with patch.object(customers.db, "_fetch", return_value=[_row(status="suspended")]):
             self.assertIsNone(customers.authenticate("atx_secret"))
 
+    def test_trial_customer_authenticates(self):
+        # `trial` was advertised in VALID_STATUSES but compared against
+        # STATUS_ACTIVE alone, so setting it silently locked the customer out.
+        with patch.object(customers.db, "_fetch", return_value=[_row(status="trial")]):
+            self.assertEqual(customers.authenticate("atx_secret")["id"], "cust_x")
+
+    def test_every_valid_status_is_either_usable_or_not_by_design(self):
+        # Guards the drift that caused the lockout: a status nobody classified.
+        self.assertTrue(customers.USABLE_STATUSES <= customers.VALID_STATUSES)
+        self.assertEqual(customers.VALID_STATUSES - customers.USABLE_STATUSES,
+                         {"suspended"})
+
     def test_unknown_secret_returns_none(self):
         with patch.object(customers.db, "_fetch", return_value=[]):
             self.assertIsNone(customers.authenticate("nope"))
@@ -97,6 +109,36 @@ class GetByEmailTests(unittest.TestCase):
     def test_empty_email_short_circuits(self):
         with patch.object(customers.db, "_fetch") as fetch:
             self.assertIsNone(customers.get_by_email(""))
+            fetch.assert_not_called()
+
+    def test_unreachable_store_raises_rather_than_reading_as_unknown(self):
+        with patch.object(customers.db, "_fetch", side_effect=RuntimeError("db down")):
+            with self.assertRaises(customers.LookupUnavailable):
+                customers.get_by_email("a@b.co")
+
+
+@unittest.skipIf(customers is None, "psycopg_pool is not installed")
+class GetTests(unittest.TestCase):
+    """None means "no such customer" and nothing else."""
+
+    def test_found_returns_row(self):
+        with patch.object(customers.db, "_fetch", return_value=[_row()]):
+            self.assertEqual(customers.get("cust_x")["id"], "cust_x")
+
+    def test_genuinely_absent_is_none(self):
+        with patch.object(customers.db, "_fetch", return_value=[]):
+            self.assertIsNone(customers.get("cust_nope"))
+
+    def test_unreachable_store_raises(self):
+        # Collapsing this into None made a Postgres blip indistinguishable from
+        # an unpaid account, and the read gate answered 402 account_inactive.
+        with patch.object(customers.db, "_fetch", side_effect=RuntimeError("db down")):
+            with self.assertRaises(customers.LookupUnavailable):
+                customers.get("cust_x")
+
+    def test_empty_id_short_circuits(self):
+        with patch.object(customers.db, "_fetch") as fetch:
+            self.assertIsNone(customers.get(""))
             fetch.assert_not_called()
 
 

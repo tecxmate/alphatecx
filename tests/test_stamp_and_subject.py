@@ -83,10 +83,23 @@ class SubjectStillValidTests(unittest.TestCase):
                           return_value={"id": "cust_1", "status": "suspended"}):
             self.assertFalse(index._subject_still_valid("cust_1"))
 
-    def test_deleted_or_unresolvable_customer_fails_closed(self):
-        # get() returns None for a missing row or on a swallowed DB error.
+    def test_trial_customer_is_valid(self):
+        with patch.object(index.customers_mod, "get",
+                          return_value={"id": "cust_1", "status": "trial"}):
+            self.assertTrue(index._subject_still_valid("cust_1"))
+
+    def test_deleted_customer_fails_closed(self):
         with patch.object(index.customers_mod, "get", return_value=None):
             self.assertFalse(index._subject_still_valid("cust_gone"))
+
+    def test_unreachable_store_also_fails_closed_here(self):
+        # Deliberately unlike the read gate's 503: a refresh mints a fresh
+        # 90-day credential, so declining during a blip costs a retry while
+        # issuing wrongly costs three months. Live sessions keep their access
+        # token, which outlives a short outage.
+        with patch.object(index.customers_mod, "get",
+                          side_effect=index.customers_mod.LookupUnavailable("x")):
+            self.assertFalse(index._subject_still_valid("cust_1"))
 
 
 @unittest.skipIf(index is None, "server deps not installed")
@@ -184,6 +197,18 @@ class CustomerGateTests(unittest.TestCase):
         with patch.object(index.customers_mod, "get", return_value=None):
             self.assertEqual(index._customer_gate("c").status_code, 402)
 
+    def test_trial_customer_passes(self):
+        with patch.object(index.customers_mod, "get",
+                          return_value={"id": "c", "status": "trial", "monthly_quota": None}):
+            self.assertIsNone(index._customer_gate("c"))
+
+    def test_unreachable_store_gets_503_not_402(self):
+        # 402 account_inactive is a claim about the subscription. Answering it on
+        # a Postgres blip told paying customers their account had lapsed.
+        with patch.object(index.customers_mod, "get",
+                          side_effect=index.customers_mod.LookupUnavailable("c")):
+            self.assertEqual(index._customer_gate("c").status_code, 503)
+
     def test_over_quota_gets_429(self):
         with patch.object(index.customers_mod, "get",
                           return_value={"id": "c", "status": "active", "monthly_quota": 100}), \
@@ -202,9 +227,42 @@ class ApplyBillingTests(unittest.TestCase):
     def test_active_by_customer_id_sets_status(self):
         with patch.object(index.billing_mod, "event_to_status",
                           return_value=("cust_1", None, "active")), \
+             patch.object(index.customers_mod, "get",
+                          return_value={"id": "cust_1"}), \
              patch.object(index.customers_mod, "set_status", return_value=True) as ss:
             self.assertEqual(index._apply_billing({}), 200)
             ss.assert_called_once_with("cust_1", "active")
+
+    def test_unconfirmable_custom_data_id_falls_back_to_email(self):
+        # A stale or typo'd checkout custom_data id used to skip the email
+        # fallback entirely, update zero rows and return 500 — which Lemon
+        # Squeezy retries forever while the real customer is never activated.
+        with patch.object(index.billing_mod, "event_to_status",
+                          return_value=("cust_gone", "a@b.co", "active")), \
+             patch.object(index.customers_mod, "get", return_value=None), \
+             patch.object(index.customers_mod, "get_by_email",
+                          return_value={"id": "cust_9"}), \
+             patch.object(index.customers_mod, "set_status", return_value=True) as ss:
+            self.assertEqual(index._apply_billing({}), 200)
+            ss.assert_called_once_with("cust_9", "active")
+
+    def test_unconfirmable_id_with_no_email_match_acks_once(self):
+        with patch.object(index.billing_mod, "event_to_status",
+                          return_value=("cust_gone", None, "active")), \
+             patch.object(index.customers_mod, "get", return_value=None), \
+             patch.object(index.customers_mod, "set_status") as ss:
+            self.assertEqual(index._apply_billing({}), 200)   # not 500 forever
+            ss.assert_not_called()
+
+    def test_unreachable_store_returns_500_so_ls_retries(self):
+        # Distinct from "unknown customer": this one IS worth retrying.
+        with patch.object(index.billing_mod, "event_to_status",
+                          return_value=("cust_1", None, "active")), \
+             patch.object(index.customers_mod, "get",
+                          side_effect=index.customers_mod.LookupUnavailable("x")), \
+             patch.object(index.customers_mod, "set_status") as ss:
+            self.assertEqual(index._apply_billing({}), 500)
+            ss.assert_not_called()
 
     def test_email_fallback_resolves_then_sets(self):
         with patch.object(index.billing_mod, "event_to_status",
@@ -224,10 +282,15 @@ class ApplyBillingTests(unittest.TestCase):
             ss.assert_not_called()
 
     def test_write_failure_returns_500_for_retry(self):
+        # The customer resolves; it is the UPDATE that fails. Patch `get` too or
+        # this asserts 500 via the unreachable-store path instead of the write.
         with patch.object(index.billing_mod, "event_to_status",
                           return_value=("cust_1", None, "active")), \
-             patch.object(index.customers_mod, "set_status", return_value=False):
+             patch.object(index.customers_mod, "get",
+                          return_value={"id": "cust_1"}), \
+             patch.object(index.customers_mod, "set_status", return_value=False) as ss:
             self.assertEqual(index._apply_billing({}), 500)
+            ss.assert_called_once_with("cust_1", "active")
 
 
 if __name__ == "__main__":

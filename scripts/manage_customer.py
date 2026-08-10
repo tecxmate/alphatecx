@@ -7,11 +7,13 @@ provision_customer.py so the wire-money-then-flip-access loop needs no raw SQL:
     python scripts/manage_customer.py list                        # everyone + usage this month
     python scripts/manage_customer.py suspend client@example.com  # non-payment / end of term
     python scripts/manage_customer.py activate client@example.com # money arrived -> back on
+    python scripts/manage_customer.py trial client@example.com    # evaluating, full access
     python scripts/manage_customer.py set-risk niko@x.com conservative  # set risk profile
 
-suspend/activate accept an email OR a cust_… id. A suspended customer is cut off
-at the next session (within the access-token TTL, refresh included). See
-docs/wiki/topics/paid-connector-deploy.md.
+suspend/activate/trial accept an email OR a cust_… id. A suspended customer is cut
+off at the next session (within the access-token TTL, refresh included). `trial`
+has the same access as `active` — it is a label for who is paying, not a lesser
+tier; end a trial with `suspend`. See docs/wiki/topics/paid-connector-deploy.md.
 """
 import argparse
 import sys
@@ -28,7 +30,12 @@ import usage  # noqa: E402
 
 
 def _resolve(ref: str) -> dict | None:
-    """A cust_… ref is an id; anything else is treated as an email."""
+    """A cust_… ref is an id; anything else is treated as an email.
+
+    Lets LookupUnavailable propagate: an operator running this against an
+    unreachable database must see the failure, not a confident "no customer
+    matches" that would send them looking for the wrong problem.
+    """
     return customers.get(ref) if ref.startswith(customers.ID_PREFIX) \
         else customers.get_by_email(ref)
 
@@ -78,7 +85,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list", help="list all customers with this month's usage")
-    for name in ("suspend", "activate"):
+    for name in ("suspend", "activate", "trial"):
         p = sub.add_parser(name, help=f"{name} a customer by email or cust_ id")
         p.add_argument("ref")
     pr = sub.add_parser("set-risk", help="set a customer's risk profile")
@@ -92,6 +99,8 @@ def main() -> int:
         return _set(args.ref, "suspended")
     if args.cmd == "activate":
         return _set(args.ref, "active")
+    if args.cmd == "trial":
+        return _set(args.ref, "trial")
     if args.cmd == "set-risk":
         return _set_risk(args.ref, args.profile)
     return 2

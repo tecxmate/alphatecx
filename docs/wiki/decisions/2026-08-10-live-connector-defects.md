@@ -104,9 +104,37 @@ failed one.
   will now score the subitem where a balance within the lag bound exists. That is a correction —
   they were blind, not neutral — but `riskguard.replay` output before and after this change is not
   comparable.
-- The `trial` status remains a latent lockout (`VALID_STATUSES` advertises it; both gates compare
-  against `active` only), and a DB blip on the read path still presents to a paying customer as
-  402 `account_inactive`. Both were surfaced in the same review and are **not** fixed here.
+
+## Follow-up (same day): the three deferred items
+
+[niko] asked for the three the first pass deliberately left. All are in the same commit range.
+
+- **`trial` was a lockout.** `VALID_STATUSES` advertised it while every gate compared against
+  `STATUS_ACTIVE` alone, so setting it denied all access with 402 — a status that reads as valid
+  and behaves as suspended. `USABLE_STATUSES = {active, trial}` is now what `authenticate`, the
+  read gate and the refresh check all consult, and `manage_customer.py trial <ref>` makes it
+  settable so the status means something. A test asserts every member of `VALID_STATUSES` is
+  classified, which is the drift that caused it.
+- **A DB blip read as an unpaid account.** `customers.get`/`get_by_email` swallowed exceptions and
+  returned `None`, which is also "no such customer" — so the read gate answered 402
+  `account_inactive` and told paying customers their subscription had lapsed. Both now raise
+  `LookupUnavailable`, and each caller picks its own failure mode: the read gate reports **503**
+  (honest, and every client's retry logic reads it as transient), the refresh check still fails
+  **closed** (a refresh mints a fresh 90-day credential, so declining during a blip costs a retry
+  while issuing wrongly costs three months — and live sessions keep an access token that outlives
+  a short outage).
+- **A bogus `custom_data.customer_id` retried forever.** `_apply_billing` read the id without
+  confirming it, so a stale or typo'd checkout value skipped the email fallback, updated zero rows
+  and returned 500 — which Lemon Squeezy retries indefinitely while the customer the email would
+  have matched is never activated. Resolution now **confirms** the id and treats an unconfirmable
+  one as no id at all. The three outcomes are properly separated: resolved → write; genuinely
+  unknown → 200 (ack once, no retry storm); store unreachable → 500 (retry is the right answer).
+
+**Still open, deliberately:** Lemon Squeezy checkout custom fields are settable from the checkout
+URL, so someone who learned another customer's `cust_…` id could subscribe with it and later
+cancel, suspending them. Ids are `secrets.token_urlsafe(9)` and non-enumerable, so this is hard to
+reach; binding the event to the subscriber email would close it but would break checkouts whose
+email does not match the provisioned one.
 
 ## Open
 
