@@ -99,6 +99,50 @@ class BuildMetricsTests(unittest.TestCase):
         m = store.build_metrics("2026-07-30", None)
         self.assertEqual(m["margin_balance"], 8_224_773.0)
         self.assertLess(m["margin_chg_5d_pct"], 0)
+        self.assertEqual(m["margin_as_of"], "2026-07-30")
+
+    def test_yesterdays_margin_is_accepted(self):
+        # TWSE publishes 融資融券 after the 16:30 harvest, so the post-close run
+        # never has the current session's balance. Demanding it scored subitem 3
+        # data_missing every single day (observed live 2026-08-10) — the table
+        # was full, the read was just too strict.
+        self.margins.return_value = [
+            {"date": "2026-07-29", "margin_balance": 8_224_773.0},
+            *[{"date": f"2026-07-{28 - i:02d}", "margin_balance": 9_000_000.0}
+              for i in range(9)],
+        ]
+        m = store.build_metrics("2026-07-30", None)
+        self.assertEqual(m["margin_balance"], 8_224_773.0)
+        self.assertIsNotNone(m["margin_chg_5d_pct"])
+        self.assertEqual(m["margin_as_of"], "2026-07-29")
+
+    def test_margin_beyond_the_lag_bound_is_still_dropped(self):
+        # Bounded staleness, not tolerated staleness: a stalled harvest must
+        # still read as missing rather than scoring old leverage as current.
+        self.margins.return_value = [
+            {"date": f"2026-07-{24 - i:02d}", "margin_balance": 9_000_000.0}
+            for i in range(9)]
+        m = store.build_metrics("2026-07-30", None)
+        self.assertIsNone(m["margin_balance"])
+        self.assertIsNone(m["margin_chg_5d_pct"])
+        self.assertIsNone(m["margin_as_of"])
+
+    def test_lag_is_counted_in_sessions_not_calendar_days(self):
+        # A weekend or a Lunar New Year break must not read as a stalled feed.
+        # These closes skip 07-11/07-12, so 07-10 is one SESSION behind 07-13
+        # while being three calendar days behind it.
+        gapped = [{"date": d, "close": 100.0, "change_pct": 0.0}
+                  for d in ("2026-07-13", "2026-07-10", "2026-07-09",
+                            "2026-07-08", "2026-07-07", "2026-07-06",
+                            "2026-07-03", "2026-07-02")]
+        mock.patch.object(store, "taiex_series", return_value=gapped).start()
+        self.margins.return_value = [
+            {"date": d, "margin_balance": 9_000_000.0}
+            for d in ("2026-07-10", "2026-07-09", "2026-07-08", "2026-07-07",
+                      "2026-07-06", "2026-07-03", "2026-07-02")]
+        m = store.build_metrics("2026-07-13", None)
+        self.assertEqual(m["margin_as_of"], "2026-07-10")
+
 
     def test_todays_breadth_counts_are_carried_through(self):
         m = store.build_metrics("2026-07-30", {"adv_count": 224, "dec_count": 775})
@@ -123,6 +167,28 @@ class BuildMetricsTests(unittest.TestCase):
     def test_a_session_missing_from_the_index_has_no_change_pct(self):
         m = store.build_metrics("2026-07-31", None)
         self.assertIsNone(m["taiex_pct"])
+
+
+class SessionLagTests(unittest.TestCase):
+    """Staleness measured off the trading calendar, failing closed when unknown."""
+
+    series = [{"date": d} for d in ("2026-07-30", "2026-07-29", "2026-07-28")]
+
+    def test_same_session_is_zero(self):
+        self.assertEqual(store._session_lag(self.series, "2026-07-30", "2026-07-30"), 0)
+
+    def test_one_session_back_is_one(self):
+        self.assertEqual(store._session_lag(self.series, "2026-07-29", "2026-07-30"), 1)
+
+    def test_unknown_when_the_series_is_empty(self):
+        # None, not 0 — an unmeasurable lag must not read as fresh.
+        self.assertIsNone(store._session_lag([], "2026-07-30", "2026-07-30"))
+
+    def test_unknown_when_the_date_is_not_a_known_session(self):
+        self.assertIsNone(store._session_lag(self.series, "2026-06-29", "2026-07-30"))
+
+    def test_no_margin_date_at_all_is_unknown(self):
+        self.assertIsNone(store._session_lag(self.series, None, "2026-07-30"))
 
 
 class UpsertPositionTests(unittest.TestCase):

@@ -116,6 +116,49 @@ class MeteringStampTests(unittest.TestCase):
 
 
 @unittest.skipIf(index is None, "server deps not installed")
+class UrlSecretSubjectTests(unittest.TestCase):
+    """The URL-as-secret mount must name its subject, not leave it anonymous.
+
+    It used to leave current_customer unset, so the profile tools saw no identity
+    and set_my_risk_profile could only answer "can't persist" — inert for the
+    operator, who reaches the server this way (observed live 2026-08-10). Driven
+    through the real ASGI stack because the whole question is whether the value
+    set in the middleware survives into the tool body.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        # One client for the class: FastMCP's session manager refuses a second
+        # .run(), so entering the app's lifespan twice in one process raises.
+        from starlette.testclient import TestClient
+        cls.client = TestClient(index.app)
+        cls.client.__enter__()
+        cls.addClassCleanup(cls.client.__exit__, None, None, None)
+
+    def _call(self, path: str) -> tuple:
+        seen = []
+        body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "investing_principles", "arguments": {}}}
+        with patch.object(index.customers_mod, "get_risk",
+                          side_effect=lambda c: seen.append(c) or {}), \
+             patch.object(index.usage_mod, "record") as record:
+            resp = self.client.post(path, json=body, headers={
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+            })
+        self.assertEqual(resp.status_code, 200)
+        return seen, record
+
+    def test_url_secret_path_identifies_the_owner(self):
+        seen, _ = self._call("/mcp/testtoken/")
+        self.assertEqual(seen, [index.OWNER_SUBJECT])
+
+    def test_url_secret_owner_is_still_never_metered(self):
+        _, record = self._call("/mcp/testtoken/")
+        record.assert_not_called()
+
+
+@unittest.skipIf(index is None, "server deps not installed")
 class CustomerGateTests(unittest.TestCase):
     """Per-session gate: active + under quota passes; else 402/429."""
 

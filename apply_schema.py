@@ -55,7 +55,11 @@ sql_files = [
     "sql/020_usage.sql",
     "sql/022_customers_status_grant.sql",
     "sql/023_customers_risk_profile.sql",
+    "sql/025_owner_profile.sql",
 ]
+# 024 is deliberately absent from the base list: every statement in it is guarded
+# on mcp_viewer existing, so a base pass would be a pure no-op. It only belongs
+# after 003. See the --rls branch below.
 if args.rls:
     pw = os.getenv("MCP_VIEWER_PASSWORD")
     if not pw:
@@ -97,6 +101,11 @@ if args.rls:
     # 023 extends that column-scoped grant to risk_profile/risk_note. Same trap →
     # re-append after 003.
     sql_files.append("sql/023_customers_risk_profile.sql")
+    # 024 backfills SELECT for every table 003's enumerated grant list predates
+    # (010/011/015/016/017). A different trap from the REVOKE one: those files'
+    # own grants are role-guarded and run in the BASE pass, before 003 creates
+    # mcp_viewer, so they no-op and are never re-run. Must be after 003.
+    sql_files.append("sql/024_read_grants_backfill.sql")
 
 print(f"Connecting to: {DATABASE_URL[:50]}...")
 

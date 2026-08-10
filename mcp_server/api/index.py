@@ -74,6 +74,12 @@ log = logging.getLogger("mcp")
 # the request, so a value set before call_next is visible inside the tool.
 current_customer: ContextVar[str | None] = ContextVar("current_customer", default=None)
 
+# The operator's subject. Both owner paths (the shared OAUTH_PASSWORD login and
+# the URL-as-secret mount) resolve to it, and sql/025 reserves a `customers` row
+# under this id so the owner can hold a risk profile like any customer. It is
+# never metered and never billed — see _stamp.
+OWNER_SUBJECT = "owner"
+
 # Compliance line carried on every tool response so the consulting model always
 # has it in front of it. Env-overridable so legal can adjust wording (and add a
 # localised/bilingual version) without a code deploy. Not a substitute for the
@@ -99,7 +105,7 @@ def _stamp(payload: dict, source: str, as_of: str | None, freshness: str,
     response, so the model labels metrics correctly instead of guessing. Use it
     selectively on beginner-facing tools — don't bloat every response."""
     cust = current_customer.get()
-    if cust and cust != "owner":
+    if cust and cust != OWNER_SUBJECT:
         usage_mod.record(cust)
     stamped = {
         "_source": source,
@@ -225,7 +231,7 @@ def my_profile() -> dict:
     Then follow `how_to_adapt`.
     """
     cust = current_customer.get()
-    if not cust or cust == "owner":
+    if not cust:
         return _stamp(
             {"risk_profile": None, "how_to_adapt": _ASK_RISK,
              "options": sorted(customers_mod.VALID_RISK),
@@ -251,7 +257,7 @@ def set_my_risk_profile(profile: str, note: str | None = None) -> dict:
     Call this after the user states or confirms how much risk they want.
     """
     cust = current_customer.get()
-    if not cust or cust == "owner":
+    if not cust:
         return _stamp(
             {"saved": False,
              "reason": "No per-user account on this session; can't persist. "
@@ -330,9 +336,7 @@ def investing_principles() -> dict:
     profile most needs. If a `profile` is present, follow `emphasis_for_profile`.
     """
     cust = current_customer.get()
-    profile = None
-    if cust and cust != "owner":
-        profile = customers_mod.get_risk(cust).get("risk_profile")
+    profile = customers_mod.get_risk(cust).get("risk_profile") if cust else None
     return _stamp(
         {"principles": _PRINCIPLES,
          "profile": profile,
@@ -1743,8 +1747,12 @@ def w_add(ticker_id: str,
 
 @mcp.tool()
 def w_remove(ticker_id: str) -> dict:
-    """Archive a watchlist entry. Idempotent — re-running on an already-
-    archived ticker is a no-op."""
+    """Archive a watchlist entry.
+
+    Idempotent: re-running on an already-archived ticker returns ok:true with
+    `already_archived: true` and changes nothing. ok:false means the ticker was
+    never on the watchlist at all.
+    """
     return db_v2.mutate_watchlist_remove(ticker_id=ticker_id)
 
 
@@ -2463,6 +2471,18 @@ def health():
 async def auth_gate(request: Request, call_next):
     path = request.url.path
     if is_authorized_path(path, MCP_BEARER_TOKEN):
+        # The URL-as-secret MCP path is the owner. It used to leave
+        # current_customer unset, which meant the profile tools saw no identity
+        # at all and set_my_risk_profile could only answer "can't persist" —
+        # inert for the operator, who is the connector's heaviest user. Naming
+        # the subject here gives it the reserved `owner` row (sql/025) to key on.
+        # Metering is unaffected: _stamp skips sub="owner" either way.
+        if path == f"/mcp/{MCP_BEARER_TOKEN}" or path.startswith(f"/mcp/{MCP_BEARER_TOKEN}/"):
+            tok = current_customer.set(OWNER_SUBJECT)
+            try:
+                return await call_next(request)
+            finally:
+                current_customer.reset(tok)
         return await call_next(request)
 
     # Bare /mcp is the OAuth-protected mount that cloud connectors (and so

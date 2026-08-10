@@ -73,13 +73,56 @@ class ResendTests(unittest.TestCase):
         self.assertFalse(delivered)
         mark.assert_not_called()
 
-    def test_duplicate_record_does_not_resend_inline(self):
-        # record_alert returning None means the unique index rejected it.
-        # Inline silence is correct; delivery is flush_undelivered's job.
+    def test_duplicate_already_delivered_stays_silent(self):
+        # record_alert returning None means the unique index rejected it. If the
+        # row it collided with was delivered, silence is the intended de-dup.
+        existing = {"id": 7, "pushed": True, "message": "msg"}
         with mock.patch.object(pipeline.store, "record_alert", return_value=None), \
+             mock.patch.object(pipeline.store, "find_alert", return_value=existing), \
              mock.patch.object(pipeline, "send") as send:
             self.assertFalse(pipeline._emit("stop_exit", "critical", "msg",
                                             ticker_id="2324"))
+        send.assert_not_called()
+
+    def test_duplicate_recorded_but_undelivered_is_sent_now(self):
+        # The live failure (2026-08-10): the Zeabur `cron` service runs the same
+        # chain with TELEGRAM_TOKEN deliberately unset, so it recorded the alert
+        # and could not send it. The GitHub Actions run — the one holding the
+        # token — then hit the de-dup and returned without sending, leaving every
+        # alert pushed:false forever.
+        existing = {"id": 7, "pushed": False, "message": "🚨 出場線"}
+        with mock.patch.object(pipeline.store, "record_alert", return_value=None), \
+             mock.patch.object(pipeline.store, "find_alert", return_value=existing), \
+             mock.patch.object(pipeline, "send", return_value=True) as send, \
+             mock.patch.object(pipeline.store, "mark_pushed") as mark:
+            self.assertTrue(pipeline._emit("stop_exit", "critical", "msg",
+                                           ticker_id="2324"))
+        send.assert_called_once_with("🚨 出場線")
+        mark.assert_called_once_with(7)
+
+    def test_duplicate_retry_that_still_fails_stays_unpushed(self):
+        # A run that also lacks a token must change nothing, so the next one
+        # holding a token can still finish the delivery.
+        existing = {"id": 7, "pushed": False, "message": "msg"}
+        with mock.patch.object(pipeline.store, "record_alert", return_value=None), \
+             mock.patch.object(pipeline.store, "find_alert", return_value=existing), \
+             mock.patch.object(pipeline, "send", return_value=False), \
+             mock.patch.object(pipeline.store, "mark_pushed") as mark:
+            self.assertFalse(pipeline._emit("stop_exit", "critical", "msg",
+                                            ticker_id="2324"))
+        mark.assert_not_called()
+
+    def test_duplicate_lookup_uses_the_explicit_dedup_key(self):
+        # Ticker-less alerts (settlement shortfalls) dedup on their own key; the
+        # retry lookup has to match the same row the unique index matched.
+        with mock.patch.object(pipeline.store, "record_alert", return_value=None), \
+             mock.patch.object(pipeline.store, "find_alert",
+                               return_value=None) as find, \
+             mock.patch.object(pipeline, "send") as send:
+            pipeline._emit("settlement", "warn", "msg",
+                           date_iso="2026-08-10", dedup_key="settle-2026-08-10")
+        find.assert_called_once_with("settlement", "settle-2026-08-10",
+                                     date_iso="2026-08-10")
         send.assert_not_called()
 
 

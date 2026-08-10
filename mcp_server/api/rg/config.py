@@ -47,6 +47,16 @@ MARGIN_WINDOW = 5
 MARGIN_GROWTH_PCT = 3.0
 PTS_MARGIN = 2
 
+#    TWSE publishes 融資融券彙總 AFTER the 16:30 harvest window, so the post-close
+#    run structurally never sees the current session's balance. Requiring an
+#    exact date match therefore scored this subitem blind every single day — the
+#    same blindness the 2026-07 harvest gap caused, but from the read side and
+#    invisible because the data really was in the table (observed 2026-08-10).
+#    Accept a balance this many TRADING SESSIONS old instead. Small on purpose: a
+#    genuinely stalled harvest must still read as missing rather than scoring
+#    June's leverage against a July index.
+MARGIN_MAX_LAG_SESSIONS = 3
+
 # 4. Foreign futures positioning (TAIFEX 臺股期貨 外資及陸資 多空未平倉口數淨額).
 #
 #    Scores the *change*, not the level, which is a deliberate departure from

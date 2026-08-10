@@ -30,6 +30,16 @@ DELTA_FILES = [
     "sql/021_watchlist_grant.sql",
     "sql/022_customers_status_grant.sql",
     "sql/023_customers_risk_profile.sql",
+    "sql/024_read_grants_backfill.sql",
+    "sql/025_owner_profile.sql",
+]
+
+
+# Tables 024 backfills. Read back after applying, so a silently-skipped grant
+# fails the run instead of passing as "applied".
+READ_TABLES = [
+    "lead_lag", "raw_twse_valuation", "raw_twse_index", "market_holidays",
+    "raw_twse_dividend", "raw_finmind_dividend", "raw_finmind_news",
 ]
 
 
@@ -57,7 +67,7 @@ def main() -> int:
     if "neon.tech" in host:
         print("WARNING: this DSN points at Neon (legacy rollback). The live DB is Zeabur.")
     if not args.yes:
-        if input("Apply connector migrations 019–023 here? [y/N] ").strip().lower() != "y":
+        if input("Apply connector migrations 019–025 here? [y/N] ").strip().lower() != "y":
             print("Aborted.")
             return 0
 
@@ -83,6 +93,21 @@ def main() -> int:
             "AND column_name IN ('status','risk_profile','risk_note','secret_hash')"
         ).fetchall()
         print(f"  customers columns present: {sorted(c[0] for c in cols)}")
+
+        # Assert the grants actually LANDED. The bug 024 fixes was a grant that
+        # ran, reported nothing, and silently did nothing (role-guarded, wrong
+        # pass) — so "applied ✓" is worthless here without a privilege read-back.
+        missing = [
+            t for t in READ_TABLES
+            if not conn.execute(
+                "SELECT has_table_privilege('mcp_viewer', %s, 'SELECT')", (t,)
+            ).fetchone()[0]
+        ]
+        if missing:
+            print(f"  ⚠️  mcp_viewer still CANNOT read: {missing}")
+            print("     Those tools will fail with `permission denied`.")
+            return 1
+        print(f"  mcp_viewer SELECT verified on {len(READ_TABLES)} backfilled tables")
     print("\nDelta applied ✓")
     return 0
 
