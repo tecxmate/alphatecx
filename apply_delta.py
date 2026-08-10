@@ -97,9 +97,21 @@ def main() -> int:
         # Assert the grants actually LANDED. The bug 024 fixes was a grant that
         # ran, reported nothing, and silently did nothing (role-guarded, wrong
         # pass) — so "applied ✓" is worthless here without a privilege read-back.
+        #
+        # has_table_privilege RAISES on an unknown role or table rather than
+        # returning false, and 024 skips tables a given database has not created,
+        # so both are checked first — otherwise verifying a partial database
+        # crashes the script instead of reporting on it.
+        if not conn.execute(
+            "SELECT 1 FROM pg_roles WHERE rolname = 'mcp_viewer'"
+        ).fetchone():
+            print("  ⚠️  role mcp_viewer does not exist — 024's grants were all "
+                  "no-ops. Run apply_schema.py --rls first.")
+            return 1
         missing = [
             t for t in READ_TABLES
-            if not conn.execute(
+            if conn.execute("SELECT to_regclass(%s)", (t,)).fetchone()[0]
+            and not conn.execute(
                 "SELECT has_table_privilege('mcp_viewer', %s, 'SELECT')", (t,)
             ).fetchone()[0]
         ]

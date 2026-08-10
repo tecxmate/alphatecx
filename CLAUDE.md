@@ -10,14 +10,14 @@ The wiki under `docs/wiki/` is the project's memory (decisions, stakeholders, to
 
 ## What this is
 
-**alphatecx v2** — Taiwan equity (TWSE/TPEX) supply-chain & flow intelligence. A scheduled Python harvester writes TWSE/MOPS/FinMind data into a self-hosted Zeabur Postgres (was Neon until 2026-07-31); a FastMCP server on Zeabur (was Vercel until 2026-07-31) exposes ~45 read-only MCP tools over pre-computed views; Telegram carries alerts; a Next.js chat app and static dashboards are the human surfaces.
+**alphatecx v2** — Taiwan equity (TWSE/TPEX) supply-chain & flow intelligence. A scheduled Python harvester writes TWSE/MOPS/FinMind data into a self-hosted Zeabur Postgres (was Neon until 2026-07-31); a FastMCP server on Zeabur (was Vercel until 2026-07-31) exposes 48 read-only MCP tools over pre-computed views; Telegram carries alerts; a Next.js chat app and static dashboards are the human surfaces.
 
 `README.md` is the human-facing overview; this file is the agent-facing one.
 
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest -q               # full suite (326 tests, no network/DB needed)
+.venv/bin/python -m pytest -q               # full suite (489 tests, no network/DB needed)
 pytest tests/test_flow_leaders.py::test_x   # single test
 ruff check <changed files>                  # see lint convention below
 
@@ -48,7 +48,7 @@ Local-server gotchas, all verified by hitting `/health`:
 - The MCP endpoint is `/mcp/<token>/` **with the trailing slash** — `/mcp/<token>` 307-redirects and `/mcp/<token>/mcp` is a 404.
 - `index.py` refuses to start without `MCP_BEARER_TOKEN` (an empty token would make the URL-as-secret mount path silently 404 everything).
 
-**Lint convention:** full-repo `ruff check .` fails on pre-existing debt (344 errors). The working gate is focused ruff on files you touched, plus `pytest -q`. Don't open a repo-wide lint cleanup unless asked.
+**Lint convention:** full-repo `ruff check .` fails on pre-existing debt (188 errors, nearly all in `db_v2.py`). The working gate is focused ruff on files you touched, plus `pytest -q`. Don't open a repo-wide lint cleanup unless asked.
 
 `.pre-commit-config.yaml` enforces exactly that gate — `pre-commit` passes the ruff hook only *staged* files, so the debt never blocks you. Run `pre-commit install` once per clone. `ruff-format` is deliberately absent: it would reformat 66 of 84 files, arriving one file at a time and burying real diffs. Enabling it needs a repo-wide format commit first.
 
@@ -81,9 +81,11 @@ except ModuleNotFoundError:      # package import path used by local tests
 
 Deliberate — don't "fix" it into one form.
 
-### MCP server (`mcp_server/api/index.py`, ~2200 lines)
+### MCP server (`mcp_server/api/index.py`, ~2900 lines)
 
 FastMCP instance mounted at `/mcp/{MCP_BEARER_TOKEN}` inside a FastAPI app. Tool prefixes: `sc_` supply chain, `raw_` raw drill-down, `q_` quant, `n_` news, `d_` digests, `w_` watchlist, `u_` universe, `rg_` risk guard. Every tool response goes through `_stamp()` adding `_source` / `_as_of` / `_freshness`; keep that.
+
+**A new tool needs two edits, not one.** Adding `@mcp.tool()` also requires an entry in `sc_capabilities`, which the server `instructions` call "the full technical map" — a tool missing from it is one the model has been told does not exist. It had drifted to 33 of 48 before `tests/test_capabilities.py` started asserting the two match in both directions.
 
 **Auth is URL-as-secret.** `security.py` gates `/mcp`, `/g`, `/d`, `/h`, `/t` on the token path segment; only `/` and `/health` are public. Any SQL identifier interpolation must go through `query_safety.safe_flow_col` — the whitelist is the injection defense.
 

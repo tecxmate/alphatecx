@@ -2,7 +2,7 @@
 
 Taiwan equity (TWSE/TPEX) supply-chain and institutional-flow intelligence.
 
-A scheduled Python harvester pulls TWSE, MOPS, and FinMind data into a self-hosted Zeabur Postgres. A FastMCP server, also on Zeabur, exposes 44 read-only MCP tools over pre-computed materialized views, so a Claude agent queries a warm database instead of rate-limited exchange APIs. Telegram carries alerts; static dashboards and a Next.js chat app are the human surfaces.
+A scheduled Python harvester pulls TWSE, MOPS, and FinMind data into a self-hosted Zeabur Postgres. A FastMCP server, also on Zeabur, exposes 48 read-only MCP tools over pre-computed materialized views, so a Claude agent queries a warm database instead of rate-limited exchange APIs. Telegram carries alerts; static dashboards and a Next.js chat app are the human surfaces.
 
 The investment frame is a 4-pillar Taiwan AI supply chain map (semiconductor, equipment, infrastructure, energy) — see [`docs/wiki/topics/taiwan-ai-supply-chain.md`](docs/wiki/topics/taiwan-ai-supply-chain.md).
 
@@ -27,7 +27,7 @@ The investment frame is a 4-pillar Taiwan AI supply chain map (semiconductor, eq
 
 ```bash
 pip install -r requirements.txt        # harvester deps
-pytest -q                              # 211 tests, no network or DB needed
+pytest -q                              # 489 tests, no network or DB needed
 
 # local MCP server (deps come from mcp_server/requirements.txt)
 cd mcp_server && MCP_BEARER_TOKEN=devtoken uvicorn api.app:app --port 8787

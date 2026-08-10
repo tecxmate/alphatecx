@@ -2238,7 +2238,16 @@ def sc_capabilities() -> dict:
             "infrastructure": "Server ODMs (Quanta, Wistron, Foxconn), Cooling (AVC, Auras), PCB (Unimicron), BMC (Aspeed)",
             "energy": "Power Supply (Delta, Lite-On), Heavy Electrical (Fortune), Green Energy (HDRE)",
         },
+        # Every @mcp.tool() must appear here — the server instructions call this
+        # "the full technical map", so a tool missing from it is a tool the model
+        # is told does not exist. tests/test_capabilities.py enforces the match.
         "tools": [
+            {"name": "start_here", "purpose": "Orientation menu for a new or open-ended question — plain-language asks mapped to the tool that answers each, plus a beginner glossary"},
+            {"name": "sc_capabilities", "purpose": "This map: every tool, what it is for, and the data behind it"},
+            {"name": "my_profile", "purpose": "The current user's saved risk profile (conservative/balanced/aggressive) and how to adapt framing to it"},
+            {"name": "set_my_risk_profile", "purpose": "Persist the user's risk tolerance once they state it (writes to DB)"},
+            {"name": "investing_principles", "purpose": "Durable school-neutral investing principles to ground reasoning, emphasised by the user's risk tier"},
+            {"name": "ticker_lookup", "purpose": "Find a ticker id from a company name or partial code — the usual first step"},
             {"name": "sc_sector_momentum", "purpose": "Sector-level flow aggregation by pillar/node"},
             {"name": "sc_ticker_momentum", "purpose": "Per-ticker flow with buy streak tracking"},
             {"name": "sc_supply_chain_map", "purpose": "Look up ticker → pillar/node/US partner"},
@@ -2258,6 +2267,15 @@ def sc_capabilities() -> dict:
             {"name": "q_screener", "purpose": "Filter signal-covered tickers by AND-combined indicator conditions"},
             {"name": "q_backtest", "purpose": "Backtest a single-threshold signal rule"},
             {"name": "q_backtest_compound", "purpose": "Backtest multi-condition (AND) compound rules; up to 4 conditions"},
+            {"name": "q_valuation", "purpose": "Is a stock cheap or expensive — P/E, P/B and dividend yield per ticker (TWSE BWIBBU)"},
+            {"name": "q_index_history", "purpose": "TAIEX / index close history for market context"},
+            {"name": "q_regime", "purpose": "Market regime classification (trend vs chop, risk-on vs risk-off)"},
+            {"name": "q_quality_score", "purpose": "Composite fundamental quality score for a ticker"},
+            {"name": "q_cointegration_pair", "purpose": "Test two tickers for a mean-reverting (cointegrated) relationship"},
+            {"name": "q_pca_decompose", "purpose": "Principal components of the return matrix — what factor is driving the market"},
+            {"name": "q_factor_screen", "purpose": "Screen by statistical factor exposures (advanced; prefer q_screener for technical setups)"},
+            {"name": "q_factor_alpha", "purpose": "Residual alpha after factor exposures are stripped out"},
+            {"name": "q_lead_lag", "purpose": "Which ticker's move tends to precede another's, and by how many days"},
             {"name": "n_recent", "purpose": "Recent news articles (RSS + Google News); titles + summaries"},
             {"name": "n_for_ticker", "purpose": "Articles mentioning a ticker (text-match fallback until Phase 2b entity extraction)"},
             {"name": "n_source_status", "purpose": "Per-source freshness — verify feeds still updating"},
@@ -2502,11 +2520,11 @@ async def auth_gate(request: Request, call_next):
                     )
                 },
             )
-        sub = claims.get("sub", "owner")
+        sub = claims.get("sub", OWNER_SUBJECT)
         # Per-session gate for customers. This also closes the residual from the
         # refresh fix: a suspended customer is now blocked at the read path, not
         # only at token refresh, so revocation bites within the access-token TTL.
-        if sub != "owner":
+        if sub != OWNER_SUBJECT:
             denial = _customer_gate(sub)
             if denial is not None:
                 return denial
