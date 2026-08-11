@@ -39,6 +39,24 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Telegram token preflight
+        # Same check as daily_harvest.yml, and it matters MORE here: this
+        # workflow's entire output is a Telegram message. A bad token makes the
+        # run green while delivering nothing — the exact shape of the
+        # pushed:false incident (2026-08-10).
+        continue-on-error: true
+        run: |
+          if [ -z "$TELEGRAM_TOKEN" ]; then
+            echo "::warning title=Telegram::TELEGRAM_TOKEN secret is unset — the restatement cannot reach the phone"
+            exit 1
+          fi
+          body=$(curl -s --max-time 10 "https://api.telegram.org/bot${TELEGRAM_TOKEN}/getMe")
+          case "$body" in
+            *'"ok":true'*) echo "Telegram token valid" ;;
+            *) echo "::warning title=Telegram::TELEGRAM_TOKEN is invalid (getMe: ${body:0:120}) — the restatement cannot reach the phone"
+               exit 1 ;;
+          esac
+
       - name: Risk Guard pre-market restatement
         run: python -m riskguard.pipeline --mode pre_market
 

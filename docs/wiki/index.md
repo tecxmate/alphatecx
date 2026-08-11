@@ -53,6 +53,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [alphatecx v1](topics/alphatecx-v1.md) — existing system: APEX TW strategy, TWSE MCP, Telegram alerts
 - [Taiwan AI Supply Chain Map](topics/taiwan-ai-supply-chain.md) — 4-pillar strategic map (Semiconductor, Equipment, Infrastructure, Energy)
 - [System Architecture (v2)](topics/system-architecture.md) — Neon-centered stateful pipeline, schema, MCP security, daily workflow
+- [Database backups & restore runbook](topics/db-backups.md) — nightly pg_dump to Actions artifacts (the self-hosted Zeabur PG has no native backups); why grants deliberately don't restore from the dump; step-by-step restore
 - [Historical Data Backfill](topics/historical-backfill.md) — 90-day backfill strategy, rate limits, storage estimates
 - [Infrastructure accounts](topics/infrastructure-accounts.md) — Neon, Vercel, Telegram: which org/account owns what, console URLs
 - [Supply Chain Audit & Expansion 2026-05-10](topics/supply-chain-audit-2026-05-10.md) — fixed 4 wrong-coded tickers in Gemini's seed; expanded to 50 classified across 21 nodes; added `sc_edges` for explicit supplier→customer links

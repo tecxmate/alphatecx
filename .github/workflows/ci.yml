@@ -1,0 +1,58 @@
+name: CI
+
+# The suite ran only on developer machines until 2026-08-11 — and `main`
+# auto-deploys to the Zeabur `mcp` service on every push, so an untested commit
+# was an untested production deploy. This gates PRs and reports on main.
+#
+# Note the limit: Zeabur deploys regardless of this workflow's outcome. CI can
+# only block a MERGE, and only if branch protection on main requires the
+# `test` check. Turn that on (Settings → Branches → main → require status
+# checks) or this is advisory.
+#
+# Lint follows the repo convention (CLAUDE.md): focused ruff on the files the
+# PR touched, never repo-wide — full-repo ruff fails on ~188 pre-existing
+# errors, nearly all in db_v2.py, and that debt must not block unrelated work.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the lint step can diff against the PR base.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        # Both requirements files: tests import the harvester tree (polars,
+        # feedparser) AND the deployed server tree (mcp, fastapi, psycopg).
+        run: pip install -r requirements.txt -r mcp_server/requirements.txt pytest ruff
+
+      - name: Run test suite
+        # No network, no DB — the suite substitutes both by design.
+        run: python -m pytest -q
+
+      - name: Lint changed files
+        if: github.event_name == 'pull_request'
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          files=$(git diff --name-only --diff-filter=ACMR "$base"...HEAD -- '*.py')
+          if [ -z "$files" ]; then
+            echo "no python files changed"
+          else
+            echo "$files" | xargs ruff check
+          fi

@@ -1,0 +1,90 @@
+name: DB Backup
+
+# Nightly logical backup of the self-hosted Zeabur Postgres — which had NO
+# backup at all: Zeabur's prebuilt Postgres ships none by default, and the Neon
+# "rollback" copy froze at the 2026-07-31 cutover, going staler by one trading
+# day every day. A single volume loss meant losing the harvested history.
+#
+# 18:30 Taipei (10:30 UTC), weekdays — after the 16:30 harvest chain has
+# landed the day's data, so each dump captures the session it belongs to.
+#
+# Storage: GitHub Actions artifacts on this private repo. retention-days: 5
+# balances point-in-time depth against the Actions storage quota (500 MB on
+# the free tier — check Settings → Billing if uploads start failing; the fix
+# is lowering retention or moving to external object storage, not silence).
+#
+# Restore runbook: docs/wiki/topics/db-backups.md. A backup that has never
+# been restored is a hope, not a backup — walk the runbook once.
+
+on:
+  schedule:
+    - cron: '30 10 * * 1-5'   # 18:30 Taipei, Mon–Fri
+  workflow_dispatch:
+
+env:
+  # Same libpq quirk as every other workflow here: the runner hangs on GSS
+  # negotiation. NOTE the `&` — the DATABASE_URL secret must already carry a
+  # query string (it ends ?sslmode=disable) or the suffix corrupts the db name.
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}&gssencmode=disable
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Install PostgreSQL 17 client
+        # pg_dump must be >= the server's major version, and the runner image's
+        # default client can trail it. PGDG always carries current.
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+
+      - name: Dump
+        # --format=custom: compressed, and restorable table-by-table.
+        # --no-owner --no-privileges: the restore target is a fresh instance
+        # whose roles don't exist yet; apply_schema.py --rls recreates
+        # mcp_viewer and every grant afterwards (including the 024 backfill).
+        run: |
+          stamp=$(TZ=Asia/Taipei date +%F)
+          echo "backup_name=alphatecx-${stamp}" >> "$GITHUB_ENV"
+          pg_dump "$DATABASE_URL" \
+            --format=custom --no-owner --no-privileges \
+            --file="alphatecx-${stamp}.dump"
+          ls -lh "alphatecx-${stamp}.dump"
+
+      - name: Verify the dump is readable
+        # pg_restore --list parses the archive TOC; a truncated or corrupt dump
+        # fails here instead of at restore time, when it's too late. Also
+        # asserts the tables that ARE the product survived into the archive.
+        run: |
+          pg_restore --list "${backup_name}.dump" > toc.txt
+          for tbl in raw_twse_t86 raw_twse_ohlcv dim_ticker customers; do
+            grep -q "TABLE DATA public ${tbl}" toc.txt \
+              || { echo "::error::${tbl} missing from dump TOC"; exit 1; }
+          done
+          echo "TOC entries: $(wc -l < toc.txt)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.backup_name }}
+          path: ${{ env.backup_name }}.dump
+          retention-days: 5
+          if-no-files-found: error
+
+      - name: Notify on failure
+        # A backup that fails silently is worse than none — it changes what you
+        # believe. Same alert channel as the harvest.
+        if: failure()
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\": \"${TELEGRAM_CHAT_ID}\", \"text\": \"🔴 alphatecx DB BACKUP FAILED — ${GITHUB_RUN_URL}\"}"

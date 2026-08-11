@@ -141,7 +141,9 @@ Deliberate non-goal, same as Risk Guard: it never emits a buy signal. And it spe
 
 `riskguard_premarket.yml` (08:30 Taipei) restates the risk light. The Risk Guard post-close step inside `daily_harvest.yml` is deliberately **not** `continue-on-error` — a silent failure there is a stop-loss alert that never fired.
 
-One non-obvious workflow requirement, which produces a **hang rather than an error** if dropped: all three workflows append `&gssencmode=disable` to `DATABASE_URL` (runner libpq stalls on GSS negotiation). Note the `&` — **the `DATABASE_URL` secret must carry a query string** or the suffix lands inside the database name. It currently ends `?sslmode=disable`, which is also what Zeabur requires: that server has no TLS at all.
+`ci.yml` runs the pytest suite + changed-files ruff on every PR and main push — but Zeabur deploys `main` regardless of CI, so the gate only bites once branch protection requires the `test` check. `db_backup.yml` (18:30 Taipei) is the nightly pg_dump of the otherwise-unbacked-up Zeabur Postgres — restore runbook in [`docs/wiki/topics/db-backups.md`](docs/wiki/topics/db-backups.md). Both alerting workflows run a `getMe` preflight because a bad `TELEGRAM_TOKEN` is otherwise invisible: `send()` fails soft and the notify-on-failure step depends on the same token.
+
+One non-obvious workflow requirement, which produces a **hang rather than an error** if dropped: every workflow that touches the DB appends `&gssencmode=disable` to `DATABASE_URL` (runner libpq stalls on GSS negotiation). Note the `&` — **the `DATABASE_URL` secret must carry a query string** or the suffix lands inside the database name. It currently ends `?sslmode=disable`, which is also what Zeabur requires: that server has no TLS at all.
 
 The `/etc/hosts` IPv4-pin step was removed at the Zeabur cutover — it existed because the runner's IPv6 path to Neon was dead, and Zeabur's host is already a literal IPv4.
 

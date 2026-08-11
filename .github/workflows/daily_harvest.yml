@@ -56,6 +56,27 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Telegram token preflight
+        # A bad or missing TELEGRAM_TOKEN is otherwise INVISIBLE: send() logs
+        # and returns False, alerts sit at pushed:false, and even the
+        # notify-on-failure step at the bottom of this file depends on the same
+        # token — so the channel that would report the breakage is the broken
+        # channel. getMe is free and answers definitively. continue-on-error:
+        # a Telegram outage must not cost the harvest; the warning annotation
+        # on the run is the deliverable.
+        continue-on-error: true
+        run: |
+          if [ -z "$TELEGRAM_TOKEN" ]; then
+            echo "::warning title=Telegram::TELEGRAM_TOKEN secret is unset — no alert from this repo can send"
+            exit 1
+          fi
+          body=$(curl -s --max-time 10 "https://api.telegram.org/bot${TELEGRAM_TOKEN}/getMe")
+          case "$body" in
+            *'"ok":true'*) echo "Telegram token valid" ;;
+            *) echo "::warning title=Telegram::TELEGRAM_TOKEN is invalid (getMe: ${body:0:120}) — alerts will record but never deliver"
+               exit 1 ;;
+          esac
+
       - name: Run daily harvest
         run: python -m src.harvester.daily
 
