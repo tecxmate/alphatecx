@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import sys
+import time
 from contextvars import ContextVar
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -2480,9 +2481,38 @@ def root():
     return {"name": "alphatecx-v2", "ok": True}
 
 
+# Deep-health cache. /health is PUBLIC (security.py) so the DB-touching variant
+# must not be a free query amplifier — one probe per window, everyone else in
+# that window gets the cached verdict. 10s is fine-grained enough for any
+# monitor and coarse enough that hammering the endpoint costs one query.
+_DEEP_HEALTH_TTL = 10.0
+_deep_health_cache: dict = {"at": 0.0, "db": False}
+
+
 @app.get("/health")
-def health():
-    return {"ok": True, "server": "alphatecx-v2"}
+def health(deep: bool = False):
+    """Liveness by default; `?deep=1` also proves the database answers.
+
+    The split matters: Zeabur's restart-on-unhealthy probe should use the
+    shallow form (restarting the server does not fix a down Postgres and would
+    just flap), while an uptime monitor should use `?deep=1` — before this, the
+    service reported ok while every data tool failed, which is exactly how the
+    permission-denied outage looked from the outside.
+    """
+    if not deep:
+        return {"ok": True, "server": "alphatecx-v2"}
+    now = time.monotonic()
+    if now - _deep_health_cache["at"] > _DEEP_HEALTH_TTL:
+        try:
+            db_v2._fetch("SELECT 1")
+            _deep_health_cache.update(at=now, db=True)
+        except Exception:               # noqa: BLE001 — a probe must not 500
+            log.exception("deep health check failed")
+            _deep_health_cache.update(at=now, db=False)
+    if _deep_health_cache["db"]:
+        return {"ok": True, "server": "alphatecx-v2", "db": True}
+    return JSONResponse(status_code=503,
+                        content={"ok": False, "server": "alphatecx-v2", "db": False})
 
 
 @app.middleware("http")
