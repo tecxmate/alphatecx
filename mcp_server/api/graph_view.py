@@ -25,6 +25,11 @@ import db_v2
 from fastapi import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
+try:
+    from console import inject_nav
+except ModuleNotFoundError:      # package import path used by local tests
+    from .console import inject_nav
+
 _VALID_PILLARS = {"semiconductor", "equipment", "infrastructure", "energy"}
 _TICKER_ID_RE  = re.compile(r"^[0-9A-Za-z]{1,8}$")
 _NODE_RE       = re.compile(r"^[0-9A-Za-z][0-9A-Za-z\- _/]{0,63}$")
@@ -62,22 +67,24 @@ def _invalidate_cache() -> None:
     _CACHE["expires_at"] = 0.0
 
 
-def get_viewer_html() -> HTMLResponse:
+def get_viewer_html(nav: str = "") -> HTMLResponse:
     now = time.time()
     if _CACHE["html"] and now < _CACHE["expires_at"]:
-        return HTMLResponse(content=_CACHE["html"])
+        cached = _CACHE["html"]
+        return HTMLResponse(content=inject_nav(cached, nav) if nav else cached)
     try:
         html = _render_html()
     except Exception as e:
         if _HTML_PATH.exists():
             return HTMLResponse(
-                content=_HTML_PATH.read_text(),
+                content=inject_nav(_HTML_PATH.read_text(), nav) if nav
+                        else _HTML_PATH.read_text(),
                 headers={"x-graph-fallback": f"{type(e).__name__}: {e}"[:200]},
             )
         raise HTTPException(503, f"graph render failed: {type(e).__name__}: {e}") from e
     _CACHE["html"] = html
     _CACHE["expires_at"] = now + _CACHE_TTL_SECONDS
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=inject_nav(html, nav) if nav else html)
 
 
 def get_graph_png() -> Response:
@@ -200,7 +207,7 @@ def _ticker_directory() -> list[dict]:
             ]
 
 
-def get_tickers_html(token: str) -> HTMLResponse:
+def get_tickers_html(token: str, nav: str = "") -> HTMLResponse:
     try:
         directory = _ticker_directory()
     except Exception as e:
@@ -386,14 +393,15 @@ def get_tickers_html(token: str) -> HTMLResponse:
 }})();
 </script>
 </body></html>"""
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=inject_nav(html, nav) if nav else html)
 
 
-def get_dashboard_html() -> HTMLResponse:
+def get_dashboard_html(nav: str = "") -> HTMLResponse:
     if not _DASHBOARD_PATH.exists():
         raise HTTPException(503, "dashboard.html not yet generated; "
                                  "run `python -m src.dashboard.build`")
-    return HTMLResponse(content=_DASHBOARD_PATH.read_text())
+    html = _DASHBOARD_PATH.read_text()
+    return HTMLResponse(content=inject_nav(html, nav) if nav else html)
 
 
 def get_dashboard_css() -> Response:
@@ -409,13 +417,18 @@ def get_dashboard_js() -> Response:
                     media_type="application/javascript")
 
 
+def ticker_page_count() -> int:
+    """How many per-ticker pages the last nightly build produced."""
+    return len(list(_TICKER_DIR.glob("*.html"))) if _TICKER_DIR.exists() else 0
+
+
 def get_ticker_page(ticker: str) -> HTMLResponse:
     if not _TICKER_ID_RE.match(ticker):
         raise HTTPException(404, "invalid ticker")
     path = _TICKER_DIR / f"{ticker}.html"
     if not path.exists():
         raise HTTPException(404, f"no page for {ticker}")
-    return HTMLResponse(content=path.read_text())
+    return HTMLResponse(content=inject_nav(path.read_text(), "tickers"))
 
 
 def classify_ticker(payload: dict) -> JSONResponse:
