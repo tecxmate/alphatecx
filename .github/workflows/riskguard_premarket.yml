@@ -20,6 +20,10 @@ env:
   # ?sslmode=disable) or this suffix lands inside the database name.
   DATABASE_URL: ${{ secrets.DATABASE_URL }}&gssencmode=disable
   TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+  # Kill switch for all outbound Telegram. Set the repository variable
+  # TELEGRAM_ENABLED to false to silence alerts without unsetting the
+  # token — an unset token reads as breakage, an explicit false does not.
+  TELEGRAM_ENABLED: ${{ vars.TELEGRAM_ENABLED || 'true' }}
   TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
 jobs:
@@ -46,6 +50,10 @@ jobs:
         # pushed:false incident (2026-08-10).
         continue-on-error: true
         run: |
+          if [ "${TELEGRAM_ENABLED,,}" = "false" ] || [ "${TELEGRAM_ENABLED}" = "0" ]; then
+            echo "Telegram is switched off (TELEGRAM_ENABLED=$TELEGRAM_ENABLED) — skipping the check."
+            exit 0
+          fi
           if [ -z "$TELEGRAM_TOKEN" ]; then
             echo "::warning title=Telegram::TELEGRAM_TOKEN secret is unset — the restatement cannot reach the phone"
             exit 1

@@ -10,13 +10,27 @@ import logging
 
 import requests
 
-from src.config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, telegram_configured
+from src.config import (
+    TELEGRAM_TOKEN,
+    TELEGRAM_CHAT_ID,
+    telegram_configured,
+    telegram_enabled,
+)
 
 log = logging.getLogger("telegram")
 
 
 def send(message: str) -> bool:
-    """Send a Telegram message. Falls back to stdout if not configured."""
+    """Send a Telegram message. Returns whether it was actually delivered.
+
+    Two non-delivery cases, deliberately logged differently. Switched off is
+    routine and logs at INFO; a missing or malformed token is a system that
+    believes it is alerting and is not, so it stays a WARNING. Collapsing the
+    two is what let a broken token hide for weeks.
+    """
+    if not telegram_enabled():
+        log.info("Telegram disabled (TELEGRAM_ENABLED=false); not sending")
+        return False
     if not telegram_configured():
         log.warning("Telegram not configured, printing instead:\n%s", message)
         print(f"\n[TELEGRAM PREVIEW]\n{message}\n")

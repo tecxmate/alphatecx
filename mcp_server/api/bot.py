@@ -65,6 +65,16 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
 
+# Same kill switch as the harvester side (src/config.telegram_enabled), spelled
+# out again because this module ships in the mcp_server image and cannot import
+# from the repo root — see the deployment split in CLAUDE.md. Set
+# TELEGRAM_ENABLED=false to stop the bot answering commands as well as stopping
+# outbound alerts; leave it unset to keep the command surface working while
+# alerts are silenced elsewhere.
+TELEGRAM_ENABLED = os.environ.get("TELEGRAM_ENABLED", "true").strip().lower() not in (
+    "false", "0", "no", "off",
+)
+
 app = FastAPI(title="alphatecx-v2-bot", version="0.1")
 
 
@@ -84,6 +94,9 @@ def _connect():
 def _send(chat_id: int | str, text: str, parse_mode: str = "HTML") -> None:
     """POST a reply to Telegram. Best-effort — failure here doesn't
     crash the webhook (Telegram would just retry the original update)."""
+    if not TELEGRAM_ENABLED:
+        log.info("Telegram disabled (TELEGRAM_ENABLED=false); not replying")
+        return
     if not TELEGRAM_TOKEN:
         log.error("TELEGRAM_TOKEN not configured; can't reply")
         return
