@@ -48,8 +48,19 @@ ZEABUR_DATABASE_URL='postgres://<owner>@<zeabur-public-host>:<port>/zeabur' \
 ```
 
 It applies `019` customers, `020` usage_monthly, `021` watchlist write-grant, `022`
-customers `UPDATE(status)`, `023` risk_profile — all `IF NOT EXISTS` / role-guarded / idempotent, and
-verifies the tables/columns exist. The `mcp_viewer` role already exists on Zeabur, so the grants land.
+customers `UPDATE(status)`, `023` risk_profile, `024` read-grant backfill, `025` the reserved `owner`
+row — all `IF NOT EXISTS` / role-guarded / idempotent, and verifies the tables/columns exist. The
+`mcp_viewer` role already exists on Zeabur, so the grants land.
+
+> **`024` and `025` are required, not optional (2026-08-10).** Until `024` runs, `q_valuation`,
+> `dividend_calendar`, `beginner_stock_card` and the rest of the valuation/dividend surface fail with
+> `permission denied`, and `session_state` degrades to weekend-only because it cannot read
+> `market_holidays` — the tables are fully populated, only the grant is missing. Until `025` runs,
+> `set_my_risk_profile` answers `saved:false` on owner sessions. The script now **reads the privileges
+> back** and exits non-zero listing any table `mcp_viewer` still cannot SELECT, so a silently-skipped
+> grant fails the run instead of passing as "applied ✓". See
+> [the decision page](../decisions/2026-08-10-live-connector-defects.md) for why the grants went
+> missing.
 
 **Verify** (as `mcp_viewer`):
 ```sql

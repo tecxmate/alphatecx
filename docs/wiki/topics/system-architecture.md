@@ -66,7 +66,7 @@ Absolute volume (e.g., FINI buying 210M shares of Foxconn) shows where the weigh
 
 ## MCP Tools (v2)
 
-The `alphatecx-v2` server exposes **44 tools** (as of 2026-07-31), organised by prefix:
+The `alphatecx-v2` server exposes **48 tools** (as of 2026-08-10), organised by prefix:
 
 | Prefix | Domain |
 |---|---|

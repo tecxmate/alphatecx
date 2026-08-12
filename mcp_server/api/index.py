@@ -74,6 +74,12 @@ log = logging.getLogger("mcp")
 # the request, so a value set before call_next is visible inside the tool.
 current_customer: ContextVar[str | None] = ContextVar("current_customer", default=None)
 
+# The operator's subject. Both owner paths (the shared OAUTH_PASSWORD login and
+# the URL-as-secret mount) resolve to it, and sql/025 reserves a `customers` row
+# under this id so the owner can hold a risk profile like any customer. It is
+# never metered and never billed — see _stamp.
+OWNER_SUBJECT = "owner"
+
 # Compliance line carried on every tool response so the consulting model always
 # has it in front of it. Env-overridable so legal can adjust wording (and add a
 # localised/bilingual version) without a code deploy. Not a substitute for the
@@ -99,7 +105,7 @@ def _stamp(payload: dict, source: str, as_of: str | None, freshness: str,
     response, so the model labels metrics correctly instead of guessing. Use it
     selectively on beginner-facing tools — don't bloat every response."""
     cust = current_customer.get()
-    if cust and cust != "owner":
+    if cust and cust != OWNER_SUBJECT:
         usage_mod.record(cust)
     stamped = {
         "_source": source,
@@ -225,7 +231,7 @@ def my_profile() -> dict:
     Then follow `how_to_adapt`.
     """
     cust = current_customer.get()
-    if not cust or cust == "owner":
+    if not cust:
         return _stamp(
             {"risk_profile": None, "how_to_adapt": _ASK_RISK,
              "options": sorted(customers_mod.VALID_RISK),
@@ -251,7 +257,7 @@ def set_my_risk_profile(profile: str, note: str | None = None) -> dict:
     Call this after the user states or confirms how much risk they want.
     """
     cust = current_customer.get()
-    if not cust or cust == "owner":
+    if not cust:
         return _stamp(
             {"saved": False,
              "reason": "No per-user account on this session; can't persist. "
@@ -330,9 +336,7 @@ def investing_principles() -> dict:
     profile most needs. If a `profile` is present, follow `emphasis_for_profile`.
     """
     cust = current_customer.get()
-    profile = None
-    if cust and cust != "owner":
-        profile = customers_mod.get_risk(cust).get("risk_profile")
+    profile = customers_mod.get_risk(cust).get("risk_profile") if cust else None
     return _stamp(
         {"principles": _PRINCIPLES,
          "profile": profile,
@@ -1743,8 +1747,12 @@ def w_add(ticker_id: str,
 
 @mcp.tool()
 def w_remove(ticker_id: str) -> dict:
-    """Archive a watchlist entry. Idempotent — re-running on an already-
-    archived ticker is a no-op."""
+    """Archive a watchlist entry.
+
+    Idempotent: re-running on an already-archived ticker returns ok:true with
+    `already_archived: true` and changes nothing. ok:false means the ticker was
+    never on the watchlist at all.
+    """
     return db_v2.mutate_watchlist_remove(ticker_id=ticker_id)
 
 
@@ -2230,7 +2238,16 @@ def sc_capabilities() -> dict:
             "infrastructure": "Server ODMs (Quanta, Wistron, Foxconn), Cooling (AVC, Auras), PCB (Unimicron), BMC (Aspeed)",
             "energy": "Power Supply (Delta, Lite-On), Heavy Electrical (Fortune), Green Energy (HDRE)",
         },
+        # Every @mcp.tool() must appear here — the server instructions call this
+        # "the full technical map", so a tool missing from it is a tool the model
+        # is told does not exist. tests/test_capabilities.py enforces the match.
         "tools": [
+            {"name": "start_here", "purpose": "Orientation menu for a new or open-ended question — plain-language asks mapped to the tool that answers each, plus a beginner glossary"},
+            {"name": "sc_capabilities", "purpose": "This map: every tool, what it is for, and the data behind it"},
+            {"name": "my_profile", "purpose": "The current user's saved risk profile (conservative/balanced/aggressive) and how to adapt framing to it"},
+            {"name": "set_my_risk_profile", "purpose": "Persist the user's risk tolerance once they state it (writes to DB)"},
+            {"name": "investing_principles", "purpose": "Durable school-neutral investing principles to ground reasoning, emphasised by the user's risk tier"},
+            {"name": "ticker_lookup", "purpose": "Find a ticker id from a company name or partial code — the usual first step"},
             {"name": "sc_sector_momentum", "purpose": "Sector-level flow aggregation by pillar/node"},
             {"name": "sc_ticker_momentum", "purpose": "Per-ticker flow with buy streak tracking"},
             {"name": "sc_supply_chain_map", "purpose": "Look up ticker → pillar/node/US partner"},
@@ -2250,6 +2267,15 @@ def sc_capabilities() -> dict:
             {"name": "q_screener", "purpose": "Filter signal-covered tickers by AND-combined indicator conditions"},
             {"name": "q_backtest", "purpose": "Backtest a single-threshold signal rule"},
             {"name": "q_backtest_compound", "purpose": "Backtest multi-condition (AND) compound rules; up to 4 conditions"},
+            {"name": "q_valuation", "purpose": "Is a stock cheap or expensive — P/E, P/B and dividend yield per ticker (TWSE BWIBBU)"},
+            {"name": "q_index_history", "purpose": "TAIEX / index close history for market context"},
+            {"name": "q_regime", "purpose": "Market regime classification (trend vs chop, risk-on vs risk-off)"},
+            {"name": "q_quality_score", "purpose": "Composite fundamental quality score for a ticker"},
+            {"name": "q_cointegration_pair", "purpose": "Test two tickers for a mean-reverting (cointegrated) relationship"},
+            {"name": "q_pca_decompose", "purpose": "Principal components of the return matrix — what factor is driving the market"},
+            {"name": "q_factor_screen", "purpose": "Screen by statistical factor exposures (advanced; prefer q_screener for technical setups)"},
+            {"name": "q_factor_alpha", "purpose": "Residual alpha after factor exposures are stripped out"},
+            {"name": "q_lead_lag", "purpose": "Which ticker's move tends to precede another's, and by how many days"},
             {"name": "n_recent", "purpose": "Recent news articles (RSS + Google News); titles + summaries"},
             {"name": "n_for_ticker", "purpose": "Articles mentioning a ticker (text-match fallback until Phase 2b entity extraction)"},
             {"name": "n_source_status", "purpose": "Per-source freshness — verify feeds still updating"},
@@ -2463,6 +2489,18 @@ def health():
 async def auth_gate(request: Request, call_next):
     path = request.url.path
     if is_authorized_path(path, MCP_BEARER_TOKEN):
+        # The URL-as-secret MCP path is the owner. It used to leave
+        # current_customer unset, which meant the profile tools saw no identity
+        # at all and set_my_risk_profile could only answer "can't persist" —
+        # inert for the operator, who is the connector's heaviest user. Naming
+        # the subject here gives it the reserved `owner` row (sql/025) to key on.
+        # Metering is unaffected: _stamp skips sub="owner" either way.
+        if path == f"/mcp/{MCP_BEARER_TOKEN}" or path.startswith(f"/mcp/{MCP_BEARER_TOKEN}/"):
+            tok = current_customer.set(OWNER_SUBJECT)
+            try:
+                return await call_next(request)
+            finally:
+                current_customer.reset(tok)
         return await call_next(request)
 
     # Bare /mcp is the OAuth-protected mount that cloud connectors (and so
@@ -2482,11 +2520,11 @@ async def auth_gate(request: Request, call_next):
                     )
                 },
             )
-        sub = claims.get("sub", "owner")
+        sub = claims.get("sub", OWNER_SUBJECT)
         # Per-session gate for customers. This also closes the residual from the
         # refresh fix: a suspended customer is now blocked at the read path, not
         # only at token refresh, so revocation bites within the access-token TTL.
-        if sub != "owner":
+        if sub != OWNER_SUBJECT:
             denial = _customer_gate(sub)
             if denial is not None:
                 return denial
@@ -2519,10 +2557,19 @@ def _access_claims(header: str) -> dict | None:
 
 def _customer_gate(sub: str):
     """Per-session enforcement for a customer subject. Returns a JSONResponse to
-    deny, or None to allow. Account state is authoritative (402 if not active);
-    the monthly quota is a soft ceiling on top (429 when reached)."""
-    customer = customers_mod.get(sub)
-    if not customer or customer.get("status") != customers_mod.STATUS_ACTIVE:
+    deny, or None to allow. Account state is authoritative (402 if not usable);
+    the monthly quota is a soft ceiling on top (429 when reached).
+
+    A store we cannot reach is 503, NOT 402: `account_inactive` is a claim about
+    the customer's subscription, and answering it on a Postgres blip told paying
+    customers their account had lapsed. 503 is honest and reads as transient to
+    every client's retry logic.
+    """
+    try:
+        customer = customers_mod.get(sub)
+    except customers_mod.LookupUnavailable:
+        return JSONResponse(status_code=503, content={"error": "store_unavailable"})
+    if not customer or customer.get("status") not in customers_mod.USABLE_STATUSES:
         return JSONResponse(status_code=402, content={"error": "account_inactive"})
     quota = customer.get("monthly_quota")
     if quota is not None and usage_mod.calls_this_month(sub) >= quota:
@@ -2609,13 +2656,20 @@ def _subject_still_valid(sub: str) -> bool:
 
     Owner is always valid — its credential is the shared OAUTH_PASSWORD, revoked
     by rotating the env var, not the DB. A customer subject must still exist and
-    be active; fails closed, so an unresolvable subject (deleted, suspended, or
-    a DB blip that makes `get` return None) is refused rather than resurrected.
+    hold a usable status.
+
+    Unlike the read gate, this one still fails closed on an unreachable store: a
+    refresh mints a fresh 90-day credential, so declining to issue one during a
+    blip costs a retry, while issuing one wrongly costs three months. Access
+    tokens outlive a short outage anyway, so live sessions are unaffected.
     """
-    if sub == "owner":
+    if sub == OWNER_SUBJECT:
         return True
-    customer = customers_mod.get(sub)
-    return bool(customer) and customer.get("status") == customers_mod.STATUS_ACTIVE
+    try:
+        customer = customers_mod.get(sub)
+    except customers_mod.LookupUnavailable:
+        return False
+    return bool(customer) and customer.get("status") in customers_mod.USABLE_STATUSES
 
 
 @app.post("/authorize")
@@ -2707,19 +2761,32 @@ def _authorize_html(client_id: str, redirect_uri: str, state: str,
 def _apply_billing(payload: dict) -> int:
     """Resolve the customer from an LS subscription event and set their status.
     Returns the HTTP status to answer. Unit-testable by patching customers_mod:
-    the only I/O is the customer lookup/update."""
+    the only I/O is the customer lookup/update.
+
+    The resolution has to CONFIRM the id, not just read it. `custom_data` is
+    whatever was attached at checkout, so an id that no longer exists (or never
+    did) used to skip the email fallback, update zero rows, and return 500 —
+    which Lemon Squeezy retries forever, while the customer the email would have
+    matched is never activated. An id we cannot confirm is treated as no id.
+    """
     mapping = billing_mod.event_to_status(payload)
     if mapping is None:
         return 200  # not a subscription-status event — ack so LS stops retrying
     customer_id, email, status = mapping
-    if not customer_id and email:
-        customer = customers_mod.get_by_email(email)
-        customer_id = customer["id"] if customer else None
-    if not customer_id:
-        log.warning("billing event for an unknown customer (email=%s)", email)
+    try:
+        customer = customers_mod.get(customer_id) if customer_id else None
+        if customer is None and email:
+            customer = customers_mod.get_by_email(email)
+    except customers_mod.LookupUnavailable:
+        # Transient: 500 so LS retries, unlike the permanent "unknown" case.
+        log.warning("billing event deferred — customer store unreachable")
+        return 500
+    if customer is None:
+        log.warning("billing event for an unknown customer "
+                    "(custom_data id=%s, email=%s)", customer_id, email)
         return 200  # nothing to act on; ack rather than trigger endless retries
     # 500 on a failed write so Lemon Squeezy retries; 200 on a real update.
-    return 200 if customers_mod.set_status(customer_id, status) else 500
+    return 200 if customers_mod.set_status(customer["id"], status) else 500
 
 
 @app.post("/billing/lemonsqueezy")

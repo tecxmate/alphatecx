@@ -112,7 +112,10 @@ def _score_margin(m: dict) -> dict:
     participation; rising leverage in a falling market is un-capitulated retail.
     """
     growth, ret5 = _f(m, "margin_chg_5d_pct"), _f(m, "taiex_ret_5d_pct")
-    inputs = {"margin_chg_5d_pct": growth, "taiex_ret_5d_pct": ret5}
+    inputs = {"margin_chg_5d_pct": growth, "taiex_ret_5d_pct": ret5,
+              # TWSE publishes margin after the harvest window, so this is
+              # normally the previous session — see cfg.MARGIN_MAX_LAG_SESSIONS.
+              "margin_as_of": m.get("margin_as_of")}
     if growth is None or ret5 is None:
         return _subitem(3, "margin", 0, "融資或指數報酬資料缺漏", inputs, missing=True)
     if growth > cfg.MARGIN_GROWTH_PCT and ret5 < 0:

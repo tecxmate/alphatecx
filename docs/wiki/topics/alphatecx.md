@@ -26,7 +26,7 @@ alphatecx is a Taiwan stock market analysis and trading support system focused o
 v2 is live and running daily. This repo is the v2 system, not a plan for one.
 
 - **Ingest** — `.github/workflows/daily_harvest.yml` at 16:30 Taipei, weekdays: T86 flow, foreign holdings, margin, monthly revenue, OHLCV, news, FinMind enrichment → Neon, then matview refresh + quant signal compute.
-- **Serve** — FastMCP on Vercel, 44 tools, mounted at `/mcp/<token>`. `sc_capabilities` is the live catalog.
+- **Serve** — FastMCP on Zeabur, 48 tools, mounted at `/mcp/<token>` (and OAuth-gated at bare `/mcp`). `sc_capabilities` is the live catalog, and a test asserts it lists every registered tool.
 - **Surfaces** — Telegram alerts; static dashboards at `/d/<token>/`; correlation graph at `/g/<token>/`; [web-frontend](web-frontend.md) Next.js chat client; `skills/` for agent-driven research.
 - **Risk** — [risk-guard](risk-guard.md) Phase 1 (market light, stop alerts, settlement check) is built; later phases pending.
 - **In flight** — Postgres migrating Neon → self-hosted Zeabur, cutover not yet done.

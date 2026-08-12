@@ -31,8 +31,24 @@ except ModuleNotFoundError:      # package import path used by local tests
 
 log = logging.getLogger("customers")
 
+
+class LookupUnavailable(RuntimeError):
+    """The customer store could not be reached.
+
+    Distinct from "no such customer", which is a plain None. Conflating the two
+    made a Postgres blip indistinguishable from an unpaid account: the read gate
+    answered 402 `account_inactive`, telling a paying customer their subscription
+    had lapsed. Callers decide which way to fail — the read path reports 503, the
+    token-refresh path still refuses to re-mint.
+    """
+
 STATUS_ACTIVE = "active"
 VALID_STATUSES = frozenset({"active", "suspended", "trial"})
+# Statuses that may actually USE the service. `trial` was in VALID_STATUSES from
+# the start but both gates compared against STATUS_ACTIVE alone, so setting it
+# silently locked the customer out with 402 — a status that reads as valid and
+# behaves as suspended. Every gate now checks this set, not the single value.
+USABLE_STATUSES = frozenset({"active", "trial"})
 VALID_RISK = frozenset({"conservative", "balanced", "aggressive"})
 SECRET_PREFIX = "atx_"          # recognisable in logs/support without revealing the secret
 ID_PREFIX = "cust_"
@@ -90,9 +106,10 @@ def authenticate(secret: str) -> dict | None:
     is checked before this in the authorize handler and needs no DB, so owner
     access survives a customers-table outage.
 
-    A non-active (suspended/trial-expired) customer is refused a fresh login
-    here. Revocation of an *already-issued* token still lags by up to the token
-    TTL — that gap closes in Layer 1, where the session gate re-checks status.
+    A customer whose status is not usable (suspended, or a lapsed trial) is
+    refused a fresh login here. Revocation of an *already-issued* token still
+    lags by up to the token TTL — that gap closes in Layer 1, where the session
+    gate re-checks status.
     """
     if not secret:
         return None
@@ -101,25 +118,36 @@ def authenticate(secret: str) -> dict | None:
     except Exception:               # noqa: BLE001 — auth path must not 500
         log.exception("customer authenticate lookup failed")
         return None
-    if row is None or row.get("status") != STATUS_ACTIVE:
+    if row is None or row.get("status") not in USABLE_STATUSES:
         return None
     return row
 
 
 def get(customer_id: str) -> dict | None:
-    """Fetch a customer by id (no status filter). Read-only."""
+    """Fetch a customer by id (no status filter). Read-only.
+
+    Returns None ONLY when no such customer exists. A store that cannot be
+    reached raises LookupUnavailable instead — see that class for why the two
+    must not collapse into the same answer.
+    """
     if not customer_id:
         return None
     try:
         return _row_by_id(customer_id)
-    except Exception:               # noqa: BLE001
-        log.exception("customer get failed")
-        return None
+    except Exception as exc:        # noqa: BLE001
+        log.exception("customer get failed for %s", customer_id)
+        raise LookupUnavailable(customer_id) from exc
 
 
 def get_by_email(email: str) -> dict | None:
     """Fetch a customer by email — the billing webhook's fallback match when a
-    checkout carried no custom_data customer_id. Read-only."""
+    checkout carried no custom_data customer_id. Read-only.
+
+    Raises LookupUnavailable on an unreachable store, for the same reason `get`
+    does: swallowing it here would turn a blip into "unknown customer", and the
+    webhook acks unknown customers with 200 — silently dropping a subscription
+    event that Lemon Squeezy would otherwise have retried.
+    """
     if not email:
         return None
     try:
@@ -128,9 +156,9 @@ def get_by_email(email: str) -> dict | None:
             "FROM customers WHERE email = %s LIMIT 1",
             (email,),
         )
-    except Exception:               # noqa: BLE001
+    except Exception as exc:        # noqa: BLE001
         log.exception("customer get_by_email failed")
-        return None
+        raise LookupUnavailable(email) from exc
     return rows[0] if rows else None
 
 

@@ -59,8 +59,18 @@ class InvestingPrinciplesTests(unittest.TestCase):
             self.assertIn("from", p)  # attributed, not raw text
 
     def test_no_profile_gives_no_emphasis(self):
-        index.current_customer.set("owner")
+        index.current_customer.set(None)
         self.assertIsNone(index.investing_principles()["emphasis_for_profile"])
+
+    def test_owner_profile_selects_emphasis_too(self):
+        # The owner is a profile holder like any customer (sql/025), not a
+        # session the personalization layer skips.
+        index.current_customer.set(index.OWNER_SUBJECT)
+        with patch.object(index.customers_mod, "get_risk",
+                          return_value={"risk_profile": "conservative"}):
+            out = index.investing_principles()
+        self.assertEqual(out["profile"], "conservative")
+        self.assertIsNotNone(out["emphasis_for_profile"])
 
     def test_profile_selects_emphasis(self):
         index.current_customer.set("cust_1")
@@ -118,9 +128,21 @@ class RiskProfileToolTests(unittest.TestCase):
         self.assertIsNone(out["risk_profile"])
         self.assertIn("ask", out["how_to_adapt"].lower())
 
-    def test_owner_session_has_no_stored_profile(self):
-        index.current_customer.set("owner")
-        self.assertIsNone(index.my_profile()["risk_profile"])
+    def test_owner_session_reads_its_stored_profile(self):
+        # Regression: the owner used to be special-cased into "no per-user
+        # account", which made the whole ask → save → tailor loop inert for the
+        # connector's heaviest user (observed live 2026-08-10).
+        index.current_customer.set(index.OWNER_SUBJECT)
+        with patch.object(index.customers_mod, "get_risk",
+                          return_value={"risk_profile": "conservative", "risk_note": None}):
+            out = index.my_profile()
+        self.assertEqual(out["risk_profile"], "conservative")
+
+    def test_a_session_with_no_identity_at_all_still_says_so(self):
+        index.current_customer.set(None)
+        out = index.my_profile()
+        self.assertIsNone(out["risk_profile"])
+        self.assertIn("no per-user account", out["note"].lower())
 
     def test_set_valid_profile_persists(self):
         index.current_customer.set("cust_1")
@@ -134,9 +156,19 @@ class RiskProfileToolTests(unittest.TestCase):
         out = index.set_my_risk_profile("yolo")
         self.assertFalse(out["saved"])
 
-    def test_set_on_owner_session_does_not_persist(self):
-        index.current_customer.set("owner")
-        self.assertFalse(index.set_my_risk_profile("conservative")["saved"])
+    def test_set_on_owner_session_persists(self):
+        index.current_customer.set(index.OWNER_SUBJECT)
+        with patch.object(index.customers_mod, "set_risk_profile",
+                          return_value=True) as ss:
+            out = index.set_my_risk_profile("conservative")
+        ss.assert_called_once_with(index.OWNER_SUBJECT, "conservative", None)
+        self.assertTrue(out["saved"])
+
+    def test_set_without_any_identity_cannot_persist(self):
+        index.current_customer.set(None)
+        out = index.set_my_risk_profile("conservative")
+        self.assertFalse(out["saved"])
+        self.assertIn("can't persist", out["reason"])
 
 
 if __name__ == "__main__":

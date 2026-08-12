@@ -16,6 +16,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [Claude Agent](stakeholders/claude-agent.md) — Claude Code agent, database operations & implementation (agent)
 
 ## Decisions
+- [2026-08-10 — Six live-tested connector defects](decisions/2026-08-10-live-connector-defects.md) — enumerated-grant trap (003 vs later migrations) killed valuation/dividend/calendar reads; owner had no identity to hang a risk profile on; token-less cron swallowed every alert via the de-dup; margin freshness rule was unsatisfiable; `w_remove` not idempotent
 - [2026-08-09 — Risk-profile personalization](decisions/2026-08-09-risk-profile-personalization.md) — per-user risk tier (conservative/balanced/aggressive) stored on the customer; set at onboarding via `set_my_risk_profile` / `--risk`; AI reads `my_profile` and adapts framing
 - [2026-08-09 — Connector teaching UX](decisions/2026-08-09-connector-teaching-ux.md) — keep ~44 tools (context is fine on 1M); teaching lives in server `instructions` (persona) + tool descriptions + a `start_here` tool, not fewer tools
 - [2026-08-08 — Commercialization direction](decisions/2026-08-08-commercialization-direction.md) — *(proposed)* sell to funded, finance-averse investors who consult Claude; Phase 1 = Stripe-gated remote MCP connector (Apollo/WordPress model, ~80% built), Phase 2 = headless web app embedding Claude for guardrails, mobile deferred; open gate = investment-advice licensing (needs a lawyer)

@@ -1228,8 +1228,15 @@ def mutate_watchlist_add(
 
 
 def mutate_watchlist_remove(ticker_id: str) -> dict:
-    """Archive a watchlist entry (status='archived'). Idempotent: re-runs
-    on already-archived rows are a no-op."""
+    """Archive a watchlist entry (status='archived'). Idempotent: re-running on
+    an already-archived ticker reports success and changes nothing.
+
+    The UPDATE matching no row means one of two different things, and conflating
+    them broke the idempotency this docstring promises: a second w_remove used to
+    answer ok:false, so a caller checking `ok` read a completed archive as a
+    failed one. Distinguish them — already archived is the no-op success,
+    never-on-the-watchlist is the real error.
+    """
     with pool().connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -1239,12 +1246,23 @@ def mutate_watchlist_remove(ticker_id: str) -> dict:
                 (ticker_id,),
             )
             row = cur.fetchone()
+            if row is None:
+                cur.execute(
+                    "SELECT company_name FROM watchlist WHERE ticker_id = %s",
+                    (ticker_id,),
+                )
+                existing = cur.fetchone()
+            else:
+                existing = None
             conn.commit()
-    if not row:
-        return {"ok": False, "ticker_id": ticker_id,
-                "error": "not on active watchlist"}
-    return {"ok": True, "ticker_id": ticker_id, "company": row[0],
-            "status": "archived"}
+    if row:
+        return {"ok": True, "ticker_id": ticker_id, "company": row[0],
+                "status": "archived"}
+    if existing:
+        return {"ok": True, "ticker_id": ticker_id, "company": existing[0],
+                "status": "archived", "already_archived": True}
+    return {"ok": False, "ticker_id": ticker_id,
+            "error": "not on watchlist"}
 
 
 def query_watchlist(status: str = "active") -> list[dict]:

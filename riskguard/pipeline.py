@@ -52,10 +52,28 @@ def _emit(kind: str, severity: str, message: str, *, ticker_id=None,
                                   payload=payload, date_iso=date_iso,
                                   dedup_key=dedup_key)
     if alert_id is None:
-        # Already recorded today. Silence here is the intended de-dup — but only
-        # if it actually reached the phone. An unpushed duplicate is a delivery
-        # that failed earlier, and `flush_undelivered` will retry it.
-        log.info("alert %s/%s already recorded today — not resending", kind, ticker_id)
+        # Already recorded today. Silence is the intended de-dup ONLY if the
+        # earlier run actually delivered it. It often had not: the Zeabur `cron`
+        # service runs this same chain with TELEGRAM_TOKEN deliberately unset (so
+        # a double run cannot double-buzz), so `send` returns False and the row
+        # lands unpushed — and then the GitHub Actions run, the one that DOES
+        # hold the token, hit this branch and returned without ever sending.
+        # Every alert stayed pushed:false, and flush_undelivered only sweeps
+        # severity='critical', so anything softer was lost outright.
+        # Observed live 2026-08-10. Whoever gets here holding a working token
+        # finishes the delivery; a run without one still changes nothing.
+        existing = store.find_alert(kind, dedup_key or ticker_id or "",
+                                    date_iso=date_iso)
+        if existing and not existing["pushed"] and existing.get("message"):
+            if send(existing["message"]):
+                store.mark_pushed(existing["id"])
+                log.info("alert %s/%s was recorded undelivered — sent now",
+                         kind, ticker_id)
+                return True
+            log.warning("alert %s/%s still undelivered after retry", kind, ticker_id)
+            return False
+        log.info("alert %s/%s already recorded and delivered — not resending",
+                 kind, ticker_id)
         return False
     if send(message):
         store.mark_pushed(alert_id)

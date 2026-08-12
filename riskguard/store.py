@@ -83,6 +83,24 @@ def _pct_change(newest: float | None, older: float | None) -> float | None:
     return round((newest / older - 1) * 100, 3)
 
 
+def _session_lag(series: list[dict], target: str | None, as_of: str) -> int | None:
+    """How many trading sessions `target` sits behind `as_of`, or None if that
+    cannot be established.
+
+    Counted off the TAIEX session list rather than the calendar so a weekend or a
+    Lunar New Year break is not mistaken for a stalled feed. None (not 0) when
+    the answer is unknowable — an empty series, or a date the session list does
+    not contain — so callers fail closed rather than treating unmeasurable data
+    as fresh.
+    """
+    if not target:
+        return None
+    dates = [r["date"] for r in series if r["date"] <= as_of]   # newest first
+    if not dates or target not in dates:
+        return None
+    return dates.index(target)
+
+
 def _fut_change(series: dict | None, as_of: str, window: int) -> tuple:
     """(net OI on `as_of`, change vs `window` sessions earlier).
 
@@ -142,16 +160,25 @@ def build_metrics(as_of: str, breadth_today: dict | None,
     ]
     adv_ratio_5d = round(sum(ratios) / len(ratios), 4) if ratios else None
 
-    # Margin only counts if it is actually *this* session's. `margin_totals`
-    # returns the latest rows on or before `as_of`, so a stalled harvest would
-    # otherwise hand June's balance to a July session and score it as current —
-    # silently, since a stale number looks exactly like a fresh one.
+    # Margin must be recent, but demanding *this* session's was too strict to
+    # ever be satisfied: TWSE publishes 融資融券 after the 16:30 harvest, so at
+    # post-close the newest stored balance is always at least one session behind
+    # and subitem 3 scored data_missing every day. `margin_totals` returns the
+    # latest rows on or before `as_of`, so the risk the old check was guarding
+    # against is real — a stalled harvest handing June's balance to a July
+    # session, silently, because a stale number looks exactly like a fresh one.
+    # Bound the staleness instead of forbidding it.
     margins = margin_totals(as_of)
-    fresh = bool(margins) and margins[0]["date"] == as_of
+    margin_as_of = margins[0]["date"] if margins else None
+    lag = _session_lag(series, margin_as_of, as_of)
+    fresh = lag is not None and lag <= cfg.MARGIN_MAX_LAG_SESSIONS
     margin_balance = margins[0]["margin_balance"] if fresh else None
     margin_chg = (_pct_change(margins[0]["margin_balance"],
                               margins[cfg.MARGIN_WINDOW]["margin_balance"])
                   if fresh and len(margins) > cfg.MARGIN_WINDOW else None)
+    if margin_as_of and not fresh:
+        log.warning("margin balance %s is too stale for session %s (lag=%s) — "
+                    "subitem 3 will score data_missing", margin_as_of, as_of, lag)
 
     return {
         "date": as_of,
@@ -165,6 +192,10 @@ def build_metrics(as_of: str, breadth_today: dict | None,
         "adv_ratio_5d": adv_ratio_5d,
         "margin_balance": margin_balance,
         "margin_chg_5d_pct": margin_chg,
+        # Which session the balance is actually from. Surfaced in the subitem's
+        # inputs so "融資資料缺漏" can be told apart from "融資 is a day behind,
+        # which is normal" without going back to the database.
+        "margin_as_of": margin_as_of if fresh else None,
         "fut_foreign_net_oi": fut_level,
         "fut_net_oi_chg_5d": fut_chg,
         "_closes": closes,          # for light.build_index_context
@@ -249,6 +280,26 @@ def record_alert(kind: str, severity: str, message: str,
         )
         row = c.fetchone()
     return row[0] if row else None
+
+
+def find_alert(kind: str, dedup_key: str, date_iso: str | None = None) -> dict | None:
+    """The existing alert row for a (date, kind, dedup_key), or None.
+
+    Exists so `_emit` can tell the two meanings of a rejected INSERT apart: an
+    alert already recorded AND delivered (stay quiet) versus one recorded by a
+    run that could not deliver it (send it now). Mirrors record_alert's date
+    default so the lookup lands on the same row the unique index matched.
+    """
+    with cur() as c:
+        c.execute(
+            "SELECT id, pushed, message FROM rg_alerts "
+            " WHERE date = COALESCE(%s::date, (now() AT TIME ZONE 'Asia/Taipei')::date) "
+            "   AND kind = %s AND dedup_key = %s "
+            " ORDER BY id DESC LIMIT 1",
+            (date_iso, kind, dedup_key),
+        )
+        row = c.fetchone()
+    return {"id": row[0], "pushed": row[1], "message": row[2]} if row else None
 
 
 def mark_pushed(alert_id: int) -> None:
