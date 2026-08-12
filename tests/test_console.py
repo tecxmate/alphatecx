@@ -78,21 +78,10 @@ class InjectNavTests(unittest.TestCase):
 
 @unittest.skipIf(console is None, "server deps not installed")
 class ConsolePageTests(unittest.TestCase):
-    def test_overview_survives_an_unreachable_database(self):
-        # A console that 500s when Postgres blinks is worse than one that says so.
-        with patch.object(console_pages.db_v2, "query_data_status",
-                          side_effect=RuntimeError("down")):
-            html = console_pages.overview_html(12)
-        self.assertIn("unreachable", html)
-        self.assertIn("atx-nav", html)          # still navigable
-
-    def test_overview_reports_pipeline_state(self):
-        rows = [{"table_name": "raw_twse_t86", "row_count": 1200, "latest_date": "2026-08-11"}]
-        with patch.object(console_pages.db_v2, "query_data_status", return_value=rows):
-            html = console_pages.overview_html(7)
-        self.assertIn("raw_twse_t86", html)
-        self.assertIn("2026-08-11", html)
-        self.assertIn("1,200", html)
+    # Overview and market page behaviour moved to tests/test_console_pages.py,
+    # which fixtures the REAL return shapes. The tests that lived here mocked
+    # query_data_status as a list of rows; it returns a single dict, so they
+    # passed while /d/<token>/ raised AttributeError on every production request.
 
     def test_system_map_groups_the_live_registry(self):
         # Built from the registry, so it cannot drift the way a hand-kept list

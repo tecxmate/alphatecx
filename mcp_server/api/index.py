@@ -2912,6 +2912,14 @@ def console_overview(token: str):
     return HTMLResponse(console_pages.overview_html(graph_view.ticker_page_count()))
 
 
+@app.get("/d/{token}/market")
+def console_market(token: str):
+    """Today's risk light with every check, threshold and input explained."""
+    if not token_matches(token, MCP_BEARER_TOKEN):
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return HTMLResponse(console_pages.market_html())
+
+
 @app.get("/d/{token}/system")
 def console_system(token: str):
     """How the pipeline works, generated from the live tool registry."""
