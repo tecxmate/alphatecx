@@ -10,7 +10,6 @@ correctly), one source of truth for the IA, and a retrofit that degrades to
 import os
 import unittest
 from importlib.util import find_spec
-from unittest.mock import patch
 
 os.environ.setdefault("OAUTH_SIGNING_KEY", "test-signing-key-not-a-real-secret")
 os.environ.setdefault("OAUTH_PASSWORD", "test-password")
