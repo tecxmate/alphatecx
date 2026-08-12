@@ -54,12 +54,14 @@ from rg import stops as rg_stops
 
 try:
     import billing as billing_mod
+    import console_pages
     import customers as customers_mod
     import oauth as oauth_mod
     import usage as usage_mod
     from security import is_authorized_path, token_matches
 except ModuleNotFoundError:  # package import path used by local tests
     from . import billing as billing_mod
+    from . import console_pages
     from . import customers as customers_mod
     from . import oauth as oauth_mod
     from . import usage as usage_mod
@@ -2890,18 +2892,62 @@ async def ticker_folders(token: str, request: Request):
     return graph_view.update_ticker_folders(payload)
 
 
+# ── Console ────────────────────────────────────────────────────────────────
+#
+# Every web surface now hangs off /d/<token>/ behind one navigation frame. They
+# used to be five unrelated documents at three prefixes (/d/, /g/, /t/) with no
+# links between them, so using any of them meant already knowing its URL. The
+# old prefixes still resolve — bookmarks and the Telegram bot's links keep
+# working — but nothing new should be added there.
+#
+# Nav links are relative, which is what lets a static file generated hours
+# earlier by the harvester (which never sees the bearer token) link correctly
+# once served under this prefix.
+
 @app.get("/d/{token}/")
-def dashboard(token: str):
+def console_overview(token: str):
+    """Console home: pipeline health plus every surface, the page that was missing."""
     if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
-    return graph_view.get_dashboard_html()
+    return HTMLResponse(console_pages.overview_html(graph_view.ticker_page_count()))
+
+
+@app.get("/d/{token}/system")
+def console_system(token: str):
+    """How the pipeline works, generated from the live tool registry."""
+    if not token_matches(token, MCP_BEARER_TOKEN):
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    names = [t.name for t in mcp._tool_manager.list_tools()]
+    return HTMLResponse(console_pages.system_map_html(names))
+
+
+@app.get("/d/{token}/flow")
+def console_flow(token: str):
+    if not token_matches(token, MCP_BEARER_TOKEN):
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_dashboard_html(nav="flow")
+
+
+@app.get("/d/{token}/graph")
+def console_graph(token: str):
+    if not token_matches(token, MCP_BEARER_TOKEN):
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_viewer_html(nav="graph")
+
+
+@app.get("/d/{token}/tickers")
+def console_tickers(token: str):
+    if not token_matches(token, MCP_BEARER_TOKEN):
+        return JSONResponse(status_code=404, content={"error": "not_found"})
+    return graph_view.get_tickers_html(token, nav="tickers")
 
 
 @app.get("/d/{token}/home")
 def dashboard_home(token: str):
+    """Superseded by the console overview at /d/<token>/. Kept for old links."""
     if not token_matches(token, MCP_BEARER_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
-    return graph_view.get_home_html(token)
+    return RedirectResponse(f"/d/{token}/", status_code=307)
 
 
 @app.get("/d/{token}/dashboard.css")
