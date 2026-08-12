@@ -28,6 +28,7 @@ from html import escape
 # (key, relative href, label, one-line purpose shown on the console home)
 NAV: list[tuple[str, str, str, str]] = [
     ("home",    "./",         "Overview",   "Pipeline health and where everything lives"),
+    ("market",  "./market",   "Market",     "Today's risk light, with every check explained"),
     ("flow",    "./flow",     "Flow",       "Watchlist, theses, discovery and lead-lag"),
     ("graph",   "./graph",    "Graph",      "3D correlation map of the classified universe"),
     ("tickers", "./tickers",  "Tickers",    "Every pre-rendered per-ticker detail page"),
