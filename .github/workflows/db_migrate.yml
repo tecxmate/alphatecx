@@ -1,0 +1,78 @@
+name: DB Migrate (manual)
+
+# Applies the additive connector migrations (019-025) to the production Zeabur
+# Postgres, on demand.
+#
+# Why this exists rather than "just run apply_delta.py locally": the migration
+# needs an owner credential for a database that is only reachable over the public
+# internet, so running it by hand means a production password travelling to
+# whichever laptop or agent session is doing the work. This repository has
+# already leaked one database credential that way (a Neon owner DSN echoed to a
+# terminal on 2026-08-09). Actions runners can already reach that endpoint --
+# every harvester writes to it daily -- and already hold the credential as a
+# secret, so the safe move is to run the migration where the credential already
+# lives and never hand it out again.
+#
+# Manual trigger only, with a typed confirmation, because it writes to
+# production. Every statement in 019-025 is CREATE ... IF NOT EXISTS or a
+# role-guarded GRANT, so re-running is a no-op rather than a hazard -- but an
+# accidental run should still be hard.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "apply" to confirm writing to the production database'
+        required: true
+        default: ''
+
+env:
+  # Same libpq quirk as every other workflow here: the runner hangs on GSS
+  # negotiation. NOTE the `&` -- the DATABASE_URL secret must already carry a
+  # query string (it ends ?sslmode=disable) or this lands inside the db name.
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}&gssencmode=disable
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check the confirmation
+        if: inputs.confirm != 'apply'
+        run: |
+          echo "::error::Refusing to run. Re-dispatch with confirm set to exactly: apply"
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install the database client libraries
+        # Only what apply_delta.py imports -- no need for the full harvester tree.
+        run: pip install "psycopg[binary]>=3.1" python-dotenv
+
+      - name: Apply migrations 019-025
+        # --yes skips the interactive prompt (there is no TTY here); the typed
+        # confirmation above is the gate instead. The script prints only the
+        # target HOST, never the credential, and reads the granted privileges
+        # back afterwards -- exiting non-zero if mcp_viewer still cannot SELECT
+        # the tables 024 is supposed to have fixed. A grant that runs, reports
+        # nothing and does nothing is the exact bug this migration repairs, so
+        # "applied" without that read-back would be worthless.
+        run: python apply_delta.py --yes
+
+      - name: What to check now
+        if: success()
+        run: |
+          echo "### Migration applied ✅" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Verify against the live connector:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`q_valuation\` on 2330 should return P/E and P/B, not \`permission denied\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`session_state\` should no longer report \`weekend_only\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`set_my_risk_profile\` should answer \`saved: true\` and persist" >> "$GITHUB_STEP_SUMMARY"
+          echo "- the console overview at \`/d/<token>/\` should render" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "The margin subitem needs one post-close run before it scores." >> "$GITHUB_STEP_SUMMARY"
