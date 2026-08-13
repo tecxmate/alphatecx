@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import re
 import time
-from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, InvalidOperation
-from typing import Any, Optional
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal, InvalidOperation
+from typing import Any
 
 import requests
 
@@ -96,7 +96,7 @@ def limit_down(reference_price: Decimal) -> Decimal:
 
 # ── Parsing ────────────────────────────────────────────────────────────────
 
-def _dec(v: Any) -> Optional[Decimal]:
+def _dec(v: Any) -> Decimal | None:
     """Parse an exchange numeric cell. '--', '', 'X' and None → None."""
     if v is None:
         return None
@@ -109,7 +109,7 @@ def _dec(v: Any) -> Optional[Decimal]:
         return None
 
 
-def _price(v: Any) -> Optional[Decimal]:
+def _price(v: Any) -> Decimal | None:
     """Parse a quoted bid/ask price, normalising 'no quote' to None.
 
     The two exchanges spell an exhausted book side differently: TWSE prints
@@ -123,7 +123,7 @@ def _price(v: Any) -> Optional[Decimal]:
 _TAG = re.compile(r"<[^>]+>")
 
 
-def _sign(v: Any) -> Optional[int]:
+def _sign(v: Any) -> int | None:
     """Read the 漲跌(+/-) column.
 
     TWSE wraps the glyph in styled HTML for colour (`<p style= color:red>+</p>`),
@@ -148,7 +148,7 @@ def _is_equity(code: str) -> bool:
     return len(code) == 4 and code.isdigit()
 
 
-def _get_json(url: str, params: dict) -> tuple[Optional[dict], Optional[str]]:
+def _get_json(url: str, params: dict) -> tuple[dict | None, str | None]:
     """GET with retries. TPEX intermittently truncates chunked responses."""
     last = ""
     for attempt in range(_RETRIES):
@@ -170,18 +170,18 @@ def _build_row(
     ticker_id: str,
     name: str,
     market: str,
-    close: Optional[Decimal],
-    change: Optional[Decimal],
-    open_: Optional[Decimal],
-    high: Optional[Decimal],
-    low: Optional[Decimal],
-    volume_shares: Optional[Decimal],
-    turnover_twd: Optional[Decimal],
-    bid_price: Optional[Decimal],
-    bid_lots: Optional[Decimal],
-    ask_price: Optional[Decimal],
-    ask_lots: Optional[Decimal],
-) -> Optional[dict]:
+    close: Decimal | None,
+    change: Decimal | None,
+    open_: Decimal | None,
+    high: Decimal | None,
+    low: Decimal | None,
+    volume_shares: Decimal | None,
+    turnover_twd: Decimal | None,
+    bid_price: Decimal | None,
+    bid_lots: Decimal | None,
+    ask_price: Decimal | None,
+    ask_lots: Decimal | None,
+) -> dict | None:
     if close is None or change is None:
         return None
     reference = close - change
@@ -199,7 +199,7 @@ def _build_row(
     # Locked = at the limit with a one-sided book at the close, i.e. the
     # 漲停鎖住 state. `_price` has already collapsed each exchange's
     # "no quote" spelling to None, so the exhausted side reads as absent.
-    locked: Optional[bool] = None
+    locked: bool | None = None
     if at_up:
         locked = ask_price is None and bid_price is not None and bid_price >= lu
     elif at_down:
@@ -233,7 +233,7 @@ def _build_row(
     }
 
 
-def fetch_twse_board(date_compact: str) -> tuple[list[dict], Optional[str]]:
+def fetch_twse_board(date_compact: str) -> tuple[list[dict], str | None]:
     """Every TWSE equity for `date_compact` (YYYYMMDD)."""
     j, err = _get_json(
         TWSE_MI_INDEX,
@@ -294,7 +294,7 @@ def fetch_twse_board(date_compact: str) -> tuple[list[dict], Optional[str]]:
     return rows, None
 
 
-def fetch_tpex_board(date_slashed: str) -> tuple[list[dict], Optional[str]]:
+def fetch_tpex_board(date_slashed: str) -> tuple[list[dict], str | None]:
     """Every TPEX mainboard equity for `date_slashed` (YYYY/MM/DD).
 
     TPEX gives us nothing to check: `stat` is 'ok' for a real session, for a

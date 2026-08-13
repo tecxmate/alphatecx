@@ -17,7 +17,7 @@ import logging
 
 import polars as pl
 
-from src.harvester.loader import cur, atomic
+from src.harvester.loader import atomic, cur
 from src.quant import indicators as ind
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")

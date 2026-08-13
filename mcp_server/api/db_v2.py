@@ -6,7 +6,6 @@ Uses psycopg3 connection pool (same as alphatecx v1).
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from psycopg_pool import ConnectionPool
 
@@ -64,7 +63,7 @@ def _serialize(rows: list[dict]) -> list[dict]:
 # ── Sector Momentum ────────────────────────────────────────────────────────
 
 def query_sector_momentum(
-    pillar: Optional[str] = None,
+    pillar: str | None = None,
     order_col: str = "foreign_5d",
     limit: int = 10,
 ) -> list[dict]:
@@ -99,9 +98,9 @@ def query_sector_momentum(
 # ── Ticker Momentum ────────────────────────────────────────────────────────
 
 def query_ticker_momentum(
-    pillar: Optional[str] = None,
-    node: Optional[str] = None,
-    ticker_id: Optional[str] = None,
+    pillar: str | None = None,
+    node: str | None = None,
+    ticker_id: str | None = None,
     order_col: str = "foreign_5d",
     limit: int = 15,
     min_streak: int = 0,
@@ -256,7 +255,7 @@ def query_limit_board_enrichment(ticker_ids: list[str], as_of: str) -> dict[str,
 def query_flow_leaders(
     as_of: str,
     window_days: int = 20,
-    markets: Optional[list[str]] = None,
+    markets: list[str] | None = None,
 ) -> list[dict]:
     """Market-wide per-ticker aggregation for `flow_leaders_scan`.
 
@@ -410,7 +409,7 @@ def query_flow_leaders(
     return _serialize(_fetch(sql, params))
 
 
-def latest_flow_date() -> Optional[str]:
+def latest_flow_date() -> str | None:
     """Most recent date with institutional-flow rows (the flow ETL's high-water
     mark). `flow_leaders_scan` defaults its as-of to this so a scan always
     reflects the freshest harvested session, not a half-loaded 'today'."""
@@ -453,7 +452,7 @@ def ticker_markets(ticker_ids: list[str]) -> dict[str, str]:
     return {r["ticker_id"]: r["market"] for r in rows}
 
 
-def market_closure(date_iso: str) -> Optional[dict]:
+def market_closure(date_iso: str) -> dict | None:
     """Return the closure record for `date_iso` (YYYY-MM-DD) if the market is
     shut that day per the calendar, else None. Weekends are handled by the
     caller in code; this covers statutory holidays and manual typhoon inserts."""
@@ -466,14 +465,14 @@ def market_closure(date_iso: str) -> Optional[dict]:
 
 
 def query_market_flow_screener(
-    market: Optional[str] = None,
+    market: str | None = None,
     classification: str = "all",
-    search: Optional[str] = None,
+    search: str | None = None,
     min_streak: int = 0,
-    foreign_1d_above: Optional[int] = None,
-    foreign_5d_above: Optional[int] = None,
-    foreign_20d_above: Optional[int] = None,
-    total_5d_above: Optional[int] = None,
+    foreign_1d_above: int | None = None,
+    foreign_5d_above: int | None = None,
+    foreign_20d_above: int | None = None,
+    total_5d_above: int | None = None,
     sort_by: str = "foreign_5d",
     sort_direction: str = "desc",
     limit: int = 50,
@@ -556,9 +555,9 @@ def query_market_flow_screener(
 # ── Supply Chain Map ───────────────────────────────────────────────────────
 
 def query_supply_chain(
-    pillar: Optional[str] = None,
-    node: Optional[str] = None,
-    search: Optional[str] = None,
+    pillar: str | None = None,
+    node: str | None = None,
+    search: str | None = None,
 ) -> list[dict]:
     conditions = ["ai_pillar IS NOT NULL"]
     params: list = []
@@ -810,16 +809,16 @@ def query_beginner_stock_card(ticker_id: str) -> dict:
 
 
 def query_screener(
-    rsi_below: Optional[float] = None,
-    rsi_above: Optional[float] = None,
-    macd_hist_above: Optional[float] = None,
-    above_sma_200: Optional[bool] = None,
-    rs_above: Optional[float] = None,
-    rs_below: Optional[float] = None,
-    foreign_z_above: Optional[float] = None,
-    foreign_z_below: Optional[float] = None,
-    pct_below_52w_high_above: Optional[float] = None,
-    pct_below_52w_high_below: Optional[float] = None,
+    rsi_below: float | None = None,
+    rsi_above: float | None = None,
+    macd_hist_above: float | None = None,
+    above_sma_200: bool | None = None,
+    rs_above: float | None = None,
+    rs_below: float | None = None,
+    foreign_z_above: float | None = None,
+    foreign_z_below: float | None = None,
+    pct_below_52w_high_above: float | None = None,
+    pct_below_52w_high_below: float | None = None,
     universe: str = "classified",
 ) -> list[dict]:
     """Screen latest signals across classified or all signal-covered tickers.
@@ -1056,8 +1055,8 @@ def query_backtest_compound(
 
 def query_news_recent(
     days: int = 1,
-    source: Optional[str] = None,
-    lang: Optional[str] = None,
+    source: str | None = None,
+    lang: str | None = None,
     limit: int = 50,
 ) -> list[dict]:
     """Recent articles. Sorted by published_at, falling back to fetched_at
@@ -1190,8 +1189,8 @@ def query_universe(filter: str = "all") -> list[dict]:
 
 def mutate_watchlist_add(
     ticker_id: str,
-    reason: Optional[str] = None,
-    escalation_trigger: Optional[str] = None,
+    reason: str | None = None,
+    escalation_trigger: str | None = None,
 ) -> dict:
     """Add a ticker to the watchlist (or reactivate an archived one).
     Validates the ticker exists in dim_supply_chain — same rule the bot
@@ -1288,7 +1287,7 @@ def query_watchlist(status: str = "active") -> list[dict]:
 
 # ── Digests (Phase 3 — cron-generated briefs) ─────────────────────────────
 
-def query_digest_recent(days: int = 3, kind: Optional[str] = None) -> list[dict]:
+def query_digest_recent(days: int = 3, kind: str | None = None) -> list[dict]:
     """Recent digests written by cron briefs. Each row is one (date, kind)."""
     conditions = ["digest_date >= current_date - (%s || ' days')::interval"]
     params: list = [str(days)]
@@ -1308,7 +1307,7 @@ def query_digest_recent(days: int = 3, kind: Optional[str] = None) -> list[dict]
     return _serialize(_fetch(sql, tuple(params)))
 
 
-def query_digest_for_date(digest_date: str, kind: Optional[str] = None) -> list[dict]:
+def query_digest_for_date(digest_date: str, kind: str | None = None) -> list[dict]:
     """All digests for a specific date (YYYY-MM-DD), optionally filtered by kind."""
     conditions = ["digest_date = %s"]
     params: list = [digest_date]
@@ -1329,11 +1328,11 @@ def query_digest_for_date(digest_date: str, kind: Optional[str] = None) -> list[
 # ── Data Status ────────────────────────────────────────────────────────────
 
 def query_valuation(
-    ticker_id: Optional[str] = None,
-    pillar: Optional[str] = None,
-    max_pe: Optional[float] = None,
-    max_pb: Optional[float] = None,
-    min_yield: Optional[float] = None,
+    ticker_id: str | None = None,
+    pillar: str | None = None,
+    max_pe: float | None = None,
+    max_pb: float | None = None,
+    min_yield: float | None = None,
     top_n: int = 30,
 ) -> list[dict]:
     """Latest P/E, P/B, dividend yield from raw_twse_valuation joined with
@@ -1371,7 +1370,7 @@ def query_valuation(
 
 
 def query_index_history(
-    index_name: Optional[str] = None,
+    index_name: str | None = None,
     days: int = 30,
 ) -> list[dict]:
     """Recent close + change for a given sector / cross-market index, or
@@ -1394,8 +1393,8 @@ def query_index_history(
 
 
 def query_lead_lag(
-    upstream: Optional[str] = None,
-    downstream: Optional[str] = None,
+    upstream: str | None = None,
+    downstream: str | None = None,
     min_corr: float = 0.4,
     min_gain: float = 0.0,
     top_n: int = 20,

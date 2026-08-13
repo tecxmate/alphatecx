@@ -20,7 +20,7 @@ from __future__ import annotations
 import os
 import time
 from decimal import Decimal, InvalidOperation
-from typing import Any, Optional
+from typing import Any
 
 import limit_board
 import requests
@@ -31,12 +31,12 @@ _CALL_SLEEP = 0.15         # gentle spacing; Fugle 429s on plan-limit breach
 _MAX_SYMBOLS = 40          # per-symbol calls — keep the watchlist bounded
 
 
-def api_key() -> Optional[str]:
+def api_key() -> str | None:
     key = os.getenv("FUGLE_API_KEY")
     return key.strip() if key and key.strip() else None
 
 
-def _num(v: Any) -> Optional[float]:
+def _num(v: Any) -> float | None:
     if v is None:
         return None
     try:
@@ -46,7 +46,7 @@ def _num(v: Any) -> Optional[float]:
     return f
 
 
-def _best(levels: Any) -> tuple[Optional[float], Optional[int]]:
+def _best(levels: Any) -> tuple[float | None, int | None]:
     """Best (price, size) from Fugle's bids/asks list of {price,size}."""
     if not levels:
         return None, None
@@ -54,7 +54,7 @@ def _best(levels: Any) -> tuple[Optional[float], Optional[int]]:
     return _num(top.get("price")), (int(top["size"]) if top.get("size") is not None else None)
 
 
-def _limits(reference: Optional[float]) -> tuple[Optional[float], Optional[float]]:
+def _limits(reference: float | None) -> tuple[float | None, float | None]:
     """Compute tick-rounded limit-up/down from the reference price, reusing the
     scan_limit_board table. None when the reference is missing/invalid."""
     if reference is None or reference <= 0:
@@ -108,7 +108,7 @@ def parse_quote(j: dict) -> dict:
     }
 
 
-def _epoch_us_to_iso(us: Any) -> Optional[str]:
+def _epoch_us_to_iso(us: Any) -> str | None:
     """Fugle timestamps are epoch microseconds; render as Taipei ISO."""
     if us is None:
         return None

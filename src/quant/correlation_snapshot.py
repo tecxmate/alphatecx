@@ -25,8 +25,8 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
-from dotenv import load_dotenv
 import psycopg
+from dotenv import load_dotenv
 
 load_dotenv()
 DATABASE_URL = os.environ["DATABASE_URL"]

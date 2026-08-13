@@ -20,7 +20,7 @@ import logging
 import re
 import time
 from datetime import date, timedelta
-from typing import Any, Optional
+from typing import Any
 
 import requests
 
@@ -39,7 +39,7 @@ GOVERNANCE_KEYWORDS = (
 
 
 # ── pure helpers ────────────────────────────────────────────────────────────
-def _to_float(v: Any) -> Optional[float]:
+def _to_float(v: Any) -> float | None:
     if v in (None, "", "--"):
         return None
     try:
@@ -48,7 +48,7 @@ def _to_float(v: Any) -> Optional[float]:
         return None
 
 
-def _date_or_none(v: Any) -> Optional[str]:
+def _date_or_none(v: Any) -> str | None:
     """FinMind dates are 'YYYY-MM-DD' (news is 'YYYY-MM-DD HH:MM:SS'). Take the
     date part; return None for blanks/zeros."""
     if not v:
@@ -57,7 +57,7 @@ def _date_or_none(v: Any) -> Optional[str]:
     return s if re.match(r"^\d{4}-\d{2}-\d{2}$", s) else None
 
 
-def _greg_year(v: Any) -> Optional[int]:
+def _greg_year(v: Any) -> int | None:
     """Normalize FinMind's dividend `year` ('114年', '114', '2025') to Gregorian.
     ROC years (< 1911) get +1911."""
     if v is None:
@@ -141,7 +141,7 @@ def parse_news(raw: list[dict], ticker_id: str) -> list[dict]:
 
 def fill_probability(
     result_rows: list[dict], as_of: str, years: int = 5
-) -> tuple[Optional[float], int, Optional[str]]:
+) -> tuple[float | None, int, str | None]:
     """填息 (dividend gap-refill) probability over the trailing `years`.
 
     A dividend "fills" when the post-ex price recovers to the pre-ex close, i.e.
@@ -156,7 +156,7 @@ def fill_probability(
     cutoff = asof_d - timedelta(days=365 * years)
     filled = 0
     total = 0
-    last_ex: Optional[str] = None
+    last_ex: str | None = None
     for r in result_rows:
         ex = r.get("ex_date")
         try:
@@ -198,7 +198,7 @@ def token_configured() -> bool:
     return bool(FINMIND_TOKEN)
 
 
-def _get(dataset: str, data_id: str, start_date: str) -> Optional[list[dict]]:
+def _get(dataset: str, data_id: str, start_date: str) -> list[dict] | None:
     """One FinMind v4 data call. Returns the data list, [] on a level/permission
     block (400), or None on a rate-limit (402) or transport error so the caller
     can distinguish 'no data' from 'stop hammering'."""

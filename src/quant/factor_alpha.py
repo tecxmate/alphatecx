@@ -27,7 +27,6 @@ import argparse
 import logging
 import os
 from datetime import date, timedelta
-from typing import Optional
 
 import numpy as np
 import psycopg
@@ -303,9 +302,9 @@ def compute_factor_alpha(ticker_id: str, days: int = 120) -> dict:
 # ── Cross-sectional version ────────────────────────────────────────────────
 
 def compute_factor_screen(
-    pillar: Optional[str] = None,
-    node: Optional[str] = None,
-    tickers: Optional[list[str]] = None,
+    pillar: str | None = None,
+    node: str | None = None,
+    tickers: list[str] | None = None,
     days: int = 90,
     min_obs: int = 30,
     sort_by: str = "alpha_tstat",

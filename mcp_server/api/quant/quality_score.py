@@ -28,7 +28,6 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-from typing import Optional
 
 import psycopg
 from dotenv import load_dotenv
@@ -174,9 +173,9 @@ def compute_quality_score(ticker_id: str, conn=None) -> dict:
 
 
 def compute_quality_screen(
-    pillar: Optional[str] = None,
-    node: Optional[str] = None,
-    tickers: Optional[list[str]] = None,
+    pillar: str | None = None,
+    node: str | None = None,
+    tickers: list[str] | None = None,
     sort_by: str = "quality_score",
     top_n: int = 30,
 ) -> list[dict]:

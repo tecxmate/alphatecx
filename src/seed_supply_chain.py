@@ -18,6 +18,7 @@ classification only.
 from __future__ import annotations
 
 import logging
+
 from src.harvester.loader import cur, log_ingestion
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")

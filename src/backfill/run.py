@@ -22,7 +22,7 @@ import time
 from datetime import date
 
 from src.config import TWSE_BACKFILL_DAYS, TWSE_REQUEST_DELAY
-from src.harvester import twse, transform, loader
+from src.harvester import loader, transform, twse
 
 logging.basicConfig(
     level=logging.INFO,

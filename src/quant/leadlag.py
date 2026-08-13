@@ -24,7 +24,6 @@ import argparse
 import logging
 import os
 from datetime import date, timedelta
-from typing import Optional
 
 import numpy as np
 import polars as pl
@@ -92,7 +91,7 @@ def _pearson(a: np.ndarray, b: np.ndarray) -> float:
 
 def compute_leadlag_pairs(
     rets: np.ndarray, tickers: list[str], max_lag: int = 7,
-    upstream_filter: Optional[set[str]] = None,
+    upstream_filter: set[str] | None = None,
 ) -> list[tuple[str, str, int, float, int]]:
     """Yields (upstream_id, downstream_id, lag, correlation, n_obs) tuples.
 
