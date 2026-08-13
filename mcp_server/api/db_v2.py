@@ -1345,15 +1345,20 @@ def query_valuation(
     where = ["v.date = (SELECT MAX(date) FROM raw_twse_valuation)"]
     params: list = []
     if ticker_id:
-        where.append("v.ticker_id = %s"); params.append(ticker_id)
+        where.append("v.ticker_id = %s")
+        params.append(ticker_id)
     if pillar:
-        where.append("dt.ai_pillar = %s"); params.append(pillar)
+        where.append("dt.ai_pillar = %s")
+        params.append(pillar)
     if max_pe is not None:
-        where.append("v.pe_ratio IS NOT NULL AND v.pe_ratio <= %s"); params.append(max_pe)
+        where.append("v.pe_ratio IS NOT NULL AND v.pe_ratio <= %s")
+        params.append(max_pe)
     if max_pb is not None:
-        where.append("v.pb_ratio IS NOT NULL AND v.pb_ratio <= %s"); params.append(max_pb)
+        where.append("v.pb_ratio IS NOT NULL AND v.pb_ratio <= %s")
+        params.append(max_pb)
     if min_yield is not None:
-        where.append("v.dividend_yield >= %s"); params.append(min_yield)
+        where.append("v.dividend_yield >= %s")
+        params.append(min_yield)
     params.append(int(top_n))
 
     sql = f"""

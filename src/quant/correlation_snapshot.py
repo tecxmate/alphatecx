@@ -215,9 +215,11 @@ def build_snapshot(window_days: int = 120) -> dict:
     corr_edges = []
     idx = {t: i for i, t in enumerate(tickers)}
     for a in classified:
-        if a not in idx: continue
+        if a not in idx:
+            continue
         for b in classified:
-            if b <= a or b not in idx: continue
+            if b <= a or b not in idx:
+                continue
             c = corr[idx[a], idx[b]]
             if c >= 0.7:
                 corr_edges.append({"from": a, "to": b, "rho": round(float(c), 3)})
@@ -266,7 +268,8 @@ def _discovery_candidates(corr, tickers, nodes, idx):
         # Correlation to every classified ticker
         sims = []
         for cid in classified_ids:
-            if cid not in idx: continue
+            if cid not in idx:
+                continue
             sims.append((cid, float(corr[i, idx[cid]])))
         sims.sort(key=lambda x: x[1], reverse=True)
         top5 = sims[:5]
@@ -330,7 +333,8 @@ def build_plotly_html(snap: dict) -> str:
     by_id = {n["id"]: n for n in nodes}
     for e in snap["edges"]:
         a, b = by_id.get(e["from"]), by_id.get(e["to"])
-        if not a or not b: continue
+        if not a or not b:
+            continue
         sc_x += [a["x"], b["x"], None]
         sc_y += [a["y"], b["y"], None]
         sc_z += [a["z"], b["z"], None]
@@ -345,7 +349,8 @@ def build_plotly_html(snap: dict) -> str:
     cc_x, cc_y, cc_z = [], [], []
     for e in snap["corr_edges"]:
         a, b = by_id.get(e["from"]), by_id.get(e["to"])
-        if not a or not b: continue
+        if not a or not b:
+            continue
         cc_x += [a["x"], b["x"], None]
         cc_y += [a["y"], b["y"], None]
         cc_z += [a["z"], b["z"], None]
@@ -479,7 +484,8 @@ def _add_cluster_traces(fig, snap, *, row=None, col=None, show_legend=True):
     edge_x, edge_y = [], []
     for e in snap["edges"]:
         a, b = by_id.get(e["from"]), by_id.get(e["to"])
-        if not a or not b: continue
+        if not a or not b:
+            continue
         edge_x += [a["x"], b["x"], None]
         edge_y += [a["y"], b["y"], None]
     if edge_x:
@@ -502,7 +508,8 @@ def _add_cluster_traces(fig, snap, *, row=None, col=None, show_legend=True):
     # Per-pillar
     for pillar in PLOTLY_PILLAR_ORDER:
         ns = [n for n in nodes if n["pillar"] == pillar]
-        if not ns: continue
+        if not ns:
+            continue
         sizes = [max(7, min(18, n["vol"] * 25)) for n in ns]
         fig.add_trace(go.Scatter(
             x=[n["x"] for n in ns], y=[n["y"] for n in ns],
@@ -534,7 +541,8 @@ def _add_xy_panel_traces(fig, snap, *, x_field, y_field, row=None, col=None,
 
     for pillar in PLOTLY_PILLAR_ORDER:
         ns = [n for n in nodes if n["pillar"] == pillar]
-        if not ns: continue
+        if not ns:
+            continue
         sizes = [max(7, min(18, n["vol"] * 25)) for n in ns]
         fig.add_trace(go.Scatter(
             x=[n[x_field] for n in ns], y=[n[y_field] for n in ns],

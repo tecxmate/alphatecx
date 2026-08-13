@@ -115,7 +115,8 @@ def build_flow_factor(conn, days: int, z_window: int = 20):
     # Group by ticker
     series: dict[str, list[tuple]] = {}
     for d, tid, fn, cl in rows:
-        if cl is None: continue
+        if cl is None:
+            continue
         series.setdefault(tid, []).append((d, float(fn), float(cl)))
 
     # Per ticker: rolling z-score of foreign_net, daily log return
@@ -340,8 +341,12 @@ def compute_factor_screen(
         else:
             wh = ["ai_pillar IS NOT NULL"]
             params: list = []
-            if pillar: wh.append("ai_pillar = %s"); params.append(pillar)
-            if node:   wh.append("node = %s");      params.append(node)
+            if pillar:
+                wh.append("ai_pillar = %s")
+                params.append(pillar)
+            if node:
+                wh.append("node = %s")
+                params.append(node)
             c.execute(f"""SELECT ticker_id, company_name, ai_pillar, node
                           FROM dim_ticker WHERE {' AND '.join(wh)}
                           ORDER BY ticker_id""", tuple(params))

@@ -189,8 +189,12 @@ def compute_quality_screen(
         else:
             wh = ["ai_pillar IS NOT NULL"]
             params: list = []
-            if pillar: wh.append("ai_pillar = %s"); params.append(pillar)
-            if node:   wh.append("node = %s");      params.append(node)
+            if pillar:
+                wh.append("ai_pillar = %s")
+                params.append(pillar)
+            if node:
+                wh.append("node = %s")
+                params.append(node)
             c.execute(f"""SELECT ticker_id FROM dim_ticker WHERE {' AND '.join(wh)}
                           ORDER BY ticker_id""", tuple(params))
         targets = [r[0] for r in c.fetchall()]
@@ -213,8 +217,10 @@ def _interpret(composite, subscores, raw):
     # Highlight extremes
     high = [k for k, v in subscores.items() if v is not None and v >= 75]
     low  = [k for k, v in subscores.items() if v is not None and v <= 25]
-    if high: parts.append(f"Strong: {', '.join(high)}.")
-    if low:  parts.append(f"Weak: {', '.join(low)}.")
+    if high:
+        parts.append(f"Strong: {', '.join(high)}.")
+    if low:
+        parts.append(f"Weak: {', '.join(low)}.")
     if raw.get("latest_yoy_pct") and raw["latest_yoy_pct"] > 50:
         parts.append(f"Revenue YoY +{raw['latest_yoy_pct']:.0f}%.")
     if raw.get("pb_percentile_90d") is not None:
