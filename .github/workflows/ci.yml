@@ -46,13 +46,16 @@ jobs:
         # No network, no DB — the suite substitutes both by design.
         run: python -m pytest -q
 
-      - name: Lint changed files
-        if: github.event_name == 'pull_request'
-        run: |
-          base="${{ github.event.pull_request.base.sha }}"
-          files=$(git diff --name-only --diff-filter=ACMR "$base"...HEAD -- '*.py')
-          if [ -z "$files" ]; then
-            echo "no python files changed"
-          else
-            echo "$files" | xargs ruff check
-          fi
+      - name: Lint
+        # Repo-wide, unconditionally. This was scoped to changed files while the
+        # repo carried 185 pre-existing errors; that debt was paid off in the
+        # three commits preceding this one, so the special-casing can go.
+        #
+        # Changed-files linting had a failure mode worth remembering: ruff checks
+        # whole files, so touching any debt-carrying file inherited its debt and
+        # blocked unrelated work. Narrowing further -- to changed LINES -- would
+        # have been worse: ruff has no native support for it, and a diagnostic
+        # your change causes is often reported on a line you did not touch (add
+        # an import, I001 fires on the import block), so real problems would slip
+        # through while other people's showed up in your diff.
+        run: ruff check .
