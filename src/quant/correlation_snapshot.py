@@ -123,7 +123,7 @@ def compute_returns(wide: pl.DataFrame) -> tuple[np.ndarray, list[str]]:
     # Drop tickers with too many NaNs (require >= 80% of days populated)
     valid_frac = (~np.isnan(closes)).sum(axis=0) / closes.shape[0]
     keep_mask = valid_frac >= 0.8
-    tickers = [t for t, k in zip(tickers, keep_mask) if k]
+    tickers = [t for t, k in zip(tickers, keep_mask, strict=True) if k]
     closes = closes[:, keep_mask]
     log.info("After NaN filter: %d tickers", len(tickers))
 

@@ -76,7 +76,7 @@ def compute_for_ticker(ticker_id: str, c) -> int:
     dates = df["date"].to_list()
     rows: list[tuple[str, str, object, float]] = []
     for name, series in series_by_name.items():
-        for d, v in zip(dates, series.to_list()):
+        for d, v in zip(dates, series.to_list(), strict=True):
             if v is None or v != v:  # None / NaN
                 continue
             rows.append((name, ticker_id, d, float(v)))

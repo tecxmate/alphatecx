@@ -45,7 +45,7 @@ def _fetch(sql: str, params: tuple = ()) -> list[dict]:
         with conn.cursor() as cur:
             cur.execute(sql, params)
             cols = [d.name for d in cur.description]
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
+            return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
 
 
 def _serialize(rows: list[dict]) -> list[dict]:

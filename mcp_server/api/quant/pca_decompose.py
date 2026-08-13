@@ -121,8 +121,8 @@ def compute_pca(tickers: list[str], days: int = 120, k: int = 3) -> dict:
 def _hint_for_pc(idx, loading, tickers, ev):
     """Tiny heuristic: PC_1 is almost always the market factor (all loadings
     same sign). PC_2+ usually splits the universe — show the split."""
-    pos = [t for t, l in zip(tickers, loading) if l > 0]
-    neg = [t for t, l in zip(tickers, loading) if l < 0]
+    pos = [t for t, l in zip(tickers, loading, strict=True) if l > 0]
+    neg = [t for t, l in zip(tickers, loading, strict=True) if l < 0]
     if idx == 0 and len(pos) >= 0.8 * len(tickers):
         return "common-factor / market β"
     if idx == 0 and len(neg) >= 0.8 * len(tickers):

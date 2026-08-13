@@ -115,7 +115,7 @@ def compute_for_ticker(ticker_id: str, benchmark_close_by_date: dict, c) -> int:
     }
     dates = df["date"].to_list()
     for name, series in series_by_name.items():
-        for d, v in zip(dates, series.to_list()):
+        for d, v in zip(dates, series.to_list(), strict=True):
             if v is None:
                 continue
             # NaN check via != self trick (works for numeric NaN)

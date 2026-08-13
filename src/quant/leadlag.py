@@ -69,7 +69,7 @@ def _fetch_returns(window_days: int) -> tuple[np.ndarray, list[str]]:
     closes = wide.select(tickers).to_numpy()
     valid_frac = (~np.isnan(closes)).sum(axis=0) / max(1, closes.shape[0])
     keep = valid_frac >= 0.8
-    tickers = [t for t, k in zip(tickers, keep) if k]
+    tickers = [t for t, k in zip(tickers, keep, strict=True) if k]
     closes = closes[:, keep]
     rets = np.diff(np.log(closes), axis=0)
     col_mean = np.nanmean(rets, axis=0)
