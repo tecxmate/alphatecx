@@ -1,5 +1,5 @@
 {
-  "asof": "2026-08-13",
+  "asof": "2026-08-14",
   "window_days": 120,
   "n_tickers": 51,
   "axes": {
@@ -10,115 +10,18 @@
   },
   "nodes": [
     {
-      "id": "2345",
-      "name": "\u667a\u90a6",
-      "pillar": "infrastructure",
-      "node": "network-switches",
-      "x": -0.2370320745215552,
-      "y": 0.4479718356833222,
-      "z": -0.43984962406015193,
-      "vol": 0.7323,
-      "ret_30d": -0.1466,
-      "color": "#ff7a59",
-      "partners": [
-        "AWS",
-        "Meta"
-      ]
-    },
-    {
-      "id": "3583",
-      "name": "\u8f9b\u8018",
+      "id": "2404",
+      "name": "\u6f22\u5510",
       "pillar": "equipment",
-      "node": "equipment-materials",
-      "x": -0.4700813437253877,
-      "y": -0.2468368377172378,
-      "z": -0.6165745856353573,
-      "vol": 0.7884,
-      "ret_30d": -0.2055,
+      "node": "facility-cleanroom",
+      "x": -0.3768862906674311,
+      "y": 0.5046296610846066,
+      "z": -0.5631768953068592,
+      "vol": 0.6477,
+      "ret_30d": -0.1877,
       "color": "#9b6dff",
       "partners": [
-        "KLA",
-        "Lam Research"
-      ]
-    },
-    {
-      "id": "2344",
-      "name": "\u83ef\u90a6\u96fb",
-      "pillar": "semiconductor",
-      "node": "memory-dram",
-      "x": 0.7346964299243736,
-      "y": 0.013843562398116863,
-      "z": -0.2052631578947378,
-      "vol": 1.0389,
-      "ret_30d": -0.0684,
-      "color": "#4f9cff",
-      "partners": [
-        "auto",
-        "AI-PC"
-      ]
-    },
-    {
-      "id": "6223",
-      "name": "\u65fa\u77fd",
-      "pillar": "equipment",
-      "node": "testing-probing",
-      "x": -0.5487188963064927,
-      "y": -0.1268663737198026,
-      "z": -0.08961911874533335,
-      "vol": 0.8189,
-      "ret_30d": -0.0299,
-      "color": "#9b6dff",
-      "partners": [
-        "IDMs"
-      ]
-    },
-    {
-      "id": "2399",
-      "name": "\u6620\u6cf0",
-      "pillar": "infrastructure",
-      "node": "bmc-management",
-      "x": 0.1775706740584215,
-      "y": 0.08083979133274179,
-      "z": -0.3199195171026151,
-      "vol": 0.8262,
-      "ret_30d": -0.1066,
-      "color": "#ff7a59",
-      "partners": [
-        "Dell",
-        "HPE",
-        "Supermicro"
-      ]
-    },
-    {
-      "id": "2337",
-      "name": "\u65fa\u5b8f",
-      "pillar": "semiconductor",
-      "node": "memory-flash",
-      "x": 0.5556709605168478,
-      "y": -0.023363775278831492,
-      "z": -0.14634146341463494,
-      "vol": 0.9564,
-      "ret_30d": -0.0488,
-      "color": "#4f9cff",
-      "partners": [
-        "industrial",
-        "auto"
-      ]
-    },
-    {
-      "id": "6274",
-      "name": "\u53f0\u71ff",
-      "pillar": "infrastructure",
-      "node": "ccl-laminate",
-      "x": -0.06882313601150596,
-      "y": 0.3209485802640103,
-      "z": -0.15976331360946827,
-      "vol": 0.9867,
-      "ret_30d": -0.0533,
-      "color": "#ff7a59",
-      "partners": [
-        "NVIDIA-via-PCB",
-        "Broadcom-via-PCB"
+        "Micron"
       ]
     },
     {
@@ -126,95 +29,126 @@
       "name": "\u667a\u539f",
       "pillar": "semiconductor",
       "node": "asic-custom-ip",
-      "x": -0.25056317588426896,
-      "y": 0.16112405621868217,
-      "z": -0.4952830188679249,
-      "vol": 0.7712,
-      "ret_30d": -0.1651,
+      "x": -0.24702464210628247,
+      "y": -0.16267748103220764,
+      "z": -0.6763392857142851,
+      "vol": 0.7682,
+      "ret_30d": -0.2254,
       "color": "#4f9cff",
       "partners": [
         "Intel"
       ]
     },
     {
-      "id": "3037",
-      "name": "\u6b23\u8208",
+      "id": "3081",
+      "name": "\u806f\u4e9e",
       "pillar": "infrastructure",
-      "node": "high-speed-pcb",
-      "x": -0.13695344766670353,
-      "y": 0.30906534156418314,
-      "z": -0.11538461538461631,
-      "vol": 0.8593,
-      "ret_30d": -0.0385,
+      "node": "optical-cpo",
+      "x": -0.4787330380496814,
+      "y": 0.22469080917103793,
+      "z": 0.9278350515463918,
+      "vol": 0.9958,
+      "ret_30d": 0.3093,
       "color": "#ff7a59",
       "partners": [
-        "Broadcom",
-        "Arista Networks"
+        "Lumentum",
+        "Coherent"
       ]
     },
     {
-      "id": "2454",
-      "name": "\u806f\u767c\u79d1",
-      "pillar": "semiconductor",
-      "node": "ic-design",
-      "x": 0.0779537272703715,
-      "y": 0.4182267783304745,
-      "z": -0.07612456747405205,
-      "vol": 0.835,
-      "ret_30d": -0.0254,
-      "color": "#4f9cff",
-      "partners": [
-        "NVIDIA",
-        "Arm",
-        "Meta"
-      ]
-    },
-    {
-      "id": "2313",
-      "name": "\u83ef\u901a",
+      "id": "2356",
+      "name": "\u82f1\u696d\u9054",
       "pillar": "infrastructure",
-      "node": "high-speed-pcb",
-      "x": -0.2694976705469899,
-      "y": -0.32637567454739597,
-      "z": -0.10909090909091079,
-      "vol": 0.866,
-      "ret_30d": -0.0364,
+      "node": "server-odm",
+      "x": 0.7369203346230252,
+      "y": 0.0693368011077845,
+      "z": 0.12053571428571419,
+      "vol": 0.6585,
+      "ret_30d": 0.0402,
       "color": "#ff7a59",
       "partners": [
         "AWS",
-        "Google",
+        "HPE"
+      ]
+    },
+    {
+      "id": "1519",
+      "name": "\u83ef\u57ce",
+      "pillar": "energy",
+      "node": "heavy-electrical",
+      "x": 0.20149554955876942,
+      "y": -0.023881934196774122,
+      "z": -0.23376623376623185,
+      "vol": 0.4972,
+      "ret_30d": -0.0779,
+      "color": "#22c55e",
+      "partners": [
+        "US Utility Companies",
+        "Tesla"
+      ]
+    },
+    {
+      "id": "2345",
+      "name": "\u667a\u90a6",
+      "pillar": "infrastructure",
+      "node": "network-switches",
+      "x": -0.23855369581079366,
+      "y": -0.4544335874207459,
+      "z": -0.4909090909090891,
+      "vol": 0.7306,
+      "ret_30d": -0.1636,
+      "color": "#ff7a59",
+      "partners": [
+        "AWS",
         "Meta"
       ]
     },
     {
-      "id": "3363",
-      "name": "\u4e0a\u8a6e",
-      "pillar": "infrastructure",
-      "node": "optical-cpo",
-      "x": -0.31728936216109666,
-      "y": -0.43667335566026066,
-      "z": 0.35195530726256896,
-      "vol": 0.9293,
-      "ret_30d": 0.1173,
-      "color": "#ff7a59",
+      "id": "2344",
+      "name": "\u83ef\u90a6\u96fb",
+      "pillar": "semiconductor",
+      "node": "memory-dram",
+      "x": 0.7267477604980936,
+      "y": -0.02078045537664487,
+      "z": 0.0,
+      "vol": 1.0397,
+      "ret_30d": 0.0,
+      "color": "#4f9cff",
       "partners": [
-        "various"
+        "auto",
+        "AI-PC"
       ]
     },
     {
-      "id": "1503",
-      "name": "\u58eb\u96fb",
+      "id": "6155",
+      "name": "\u921e\u5bf6",
+      "pillar": "equipment",
+      "node": "testing-probing",
+      "x": 0.3641923724681167,
+      "y": 0.25776438675760216,
+      "z": -0.7649122807017559,
+      "vol": 0.8366,
+      "ret_30d": -0.255,
+      "color": "#9b6dff",
+      "partners": [
+        "NVIDIA",
+        "AMD"
+      ]
+    },
+    {
+      "id": "2308",
+      "name": "\u53f0\u9054\u96fb",
       "pillar": "energy",
-      "node": "heavy-electrical",
-      "x": 0.34146125723262427,
-      "y": -0.1541943109325284,
-      "z": -0.465408805031446,
-      "vol": 0.5334,
-      "ret_30d": -0.1551,
+      "node": "server-power-supply",
+      "x": 0.04162028056766231,
+      "y": -0.28845490977204213,
+      "z": -0.12944162436548212,
+      "vol": 0.6477,
+      "ret_30d": -0.0431,
       "color": "#22c55e",
       "partners": [
-        "TPC",
-        "US-utilities"
+        "Meta",
+        "AWS"
       ]
     },
     {
@@ -222,11 +156,11 @@
       "name": "\u4fe1\u9a4a",
       "pillar": "infrastructure",
       "node": "bmc-management",
-      "x": -0.06688564647101884,
-      "y": 0.39204503956951525,
-      "z": 0.0603674540682424,
-      "vol": 0.7485,
-      "ret_30d": 0.0201,
+      "x": -0.06313363212913159,
+      "y": -0.4033951920883849,
+      "z": -0.010140845070421456,
+      "vol": 0.7452,
+      "ret_30d": -0.0034,
       "color": "#ff7a59",
       "partners": [
         "Dell",
@@ -237,191 +171,80 @@
       ]
     },
     {
-      "id": "2301",
-      "name": "\u5149\u5bf6\u79d1",
-      "pillar": "energy",
-      "node": "server-power-supply",
-      "x": 0.022107849581002863,
-      "y": 0.22757443086333665,
-      "z": 0.6833712984054683,
-      "vol": 0.7508,
-      "ret_30d": 0.2278,
-      "color": "#22c55e",
-      "partners": [
-        "Global Data Centers"
-      ]
-    },
-    {
-      "id": "2308",
-      "name": "\u53f0\u9054\u96fb",
-      "pillar": "energy",
-      "node": "server-power-supply",
-      "x": 0.034460632390819444,
-      "y": 0.28869627421279487,
-      "z": -0.15829145728643168,
-      "vol": 0.6504,
-      "ret_30d": -0.0528,
-      "color": "#22c55e",
-      "partners": [
-        "Meta",
-        "AWS"
-      ]
-    },
-    {
-      "id": "3443",
-      "name": "\u5275\u610f",
-      "pillar": "semiconductor",
-      "node": "asic-custom-ip",
-      "x": -0.6975739101971049,
-      "y": 0.4066143090115347,
-      "z": 0.29435084241823506,
-      "vol": 0.8915,
-      "ret_30d": 0.0981,
-      "color": "#4f9cff",
-      "partners": [
-        "AWS",
-        "Microsoft"
-      ]
-    },
-    {
       "id": "0050",
       "name": "\u5143\u5927\u53f0\u706350",
       "pillar": null,
       "node": null,
-      "x": 0.23520298089525518,
-      "y": 0.39098970397573013,
-      "z": -0.07270233196159182,
-      "vol": 0.3637,
-      "ret_30d": -0.0242,
+      "x": 0.23768080654192703,
+      "y": -0.38014090122211086,
+      "z": -0.06617647058823639,
+      "vol": 0.3636,
+      "ret_30d": -0.0221,
       "color": "#3a3a3a",
       "partners": []
     },
     {
-      "id": "6669",
-      "name": "\u7def\u7a4e",
+      "id": "3037",
+      "name": "\u6b23\u8208",
+      "pillar": "infrastructure",
+      "node": "high-speed-pcb",
+      "x": -0.13420319704208566,
+      "y": -0.30370694331266124,
+      "z": 0.12563840653728264,
+      "vol": 0.8571,
+      "ret_30d": 0.0419,
+      "color": "#ff7a59",
+      "partners": [
+        "Broadcom",
+        "Arista Networks"
+      ]
+    },
+    {
+      "id": "2337",
+      "name": "\u65fa\u5b8f",
+      "pillar": "semiconductor",
+      "node": "memory-flash",
+      "x": 0.5464689652653172,
+      "y": 0.011289434106034831,
+      "z": -0.17525773195876293,
+      "vol": 0.9557,
+      "ret_30d": -0.0584,
+      "color": "#4f9cff",
+      "partners": [
+        "industrial",
+        "auto"
+      ]
+    },
+    {
+      "id": "1503",
+      "name": "\u58eb\u96fb",
+      "pillar": "energy",
+      "node": "heavy-electrical",
+      "x": 0.34461452274973514,
+      "y": 0.15920589482125952,
+      "z": -0.4978991596638658,
+      "vol": 0.5338,
+      "ret_30d": -0.166,
+      "color": "#22c55e",
+      "partners": [
+        "TPC",
+        "US-utilities"
+      ]
+    },
+    {
+      "id": "3231",
+      "name": "\u7def\u5275",
       "pillar": "infrastructure",
       "node": "server-odm",
-      "x": -0.15233672207749654,
-      "y": 0.049320178030535615,
-      "z": 0.6166832174776589,
-      "vol": 0.6729,
-      "ret_30d": 0.2056,
+      "x": 0.8230593953926068,
+      "y": 0.23023209737026287,
+      "z": 0.6624605678233457,
+      "vol": 0.6089,
+      "ret_30d": 0.2208,
       "color": "#ff7a59",
       "partners": [
         "Meta",
-        "Microsoft"
-      ]
-    },
-    {
-      "id": "1815",
-      "name": "\u5bcc\u55ac",
-      "pillar": "infrastructure",
-      "node": "pcb-materials",
-      "x": -0.025018557284549145,
-      "y": -0.18899860676079874,
-      "z": -0.4067307692307678,
-      "vol": 0.7324,
-      "ret_30d": -0.1356,
-      "color": "#ff7a59",
-      "partners": [
-        "AWS",
-        "Google",
-        "Meta"
-      ]
-    },
-    {
-      "id": "3711",
-      "name": "\u65e5\u6708\u5149\u6295\u63a7",
-      "pillar": "semiconductor",
-      "node": "advanced-packaging",
-      "x": -0.23388769613780677,
-      "y": 0.36569250888503546,
-      "z": -0.3285917496443821,
-      "vol": 0.7639,
-      "ret_30d": -0.1095,
-      "color": "#4f9cff",
-      "partners": [
-        "NVIDIA",
-        "AMD"
-      ]
-    },
-    {
-      "id": "2449",
-      "name": "\u4eac\u5143\u96fb\u5b50",
-      "pillar": "equipment",
-      "node": "testing-probing",
-      "x": -0.09173054735217855,
-      "y": 0.044833435833719126,
-      "z": -0.7024169184290023,
-      "vol": 0.8017,
-      "ret_30d": -0.2341,
-      "color": "#9b6dff",
-      "partners": [
-        "NVIDIA",
-        "AMD",
-        "Intel"
-      ]
-    },
-    {
-      "id": "4958",
-      "name": "\u81fb\u9f0e-KY",
-      "pillar": "infrastructure",
-      "node": "high-speed-pcb",
-      "x": -0.20091469518685584,
-      "y": -0.07957735455910306,
-      "z": -0.624378109452737,
-      "vol": 0.8764,
-      "ret_30d": -0.2081,
-      "color": "#ff7a59",
-      "partners": [
-        "NVIDIA"
-      ]
-    },
-    {
-      "id": "6923",
-      "name": "\u4e2d\u53f0",
-      "pillar": "energy",
-      "node": "green-energy",
-      "x": -0.2561602113482586,
-      "y": -0.9999999984754776,
-      "z": 0.10540540540540233,
-      "vol": 0.3413,
-      "ret_30d": 0.0351,
-      "color": "#22c55e",
-      "partners": [
-        "Google",
-        "Microsoft"
-      ]
-    },
-    {
-      "id": "8046",
-      "name": "\u5357\u96fb",
-      "pillar": "semiconductor",
-      "node": "ic-substrate",
-      "x": -0.23303393835636926,
-      "y": 0.035437247095340914,
-      "z": 0.10212765957446757,
-      "vol": 0.9419,
-      "ret_30d": 0.034,
-      "color": "#4f9cff",
-      "partners": [
-        "Intel",
-        "AMD"
-      ]
-    },
-    {
-      "id": "2408",
-      "name": "\u5357\u4e9e\u79d1",
-      "pillar": "semiconductor",
-      "node": "dram-memory",
-      "x": 0.7442903504028044,
-      "y": 0.010822254952033292,
-      "z": 0.6627078384798122,
-      "vol": 1.1043,
-      "ret_30d": 0.2209,
-      "color": "#4f9cff",
-      "partners": [
-        "Kingston"
+        "Google"
       ]
     },
     {
@@ -429,11 +252,11 @@
       "name": "\u5b89\u745e-KY",
       "pillar": "equipment",
       "node": "facility-cleanroom",
-      "x": -0.22919611928557407,
-      "y": -0.17360225674632046,
-      "z": -0.7806397365611388,
+      "x": -0.2389843344169277,
+      "y": 0.16444664397749084,
+      "z": -0.8001842828680422,
       "vol": 1.0848,
-      "ret_30d": -0.2602,
+      "ret_30d": -0.2667,
       "color": "#9b6dff",
       "partners": [
         "Micron",
@@ -441,164 +264,19 @@
       ]
     },
     {
-      "id": "3665",
-      "name": "\u8cbf\u806f-KY",
-      "pillar": "infrastructure",
-      "node": "connectors-cables",
-      "x": -0.5667219467904944,
-      "y": -0.19741031571268539,
-      "z": 0.2910447761194028,
-      "vol": 0.7896,
-      "ret_30d": 0.097,
-      "color": "#ff7a59",
-      "partners": [
-        "NVIDIA",
-        "Tesla"
-      ]
-    },
-    {
-      "id": "5536",
-      "name": "\u8056\u6689*",
-      "pillar": "equipment",
-      "node": "facility-cleanroom",
-      "x": 0.005044528387779063,
-      "y": -0.3258061757784235,
-      "z": -0.95,
-      "vol": 0.7091,
-      "ret_30d": -0.3261,
-      "color": "#9b6dff",
-      "partners": [
-        "TSMC",
-        "Micron"
-      ]
-    },
-    {
-      "id": "6155",
-      "name": "\u921e\u5bf6",
-      "pillar": "equipment",
-      "node": "testing-probing",
-      "x": 0.338315628491879,
-      "y": -0.24222307918079947,
-      "z": -0.8352272727272738,
-      "vol": 0.8456,
-      "ret_30d": -0.2784,
-      "color": "#9b6dff",
-      "partners": [
-        "NVIDIA",
-        "AMD"
-      ]
-    },
-    {
-      "id": "3661",
-      "name": "\u4e16\u82af-KY",
-      "pillar": "semiconductor",
-      "node": "asic-custom-ip",
-      "x": -0.39493230815733515,
-      "y": 0.500723926305694,
-      "z": -0.1752808988764052,
-      "vol": 0.7682,
-      "ret_30d": -0.0584,
-      "color": "#4f9cff",
-      "partners": [
-        "AWS",
-        "Microsoft",
-        "Intel"
-      ]
-    },
-    {
-      "id": "3576",
-      "name": "\u806f\u5408\u518d\u751f",
+      "id": "6923",
+      "name": "\u4e2d\u53f0",
       "pillar": "energy",
       "node": "green-energy",
-      "x": -0.2204356850986767,
-      "y": -0.7125349584253597,
-      "z": 0.19642857142857006,
-      "vol": 0.7087,
-      "ret_30d": 0.0655,
+      "x": -0.26171561856927694,
+      "y": 0.9999999984630732,
+      "z": 0.06854838709677313,
+      "vol": 0.3414,
+      "ret_30d": 0.0228,
       "color": "#22c55e",
       "partners": [
-        "Google"
-      ]
-    },
-    {
-      "id": "6488",
-      "name": "\u74b0\u7403\u6676",
-      "pillar": "equipment",
-      "node": "equipment-materials",
-      "x": 0.4132971155042658,
-      "y": 0.1645072436460549,
-      "z": -0.21719457013574484,
-      "vol": 1.1242,
-      "ret_30d": -0.0724,
-      "color": "#9b6dff",
-      "partners": [
-        "Texas Instruments"
-      ]
-    },
-    {
-      "id": "3189",
-      "name": "\u666f\u78a9",
-      "pillar": "infrastructure",
-      "node": "high-speed-pcb",
-      "x": 0.06845954333899625,
-      "y": 0.2777243683781381,
-      "z": -0.12499999999999922,
-      "vol": 1.0003,
-      "ret_30d": -0.0417,
-      "color": "#ff7a59",
-      "partners": [
-        "Intel",
-        "AMD"
-      ]
-    },
-    {
-      "id": "2383",
-      "name": "\u53f0\u5149\u96fb",
-      "pillar": "infrastructure",
-      "node": "high-speed-pcb",
-      "x": -0.47649425867829864,
-      "y": 0.32450495986714406,
-      "z": 0.08401084010840032,
-      "vol": 0.7252,
-      "ret_30d": 0.028,
-      "color": "#ff7a59",
-      "partners": [
-        "Broadcom",
-        "NVIDIA"
-      ]
-    },
-    {
-      "id": "2330",
-      "name": "\u53f0\u7a4d\u96fb",
-      "pillar": "semiconductor",
-      "node": "advanced-foundry",
-      "x": 0.1074921856732683,
-      "y": 0.3287534229762259,
-      "z": -0.08383233532934087,
-      "vol": 0.3869,
-      "ret_30d": -0.0279,
-      "color": "#4f9cff",
-      "partners": [
-        "NVIDIA",
-        "AMD",
-        "Apple",
-        "Broadcom"
-      ]
-    },
-    {
-      "id": "3081",
-      "name": "\u806f\u4e9e",
-      "pillar": "infrastructure",
-      "node": "optical-cpo",
-      "x": -0.4758114741988959,
-      "y": -0.2322875001952625,
-      "z": 0.95,
-      "vol": 0.9926,
-      "ret_30d": 0.346,
-      "color": "#ff7a59",
-      "partners": [
-        "Lumentum",
-        "Coherent"
+        "Google",
+        "Microsoft"
       ]
     },
     {
@@ -606,11 +284,11 @@
       "name": "\u795e\u9054",
       "pillar": "infrastructure",
       "node": "server-odm",
-      "x": 0.3035272570204618,
-      "y": -0.005213288709107809,
-      "z": 0.013143483023001501,
-      "vol": 0.3915,
-      "ret_30d": 0.0044,
+      "x": 0.30693083553646233,
+      "y": 0.0039303809186982544,
+      "z": -0.019292604501608523,
+      "vol": 0.3916,
+      "ret_30d": -0.0064,
       "color": "#ff7a59",
       "partners": [
         "Intel",
@@ -620,34 +298,134 @@
       ]
     },
     {
-      "id": "2404",
-      "name": "\u6f22\u5510",
-      "pillar": "equipment",
-      "node": "facility-cleanroom",
-      "x": -0.3736963905839105,
-      "y": -0.49019436604649097,
-      "z": -0.39230769230769325,
-      "vol": 0.6491,
-      "ret_30d": -0.1308,
-      "color": "#9b6dff",
+      "id": "2313",
+      "name": "\u83ef\u901a",
+      "pillar": "infrastructure",
+      "node": "high-speed-pcb",
+      "x": -0.28077199634467226,
+      "y": 0.3314471911003248,
+      "z": -0.1706783369803061,
+      "vol": 0.8666,
+      "ret_30d": -0.0569,
+      "color": "#ff7a59",
       "partners": [
-        "Micron"
+        "AWS",
+        "Google",
+        "Meta"
       ]
     },
     {
-      "id": "3324",
-      "name": "\u96d9\u9d3b",
-      "pillar": "infrastructure",
-      "node": "thermal-cooling",
-      "x": 0.38099192414607974,
-      "y": 0.0680967471133682,
-      "z": 0.07425742574257499,
-      "vol": 0.6877,
-      "ret_30d": 0.0248,
-      "color": "#ff7a59",
+      "id": "8046",
+      "name": "\u5357\u96fb",
+      "pillar": "semiconductor",
+      "node": "ic-substrate",
+      "x": -0.22179102109072216,
+      "y": -0.03423601348044356,
+      "z": 0.4192139737991263,
+      "vol": 0.936,
+      "ret_30d": 0.1397,
+      "color": "#4f9cff",
+      "partners": [
+        "Intel",
+        "AMD"
+      ]
+    },
+    {
+      "id": "6488",
+      "name": "\u74b0\u7403\u6676",
+      "pillar": "equipment",
+      "node": "equipment-materials",
+      "x": 0.42181197049815716,
+      "y": -0.155535347520112,
+      "z": -0.48547717842323745,
+      "vol": 1.123,
+      "ret_30d": -0.1618,
+      "color": "#9b6dff",
+      "partners": [
+        "Texas Instruments"
+      ]
+    },
+    {
+      "id": "2330",
+      "name": "\u53f0\u7a4d\u96fb",
+      "pillar": "semiconductor",
+      "node": "advanced-foundry",
+      "x": 0.10568590928063773,
+      "y": -0.3108916504610038,
+      "z": -0.08519269776876293,
+      "vol": 0.3883,
+      "ret_30d": -0.0284,
+      "color": "#4f9cff",
       "partners": [
         "NVIDIA",
-        "Supermicro"
+        "AMD",
+        "Apple",
+        "Broadcom"
+      ]
+    },
+    {
+      "id": "3583",
+      "name": "\u8f9b\u8018",
+      "pillar": "equipment",
+      "node": "equipment-materials",
+      "x": -0.4837637367328691,
+      "y": 0.23376042604055253,
+      "z": -0.650881057268724,
+      "vol": 0.7886,
+      "ret_30d": -0.217,
+      "color": "#9b6dff",
+      "partners": [
+        "KLA",
+        "Lam Research"
+      ]
+    },
+    {
+      "id": "1815",
+      "name": "\u5bcc\u55ac",
+      "pillar": "infrastructure",
+      "node": "pcb-materials",
+      "x": -0.02476187855846086,
+      "y": 0.18675585484020954,
+      "z": -0.2955665024630525,
+      "vol": 0.7309,
+      "ret_30d": -0.0985,
+      "color": "#ff7a59",
+      "partners": [
+        "AWS",
+        "Google",
+        "Meta"
+      ]
+    },
+    {
+      "id": "2301",
+      "name": "\u5149\u5bf6\u79d1",
+      "pillar": "energy",
+      "node": "server-power-supply",
+      "x": 0.01696310483727629,
+      "y": -0.22728415952662462,
+      "z": 0.6162528216704297,
+      "vol": 0.7513,
+      "ret_30d": 0.2054,
+      "color": "#22c55e",
+      "partners": [
+        "Global Data Centers"
+      ]
+    },
+    {
+      "id": "2449",
+      "name": "\u4eac\u5143\u96fb\u5b50",
+      "pillar": "equipment",
+      "node": "testing-probing",
+      "x": -0.10772277207299095,
+      "y": -0.04859438579492182,
+      "z": -0.8676258992805745,
+      "vol": 0.8017,
+      "ret_30d": -0.2892,
+      "color": "#9b6dff",
+      "partners": [
+        "NVIDIA",
+        "AMD",
+        "Intel"
       ]
     },
     {
@@ -655,11 +433,11 @@
       "name": "\u5bb6\u767b",
       "pillar": "equipment",
       "node": "equipment-materials",
-      "x": -0.5626309074472587,
-      "y": 0.2048346495760102,
-      "z": -0.46236559139785016,
-      "vol": 0.7477,
-      "ret_30d": -0.1541,
+      "x": -0.5602674088971873,
+      "y": -0.21276748865958528,
+      "z": -0.49459459459459487,
+      "vol": 0.7356,
+      "ret_30d": -0.1649,
       "color": "#9b6dff",
       "partners": [
         "ASML",
@@ -667,51 +445,211 @@
       ]
     },
     {
-      "id": "3017",
-      "name": "\u5947\u92d0",
-      "pillar": "infrastructure",
-      "node": "thermal-cooling",
-      "x": -0.06700961155659722,
-      "y": 0.20466351673433852,
-      "z": 0.6641221374045836,
-      "vol": 0.7437,
-      "ret_30d": 0.2214,
-      "color": "#ff7a59",
+      "id": "6223",
+      "name": "\u65fa\u77fd",
+      "pillar": "equipment",
+      "node": "testing-probing",
+      "x": -0.5499005688713157,
+      "y": 0.131780163021081,
+      "z": -0.3370089593383887,
+      "vol": 0.8119,
+      "ret_30d": -0.1123,
+      "color": "#9b6dff",
       "partners": [
-        "NVIDIA",
-        "Dell"
+        "IDMs"
       ]
     },
     {
-      "id": "1519",
-      "name": "\u83ef\u57ce",
-      "pillar": "energy",
-      "node": "heavy-electrical",
-      "x": 0.20386505579640052,
-      "y": 0.020467531995309533,
-      "z": -0.14663143989431815,
-      "vol": 0.4968,
-      "ret_30d": -0.0489,
-      "color": "#22c55e",
+      "id": "2317",
+      "name": "\u9d3b\u6d77",
+      "pillar": "infrastructure",
+      "node": "server-odm",
+      "x": 0.7588582808660339,
+      "y": -0.012439707285370808,
+      "z": 0.2573221757322155,
+      "vol": 0.4705,
+      "ret_30d": 0.0858,
+      "color": "#ff7a59",
       "partners": [
-        "US Utility Companies",
+        "Apple",
+        "NVIDIA",
+        "AWS"
+      ]
+    },
+    {
+      "id": "2399",
+      "name": "\u6620\u6cf0",
+      "pillar": "infrastructure",
+      "node": "bmc-management",
+      "x": 0.15043912264825873,
+      "y": -0.11647494858873685,
+      "z": -0.3233009708737864,
+      "vol": 0.8212,
+      "ret_30d": -0.1078,
+      "color": "#ff7a59",
+      "partners": [
+        "Dell",
+        "HPE",
+        "Supermicro"
+      ]
+    },
+    {
+      "id": "4958",
+      "name": "\u81fb\u9f0e-KY",
+      "pillar": "infrastructure",
+      "node": "high-speed-pcb",
+      "x": -0.20311606281285127,
+      "y": 0.08476537121525171,
+      "z": -0.5443143812709025,
+      "vol": 0.8767,
+      "ret_30d": -0.1814,
+      "color": "#ff7a59",
+      "partners": [
+        "NVIDIA"
+      ]
+    },
+    {
+      "id": "2454",
+      "name": "\u806f\u767c\u79d1",
+      "pillar": "semiconductor",
+      "node": "ic-design",
+      "x": 0.08808550408898855,
+      "y": -0.4194913584609287,
+      "z": -0.09321058688147121,
+      "vol": 0.8312,
+      "ret_30d": -0.0311,
+      "color": "#4f9cff",
+      "partners": [
+        "NVIDIA",
+        "Arm",
+        "Meta"
+      ]
+    },
+    {
+      "id": "3665",
+      "name": "\u8cbf\u806f-KY",
+      "pillar": "infrastructure",
+      "node": "connectors-cables",
+      "x": -0.5702383282532164,
+      "y": 0.1966376079513135,
+      "z": 0.23529411764705865,
+      "vol": 0.7888,
+      "ret_30d": 0.0784,
+      "color": "#ff7a59",
+      "partners": [
+        "NVIDIA",
         "Tesla"
       ]
     },
     {
-      "id": "3231",
-      "name": "\u7def\u5275",
+      "id": "6274",
+      "name": "\u53f0\u71ff",
+      "pillar": "infrastructure",
+      "node": "ccl-laminate",
+      "x": -0.07445435027846474,
+      "y": -0.3230168149339706,
+      "z": -0.026627218934912045,
+      "vol": 0.9891,
+      "ret_30d": -0.0089,
+      "color": "#ff7a59",
+      "partners": [
+        "NVIDIA-via-PCB",
+        "Broadcom-via-PCB"
+      ]
+    },
+    {
+      "id": "3576",
+      "name": "\u806f\u5408\u518d\u751f",
+      "pillar": "energy",
+      "node": "green-energy",
+      "x": -0.1965101246782217,
+      "y": 0.7773601879586417,
+      "z": 0.12316715542521983,
+      "vol": 0.6891,
+      "ret_30d": 0.0411,
+      "color": "#22c55e",
+      "partners": [
+        "Google"
+      ]
+    },
+    {
+      "id": "5536",
+      "name": "\u8056\u6689*",
+      "pillar": "equipment",
+      "node": "facility-cleanroom",
+      "x": -0.02331128811648744,
+      "y": 0.30451549462613714,
+      "z": -0.95,
+      "vol": 0.7064,
+      "ret_30d": -0.3531,
+      "color": "#9b6dff",
+      "partners": [
+        "TSMC",
+        "Micron"
+      ]
+    },
+    {
+      "id": "2408",
+      "name": "\u5357\u4e9e\u79d1",
+      "pillar": "semiconductor",
+      "node": "dram-memory",
+      "x": 0.741747853452236,
+      "y": -0.016369947024626446,
+      "z": 0.7739557739557752,
+      "vol": 1.1046,
+      "ret_30d": 0.258,
+      "color": "#4f9cff",
+      "partners": [
+        "Kingston"
+      ]
+    },
+    {
+      "id": "3661",
+      "name": "\u4e16\u82af-KY",
+      "pillar": "semiconductor",
+      "node": "asic-custom-ip",
+      "x": -0.38637901636541583,
+      "y": -0.5163364986514376,
+      "z": -0.41981613891725833,
+      "vol": 0.756,
+      "ret_30d": -0.1399,
+      "color": "#4f9cff",
+      "partners": [
+        "AWS",
+        "Microsoft",
+        "Intel"
+      ]
+    },
+    {
+      "id": "3443",
+      "name": "\u5275\u610f",
+      "pillar": "semiconductor",
+      "node": "asic-custom-ip",
+      "x": -0.6956276702352429,
+      "y": -0.4098598629687472,
+      "z": 0.07598499061913877,
+      "vol": 0.8811,
+      "ret_30d": 0.0253,
+      "color": "#4f9cff",
+      "partners": [
+        "AWS",
+        "Microsoft"
+      ]
+    },
+    {
+      "id": "6669",
+      "name": "\u7def\u7a4e",
       "pillar": "infrastructure",
       "node": "server-odm",
-      "x": 0.8172455490638797,
-      "y": -0.2259060214117641,
-      "z": 0.705329153605017,
-      "vol": 0.6076,
-      "ret_30d": 0.2351,
+      "x": -0.1669731843561342,
+      "y": -0.06397628222823382,
+      "z": 0.7124999999999975,
+      "vol": 0.6789,
+      "ret_30d": 0.2375,
       "color": "#ff7a59",
       "partners": [
         "Meta",
-        "Google"
+        "Microsoft"
       ]
     },
     {
@@ -719,30 +657,109 @@
       "name": "\u4e2d\u7802",
       "pillar": "energy",
       "node": "heavy-electrical",
-      "x": -0.2547714559930184,
-      "y": 0.09520350779243512,
-      "z": -0.2201834862385308,
-      "vol": 0.6672,
-      "ret_30d": -0.0734,
+      "x": -0.2544943458869162,
+      "y": -0.09723785613985965,
+      "z": -0.171651495448636,
+      "vol": 0.6645,
+      "ret_30d": -0.0572,
       "color": "#22c55e",
       "partners": [
         "US Utility Companies"
       ]
     },
     {
-      "id": "2356",
-      "name": "\u82f1\u696d\u9054",
+      "id": "3363",
+      "name": "\u4e0a\u8a6e",
       "pillar": "infrastructure",
-      "node": "server-odm",
-      "x": 0.731086009543069,
-      "y": -0.06902138601931825,
-      "z": 0.08520179372197156,
-      "vol": 0.6583,
-      "ret_30d": 0.0284,
+      "node": "optical-cpo",
+      "x": -0.32547214057499124,
+      "y": 0.42294326578131397,
+      "z": 0.3232514177693746,
+      "vol": 0.9296,
+      "ret_30d": 0.1078,
       "color": "#ff7a59",
       "partners": [
-        "AWS",
-        "HPE"
+        "various"
+      ]
+    },
+    {
+      "id": "2383",
+      "name": "\u53f0\u5149\u96fb",
+      "pillar": "infrastructure",
+      "node": "high-speed-pcb",
+      "x": -0.48415034657333544,
+      "y": -0.31582381206831833,
+      "z": 0.2705570291777144,
+      "vol": 0.7373,
+      "ret_30d": 0.0902,
+      "color": "#ff7a59",
+      "partners": [
+        "Broadcom",
+        "NVIDIA"
+      ]
+    },
+    {
+      "id": "3017",
+      "name": "\u5947\u92d0",
+      "pillar": "infrastructure",
+      "node": "thermal-cooling",
+      "x": -0.05410563607937069,
+      "y": -0.21189900590442562,
+      "z": 0.5419708029197114,
+      "vol": 0.7395,
+      "ret_30d": 0.1807,
+      "color": "#ff7a59",
+      "partners": [
+        "NVIDIA",
+        "Dell"
+      ]
+    },
+    {
+      "id": "3189",
+      "name": "\u666f\u78a9",
+      "pillar": "infrastructure",
+      "node": "high-speed-pcb",
+      "x": 0.06961013814506428,
+      "y": -0.27588030586370654,
+      "z": 0.11566265060240988,
+      "vol": 1.0,
+      "ret_30d": 0.0386,
+      "color": "#ff7a59",
+      "partners": [
+        "Intel",
+        "AMD"
+      ]
+    },
+    {
+      "id": "3711",
+      "name": "\u65e5\u6708\u5149\u6295\u63a7",
+      "pillar": "semiconductor",
+      "node": "advanced-packaging",
+      "x": -0.24378372502487528,
+      "y": -0.36815188956258765,
+      "z": -0.45804676753782725,
+      "vol": 0.7647,
+      "ret_30d": -0.1527,
+      "color": "#4f9cff",
+      "partners": [
+        "NVIDIA",
+        "AMD"
+      ]
+    },
+    {
+      "id": "3324",
+      "name": "\u96d9\u9d3b",
+      "pillar": "infrastructure",
+      "node": "thermal-cooling",
+      "x": 0.41926108518156185,
+      "y": -0.06940445681739962,
+      "z": -0.0865384615384629,
+      "vol": 0.6769,
+      "ret_30d": -0.0288,
+      "color": "#ff7a59",
+      "partners": [
+        "NVIDIA",
+        "Supermicro"
       ]
     },
     {
@@ -750,11 +767,11 @@
       "name": "\u5ee3\u9054",
       "pillar": "infrastructure",
       "node": "server-odm",
-      "x": 0.8466951635751632,
-      "y": -0.21398242557022454,
-      "z": -0.3790322580645158,
-      "vol": 0.5687,
-      "ret_30d": -0.1263,
+      "x": 0.8686445549513566,
+      "y": 0.21609774640523938,
+      "z": -0.3373983739837405,
+      "vol": 0.566,
+      "ret_30d": -0.1125,
       "color": "#ff7a59",
       "partners": [
         "Meta",
@@ -764,32 +781,15 @@
       ]
     },
     {
-      "id": "2317",
-      "name": "\u9d3b\u6d77",
-      "pillar": "infrastructure",
-      "node": "server-odm",
-      "x": 0.7574878817167958,
-      "y": 0.018119988710308683,
-      "z": 0.16935483870967594,
-      "vol": 0.47,
-      "ret_30d": 0.0565,
-      "color": "#ff7a59",
-      "partners": [
-        "Apple",
-        "NVIDIA",
-        "AWS"
-      ]
-    },
-    {
       "id": "3533",
       "name": "\u5609\u6fa4",
       "pillar": "infrastructure",
       "node": "connectors-cables",
-      "x": 0.037236802157137844,
-      "y": 0.27097396168669297,
-      "z": -0.48611111111111094,
-      "vol": 0.6043,
-      "ret_30d": -0.162,
+      "x": 0.037124964894161123,
+      "y": -0.25601259008453503,
+      "z": -0.6275862068965524,
+      "vol": 0.6097,
+      "ret_30d": -0.2092,
       "color": "#ff7a59",
       "partners": [
         "NVIDIA",
@@ -802,11 +802,11 @@
       "name": "\u53f0\u63da",
       "pillar": "infrastructure",
       "node": "network-communication",
-      "x": -0.18572821075126258,
-      "y": -0.5867372719357771,
-      "z": -0.6332179930795845,
-      "vol": 0.4976,
-      "ret_30d": -0.2111,
+      "x": -0.18706956421931906,
+      "y": 0.5959329250004526,
+      "z": -0.6747404844290658,
+      "vol": 0.4983,
+      "ret_30d": -0.2249,
       "color": "#ff7a59",
       "partners": [
         "Dish Network"
@@ -817,11 +817,11 @@
       "name": "\u6676\u5f69\u79d1",
       "pillar": "equipment",
       "node": "testing-probing",
-      "x": 0.12976989308926498,
-      "y": -0.38481381961985645,
-      "z": -0.6025974025974009,
+      "x": 0.12593630276922335,
+      "y": 0.39163344472877876,
+      "z": -0.610389610389609,
       "vol": 0.6021,
-      "ret_30d": -0.2009,
+      "ret_30d": -0.2035,
       "color": "#9b6dff",
       "partners": [
         "Tesla",
@@ -1049,54 +1049,44 @@
   ],
   "corr_edges": [
     {
-      "from": "1503",
-      "to": "1519",
-      "rho": 0.734
-    },
-    {
-      "from": "2344",
-      "to": "2408",
-      "rho": 0.895
-    },
-    {
-      "from": "2383",
-      "to": "6274",
-      "rho": 0.72
+      "from": "2317",
+      "to": "2356",
+      "rho": 0.704
     },
     {
       "from": "2317",
       "to": "3231",
-      "rho": 0.711
+      "rho": 0.712
     },
     {
-      "from": "2317",
-      "to": "2356",
-      "rho": 0.706
-    },
-    {
-      "from": "3443",
-      "to": "3680",
-      "rho": 0.705
+      "from": "2356",
+      "to": "3231",
+      "rho": 0.71
     },
     {
       "from": "3443",
       "to": "3661",
-      "rho": 0.74
+      "rho": 0.732
+    },
+    {
+      "from": "1503",
+      "to": "1519",
+      "rho": 0.736
+    },
+    {
+      "from": "2383",
+      "to": "6274",
+      "rho": 0.719
+    },
+    {
+      "from": "3017",
+      "to": "3324",
+      "rho": 0.754
     },
     {
       "from": "2449",
       "to": "3711",
-      "rho": 0.706
-    },
-    {
-      "from": "2337",
-      "to": "2408",
-      "rho": 0.768
-    },
-    {
-      "from": "2337",
-      "to": "2344",
-      "rho": 0.74
+      "rho": 0.708
     },
     {
       "from": "3081",
@@ -1104,14 +1094,24 @@
       "rho": 0.804
     },
     {
-      "from": "2356",
-      "to": "3231",
-      "rho": 0.714
+      "from": "2344",
+      "to": "2408",
+      "rho": 0.893
     },
     {
-      "from": "3017",
-      "to": "3324",
-      "rho": 0.759
+      "from": "2337",
+      "to": "2344",
+      "rho": 0.74
+    },
+    {
+      "from": "2337",
+      "to": "2408",
+      "rho": 0.768
+    },
+    {
+      "from": "3037",
+      "to": "8046",
+      "rho": 0.767
     },
     {
       "from": "3037",
@@ -1121,12 +1121,7 @@
     {
       "from": "3037",
       "to": "4958",
-      "rho": 0.724
-    },
-    {
-      "from": "3037",
-      "to": "8046",
-      "rho": 0.77
+      "rho": 0.725
     }
   ],
   "discovery": [
@@ -1142,7 +1137,7 @@
           "name": "\u53f0\u7a4d\u96fb",
           "pillar": "semiconductor",
           "node": "advanced-foundry",
-          "rho": 0.9
+          "rho": 0.899
         },
         {
           "id": "2308",
@@ -1170,7 +1165,7 @@
           "name": "\u9d3b\u6d77",
           "pillar": "infrastructure",
           "node": "server-odm",
-          "rho": 0.705
+          "rho": 0.706
         }
       ]
     }
