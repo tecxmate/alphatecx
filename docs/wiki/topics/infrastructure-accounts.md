@@ -77,6 +77,54 @@ Where the production resources live and which login/org owns each. Recorded so f
   `15368`) with strict up-to-date checks, and has no bypass actors (`current_user_can_bypass:
   never`). Classic branch protection was also enabled on `main` with the same `test` check.
 
+  Two consequences of that gate, both hit on the first stack merged under it (2026-08-16):
+  GitHub retargets a stacked PR only when its base branch is **deleted**, not when the base
+  merges — so children silently keep measuring their diff against a merged branch and must be
+  retargeted by hand; and *strict* up-to-date checks mean each merge invalidates every remaining
+  PR in the stack, so an N-deep stack costs N merge-and-rerun cycles. Both are the gate working,
+  not a misconfiguration.
+
+- **The repository is public as of 2026-08-16, and that changes the Postgres threat model.**
+  Making it public was the fix for the branch-protection plan gate, but this wiki documents the
+  production database in the open: `8.209.197.81:32046`, database `zeabur`, superuser `root`,
+  **TLS disabled** — in `CLAUDE.md`, `docs/OAUTH-PLAN.md`, and four pages under `docs/wiki/`.
+  Audited on the same day: **no credential is or ever was committed** — `.gitignore` covers
+  `.env*`, only `.env.example` files are tracked, and `git log --all -S '<leaked password>'`
+  returns nothing, so the secret never entered git history. The exposure is therefore topology,
+  not secrets. But the endpoint has no TLS and accepts connections from the public internet
+  (the GitHub Actions harvesters rely on that), so the `root` password is now the only control
+  left, and that password is already sitting in a chat transcript.
+
+  **[niko] decided on 2026-08-16 not to rotate it** — "no one really cares about this. Just keep
+  it running like normal." Recorded as a deliberate accepted risk, not an oversight, so nobody
+  re-opens it as a bug. Verified the same day that the exposure is bounded: `pg_hba_file_rules`
+  shows the catch-all `host all all all` rule is **`scram-sha-256`**, so the public endpoint does
+  require the password and is not open. Should this ever be revisited, rotating means: change it
+  in the DB (below), then update `POSTGRES_PASSWORD` on the Zeabur `postgresql` service, the
+  `DATABASE_URL` GitHub secret (**keep its `?sslmode=disable` query string** or the workflows'
+  `&gssencmode=disable` suffix lands inside the database name), `DATABASE_URL` on `cron` and
+  `newswatch`, and `MCP_DATABASE_URL` on `mcp` if that holds the root DSN rather than
+  `mcp_viewer`'s.
+
+- **Rotating the Zeabur Postgres password — three traps, all found the hard way on 2026-08-16.**
+  1. **Editing `POSTGRES_PASSWORD` in the Zeabur Variable tab and restarting does nothing.** The
+     official `postgres` image reads that variable only on *first* init, when the data directory
+     is empty. On an existing volume it is ignored — you get the worst state: the real password
+     unchanged, but the connection string Zeabur *displays* now wrong. The password must be
+     changed inside Postgres (`\password root`, or `ALTER USER`).
+  2. **You cannot test a Postgres password over loopback on this image.** `initdb` writes
+     `local`, `127.0.0.1` and `::1` as **`trust`**; only the appended `host all all all
+     scram-sha-256` checks a password. A `psql -h 127.0.0.1` test therefore succeeds with *any*
+     value — it succeeded here with a literal unsubstituted placeholder string — and proves
+     nothing. Test against the pod's own address: `psql -h "$(hostname -i)"`.
+  3. **The container's own environment is the authoritative copy of the original password.**
+     Because the image only consumes `POSTGRES_PASSWORD` at init, the variable still holds the
+     value the database was created with — which is also what Zeabur displays and what every
+     consumer uses. That makes recovery paste-free and typo-proof:
+     `psql -U root -d zeabur -c "ALTER USER root PASSWORD '$POSTGRES_PASSWORD';"`. Combined with
+     trap 2's `local … trust`, **superuser access never depends on knowing the password**, so a
+     mis-rotation on this service is always recoverable from the Command shell.
+
 ## Telegram
 
 - Bot token + chat id in root `.env` (`TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`); reused from v1.

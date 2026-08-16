@@ -176,7 +176,22 @@ jobs:
         if: failure()
         env:
           GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # This step talks to Telegram with raw curl rather than through
+        # src.config.telegram_configured(), so the kill switch does NOT reach it
+        # for free — it has to be repeated here. It was missed when the switch
+        # landed, which meant "Telegram disabled" still sent 🔴 FAILED messages.
+        #
+        # Accepted cost of switching off: TELEGRAM_TOKEN is deliberately unset on
+        # the Zeabur `cron` service, so GH Actions is the ONLY path that alerts on
+        # failure. With the flag false, a failed run is silent everywhere and the
+        # Actions run log below is the only record — which is why this echoes
+        # rather than skipping via `if:`, so the log still says what happened.
         run: |
+          case "${TELEGRAM_ENABLED,,}" in
+            false|0|no|off)
+              echo "Telegram is switched off (TELEGRAM_ENABLED=$TELEGRAM_ENABLED) — not sending the failure alert."
+              exit 0 ;;
+          esac
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
             -d "{\"chat_id\": \"${TELEGRAM_CHAT_ID}\", \"text\": \"🔴 alphatecx daily harvest FAILED — ${GITHUB_RUN_URL}\", \"parse_mode\": \"HTML\"}"

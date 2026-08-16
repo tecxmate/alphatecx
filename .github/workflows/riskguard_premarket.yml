@@ -72,7 +72,16 @@ jobs:
         if: failure()
         env:
           GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # Raw curl, not src.config.telegram_configured() — the kill switch does
+        # not reach this step for free and has to be repeated. See the matching
+        # comment in daily_harvest.yml: with the flag off, a failed run alerts
+        # nowhere, so the echo below is the only record left.
         run: |
+          case "${TELEGRAM_ENABLED,,}" in
+            false|0|no|off)
+              echo "Telegram is switched off (TELEGRAM_ENABLED=$TELEGRAM_ENABLED) — not sending the failure alert."
+              exit 0 ;;
+          esac
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
             -d "{\"chat_id\": \"${TELEGRAM_CHAT_ID}\", \"text\": \"🔴 Risk Guard pre-market FAILED — ${GITHUB_RUN_URL}\", \"parse_mode\": \"HTML\"}"
