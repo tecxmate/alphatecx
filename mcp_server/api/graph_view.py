@@ -15,6 +15,7 @@ Endpoints (mounted under /g/{TOKEN}/):
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 import traceback
@@ -26,9 +27,11 @@ from fastapi import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 try:
-    from console import inject_nav
+    from console import inject_nav, shell
 except ModuleNotFoundError:      # package import path used by local tests
-    from .console import inject_nav
+    from .console import inject_nav, shell
+
+log = logging.getLogger(__name__)
 
 _VALID_PILLARS = {"semiconductor", "equipment", "infrastructure", "energy"}
 _TICKER_ID_RE  = re.compile(r"^[0-9A-Za-z]{1,8}$")
@@ -207,11 +210,49 @@ def _ticker_directory() -> list[dict]:
             ]
 
 
+def _tickers_unavailable_html(token: str, nav: str) -> str:
+    """The Tickers page with the database down.
+
+    Two shapes on purpose. Under the console (`nav` set, served from
+    `/d/<token>/tickers`) it goes through `shell()`, whose NAV links are
+    **relative** -- that is what lets them resolve correctly under the token
+    prefix. The legacy `/t/<token>/` route has no `nav`, and those same
+    relative links would resolve to `/t/<token>/market` and friends, which do
+    not exist -- so it gets a standalone page pointing back at the console.
+    """
+    body = (
+        '<dl class="cards"><div class="card"><dt>Ticker directory</dt>'
+        '<dd class="bad">unavailable</dd><span class="sub">The database did not '
+        'answer, so the list of tickers could not be read. This is a live query '
+        '— unlike Flow and Graph, which are served from files and still work. '
+        'Check Overview for pipeline health.</span></div></dl>'
+    )
+    if nav:
+        return shell("alphatecx · tickers", nav, body, heading="Ticker Directory")
+    return (
+        '<!doctype html>\n<html lang="en"><head>'
+        '<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>alphatecx · tickers</title>'
+        f'<link rel="stylesheet" href="/d/{escape(token)}/dashboard.css">'
+        '</head><body><div class="wrap"><header class="header"><div>'
+        f'<div class="nav-back"><a href="/d/{escape(token)}/">Console</a>'
+        '<span>/</span><span>Tickers</span></div>'
+        '<h1>Ticker Directory</h1></div></header>'
+        f'{body}</div></body></html>'
+    )
+
+
 def get_tickers_html(token: str, nav: str = "") -> HTMLResponse:
     try:
         directory = _ticker_directory()
-    except Exception as e:
-        raise HTTPException(503, f"ticker directory failed: {type(e).__name__}: {e}") from e
+    except Exception:               # noqa: BLE001 — a console must not 500
+        # Overview and Market already degrade to a rendered page rather than an
+        # error (console_pages.overview_html). This page used to raise a bare
+        # 503 instead, so when Postgres was down the Tickers nav link dropped
+        # the operator on an unstyled error with no way back -- at exactly the
+        # moment they had opened the console to find out what was wrong.
+        log.exception("console tickers: ticker directory unavailable")
+        return HTMLResponse(_tickers_unavailable_html(token, nav))
     directory_json = json.dumps(directory, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
     folder_count = len({f for row in directory for f in row.get("folders", [])})
     html = f"""<!doctype html>

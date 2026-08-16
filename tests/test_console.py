@@ -99,3 +99,59 @@ class ConsolePageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTickersDegradesInsteadOf503:
+    """The Tickers page must not 500/503 when Postgres is down.
+
+    Overview and Market already degrade to a rendered page. Tickers raised a
+    bare `HTTPException(503)`, so with the database down the console's own nav
+    link led to an unstyled error with no way back -- at exactly the moment an
+    operator opens the console to find out what is wrong.
+    """
+
+    @staticmethod
+    def _boom():
+        raise RuntimeError("pool timeout")
+
+    def test_console_context_renders_with_nav(self, monkeypatch):
+        import graph_view
+        monkeypatch.setattr(graph_view, "_ticker_directory", self._boom)
+
+        resp = graph_view.get_tickers_html("tok", nav="tickers")
+        body = resp.body.decode()
+
+        assert resp.status_code == 200
+        assert "unavailable" in body
+        # The console frame, so the operator can still reach Overview.
+        assert "Overview" in body
+        # NAV links stay relative -- absolute ones break under the token prefix.
+        assert 'href="/d/tok/market"' not in body
+
+    def test_legacy_context_does_not_use_relative_console_nav(self, monkeypatch):
+        """`/t/<token>/` is a different prefix, so relative NAV links would 404.
+
+        This is the trap that makes the two shapes necessary rather than
+        cosmetic: `./market` under /t/<token>/ resolves to /t/<token>/market.
+        """
+        import graph_view
+        monkeypatch.setattr(graph_view, "_ticker_directory", self._boom)
+
+        body = graph_view.get_tickers_html("tok", nav="").body.decode()
+
+        assert "unavailable" in body
+        assert './market' not in body
+        assert '/d/tok/' in body          # points back at the console absolutely
+
+    def test_route_returns_200_not_503(self, monkeypatch):
+        """End-to-end through the ASGI app, which is where the 503 showed up."""
+        import graph_view
+        import index
+        from starlette.testclient import TestClient
+
+        monkeypatch.setattr(graph_view, "_ticker_directory", self._boom)
+        monkeypatch.setattr(index, "MCP_BEARER_TOKEN", "tok")
+
+        r = TestClient(index.app).get("/d/tok/tickers")
+        assert r.status_code == 200, f"regressed to {r.status_code}"
+        assert "unavailable" in r.text
