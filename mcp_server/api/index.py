@@ -70,6 +70,14 @@ except ModuleNotFoundError:  # package import path used by local tests
 
 MCP_BEARER_TOKEN = os.getenv("MCP_BEARER_TOKEN", "")
 
+# The console's own secret. Optional: unset, it falls back to the MCP token and
+# nothing changes. Set, it decouples "can view the dashboard" from "can call the
+# API" -- which is the point, because the two were the same string until
+# 2026-08-16 and so sharing a dashboard URL also shared write access to all 49
+# tools. Behind Cloudflare Access the console URL stops being the only control
+# at all; this makes it stop being the API key as well.
+CONSOLE_TOKEN = os.getenv("CONSOLE_TOKEN", "") or MCP_BEARER_TOKEN
+
 log = logging.getLogger("mcp")
 
 # Set by the auth gate to the authenticated token subject (a customer id, or
@@ -2692,7 +2700,7 @@ def health(deep: bool = False):
 @app.middleware("http")
 async def auth_gate(request: Request, call_next):
     path = request.url.path
-    if is_authorized_path(path, MCP_BEARER_TOKEN):
+    if is_authorized_path(path, MCP_BEARER_TOKEN, CONSOLE_TOKEN):
         # The URL-as-secret MCP path is the owner. It used to leave
         # current_customer unset, which meant the profile tools saw no identity
         # at all and set_my_risk_profile could only answer "can't persist" —
@@ -3009,42 +3017,42 @@ async def billing_lemonsqueezy(request: Request):
 
 @app.get("/g/{token}/")
 def graph_index(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_viewer_html()
 
 
 @app.get("/h/{token}/")
 def home(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_home_html(token)
 
 
 @app.get("/t/{token}/")
 def tickers(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_tickers_html(token)
 
 
 @app.get("/g/{token}/data.json")
 def graph_data(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_snapshot_json()
 
 
 @app.get("/g/{token}/graph.png")
 def graph_png(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_graph_png()
 
 
 @app.post("/g/{token}/classify")
 async def graph_classify(token: str, request: Request):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     try:
         payload = await request.json()
@@ -3055,7 +3063,7 @@ async def graph_classify(token: str, request: Request):
 
 @app.post("/t/{token}/folders")
 async def ticker_folders(token: str, request: Request):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     try:
         payload = await request.json()
@@ -3079,7 +3087,7 @@ async def ticker_folders(token: str, request: Request):
 @app.get("/d/{token}/")
 def console_overview(token: str):
     """Console home: pipeline health plus every surface, the page that was missing."""
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return HTMLResponse(console_pages.overview_html(graph_view.ticker_page_count()))
 
@@ -3087,7 +3095,7 @@ def console_overview(token: str):
 @app.get("/d/{token}/market")
 def console_market(token: str):
     """Today's risk light with every check, threshold and input explained."""
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return HTMLResponse(console_pages.market_html())
 
@@ -3095,7 +3103,7 @@ def console_market(token: str):
 @app.get("/d/{token}/system")
 def console_system(token: str):
     """How the pipeline works, generated from the live tool registry."""
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     names = [t.name for t in mcp._tool_manager.list_tools()]
     return HTMLResponse(console_pages.system_map_html(names))
@@ -3103,21 +3111,21 @@ def console_system(token: str):
 
 @app.get("/d/{token}/flow")
 def console_flow(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_dashboard_html(nav="flow")
 
 
 @app.get("/d/{token}/graph")
 def console_graph(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_viewer_html(nav="graph")
 
 
 @app.get("/d/{token}/tickers")
 def console_tickers(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_tickers_html(token, nav="tickers")
 
@@ -3125,21 +3133,21 @@ def console_tickers(token: str):
 @app.get("/d/{token}/home")
 def dashboard_home(token: str):
     """Superseded by the console overview at /d/<token>/. Kept for old links."""
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return RedirectResponse(f"/d/{token}/", status_code=307)
 
 
 @app.get("/d/{token}/dashboard.css")
 def dashboard_css(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_dashboard_css()
 
 
 @app.get("/d/{token}/dashboard.js")
 def dashboard_js(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_dashboard_js()
 
@@ -3151,7 +3159,7 @@ def ticker_page(token: str, ticker: str):
     Pages are pre-rendered nightly by `python -m src.dashboard.build_ticker_pages`
     and read from mcp_server/api/static/ticker/{ticker}.html. Same auth as /d/.
     """
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_ticker_page(ticker)
 
