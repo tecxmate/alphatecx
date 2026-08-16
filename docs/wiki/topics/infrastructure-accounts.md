@@ -77,6 +77,26 @@ Where the production resources live and which login/org owns each. Recorded so f
   `15368`) with strict up-to-date checks, and has no bypass actors (`current_user_can_bypass:
   never`). Classic branch protection was also enabled on `main` with the same `test` check.
 
+  Two consequences of that gate, both hit on the first stack merged under it (2026-08-16):
+  GitHub retargets a stacked PR only when its base branch is **deleted**, not when the base
+  merges — so children silently keep measuring their diff against a merged branch and must be
+  retargeted by hand; and *strict* up-to-date checks mean each merge invalidates every remaining
+  PR in the stack, so an N-deep stack costs N merge-and-rerun cycles. Both are the gate working,
+  not a misconfiguration.
+
+- **The repository is public as of 2026-08-16, and that changes the Postgres threat model.**
+  Making it public was the fix for the branch-protection plan gate, but this wiki documents the
+  production database in the open: `8.209.197.81:32046`, database `zeabur`, superuser `root`,
+  **TLS disabled** — in `CLAUDE.md`, `docs/OAUTH-PLAN.md`, and four pages under `docs/wiki/`.
+  Audited on the same day: **no credential is or ever was committed** — `.gitignore` covers
+  `.env*`, only `.env.example` files are tracked, and `git log --all -S '<leaked password>'`
+  returns nothing, so the secret never entered git history. The exposure is therefore topology,
+  not secrets. But the endpoint has no TLS and accepts connections from the public internet
+  (the GitHub Actions harvesters rely on that), so the `root` password is now the only control
+  left, and that password is already sitting in a chat transcript. **Rotating it is blocking,
+  not housekeeping.** Rotate, then update the `DATABASE_URL` repo secret and the `mcp` service's
+  `MCP_DATABASE_URL`.
+
 ## Telegram
 
 - Bot token + chat id in root `.env` (`TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`); reused from v1.
