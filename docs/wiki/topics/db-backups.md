@@ -95,4 +95,5 @@ instance.
 - 2026-08-16 — Scheduled backup runs from 2026-08-12 through 2026-08-14 were failing before
   producing artifacts because the workflow installed `postgresql-client-17` while Zeabur runs
   Postgres 18.4; `pg_dump` refuses to dump a newer server. Updated the workflow to install
-  `postgresql-client-18`.
+  `postgresql-client-18` and put `/usr/lib/postgresql/18/bin` on `GITHUB_PATH`, because installing
+  the package alone left Ubuntu's default `pg_dump` 16 first on `PATH`.
