@@ -84,8 +84,19 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Unlike the other workflows this one has no top-level TELEGRAM_ENABLED,
+          # so the kill switch has to be read here or the flag misses this step.
+          TELEGRAM_ENABLED: ${{ vars.TELEGRAM_ENABLED || 'true' }}
           GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # Raw curl, not src.config.telegram_configured() — see daily_harvest.yml.
+        # With the flag off this alert is suppressed, and since a silent backup
+        # failure "changes what you believe", the echo is the record that remains.
         run: |
+          case "${TELEGRAM_ENABLED,,}" in
+            false|0|no|off)
+              echo "Telegram is switched off (TELEGRAM_ENABLED=$TELEGRAM_ENABLED) — not sending the failure alert."
+              exit 0 ;;
+          esac
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
             -d "{\"chat_id\": \"${TELEGRAM_CHAT_ID}\", \"text\": \"🔴 alphatecx DB BACKUP FAILED — ${GITHUB_RUN_URL}\"}"
