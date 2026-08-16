@@ -1054,6 +1054,12 @@ attributed_to: [niko, claude-agent]   belongs_to: [paid-connector-deploy, infras
 attributed_to: [niko, codex-agent]   belongs_to: [paid-connector-deploy, infrastructure-accounts]
 - Pulled `main` to `d245e33` and applied Zeabur migrations `019–025` via `apply_delta.py --yes` against the public endpoint with `sslmode=disable`; verification passed, including `mcp_viewer SELECT verified on 7 backfilled tables`.
 - Live checks passed through production: `/health?deep=1`, MCP `q_valuation(2330)`, `session_state`, owner risk-profile save/read, `dividend_calendar(2357)`, and console `/d/<token>/`, `/market`, `/system`.
-- Deleted confirmed connector smoke-test row `rg_journal.id=4`; branch protection/rulesets are blocked by GitHub's private-repo plan gate; Neon cleanup remains pending because no browser, Neon CLI, or Neon API token was available.
+- Deleted confirmed connector smoke-test row `rg_journal.id=4`; branch protection/rulesets were initially blocked by GitHub's private-repo plan gate; Neon cleanup remains pending because no browser, Neon CLI, or Neon API token was available.
 - Found scheduled DB backups failing because `pg_dump` 17/16 cannot dump Zeabur Postgres 18.4; updated `db_backup.yml` to install `postgresql-client-18` and put its bin directory first on `PATH`. Manual run `31924048585` succeeded and uploaded `alphatecx-2026-08-16`.
 - Updated [paid-connector-deploy](topics/paid-connector-deploy.md), [infrastructure-accounts](topics/infrastructure-accounts.md), and [db-backups](topics/db-backups.md).
+
+## [2026-08-16] ops | Main branch protection enabled after repo made public
+attributed_to: [niko, codex-agent]   belongs_to: [infrastructure-accounts]
+- [niko] made `tecxmate/alphatecx` public, removing GitHub's private-repo branch-protection gate.
+- Enabled active ruleset `main protection` (`20905551`) for the default branch: pull requests required, `test` status check required/strict, no bypass actors, `current_user_can_bypass: never`.
+- Classic `main` branch protection was also set with `test` required, PR reviews object present with `required_approving_review_count: 0`, and force pushes/deletions disabled.

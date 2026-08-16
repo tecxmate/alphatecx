@@ -71,11 +71,11 @@ Where the production resources live and which login/org owns each. Recorded so f
   intended home because the project is going commercial with a co-founder.
 
 - **Zeabur `mcp` service auto-deploys from `main`** (git-connected to `tecxmate/alphatecx`; confirmed 2026-08-09 via `zeabur deployment list` — one RUNNING deployment per commit, source `refs/heads/main`). The earlier "CLI-uploaded, manual deploy" note is superseded. `apply_delta.py` still applies DB migrations manually to the Zeabur public owner endpoint (`8.209.197.81:32046/zeabur`).
-- **Branch protection blocker (2026-08-16):** GitHub CLI is authenticated, and the `CI` workflow's
-  `test` job has run successfully on PRs, but both classic branch protection and repository
-  rulesets return `403` on this private repository: "Upgrade to GitHub Pro or make this repository
-  public to enable this feature." Do not make the repo public as an implicit workaround; upgrade the
-  repo/org plan or accept that CI remains advisory.
+- **Branch protection active (2026-08-16):** [niko] made the repository public, removing GitHub's
+  private-repo plan gate. Ruleset `main protection` (`20905551`) targets the default branch with
+  enforcement `active`, requires a pull request, requires the `test` status check (`CI`, app id
+  `15368`) with strict up-to-date checks, and has no bypass actors (`current_user_can_bypass:
+  never`). Classic branch protection was also enabled on `main` with the same `test` check.
 
 ## Telegram
 
@@ -92,9 +92,9 @@ Where the production resources live and which login/org owns each. Recorded so f
 - 2026-08-08 — GitHub repo moved to the `tecxmate` org (`github.com/tecxmate/alphatecx`); local
   clone still on the personal URL and reaching it via GitHub's redirect.
 - 2026-08-16 — Applied Zeabur connector migrations `019–025`, verified production MCP/console
-  health, and deleted the connector smoke-test `rg_journal` row. Branch protection remains blocked
-  by the GitHub private-repo plan gate; Neon rotation/deletion remains console-only from this
-  session.
+  health, and deleted the connector smoke-test `rg_journal` row. GitHub branch protection was first
+  blocked by the private-repo plan gate, then enabled after [niko] made the repo public. Neon
+  rotation/deletion remains console-only from this session.
 - 2026-05-27 — Scheduled GitHub Actions harvest/news crons disabled to reduce Vercel CPU-hour usage; workflows remain manually runnable ([decision](../decisions/2026-05-27-disable-scheduled-harvest-crons.md)).
 - 2026-06-11 — Neon reached the free-tier storage cap at 490 MB. Pruned old all-market raw rows, compacted affected tables with `VACUUM FULL`, and reduced the database to 158 MB ([decision](../decisions/2026-06-11-neon-retention-prune.md)).
 - 2026-06-11 — Neon docs confirmed console usage is broken down by root storage, child-branch storage, instant-restore/history storage, compute, and transfer; a top-level monthly storage banner can lag or reflect project/account usage beyond the current active database size.
