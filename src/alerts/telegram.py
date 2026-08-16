@@ -10,13 +10,27 @@ import logging
 
 import requests
 
-from src.config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, telegram_configured
+from src.config import (
+    TELEGRAM_CHAT_ID,
+    TELEGRAM_TOKEN,
+    telegram_configured,
+    telegram_enabled,
+)
 
 log = logging.getLogger("telegram")
 
 
 def send(message: str) -> bool:
-    """Send a Telegram message. Falls back to stdout if not configured."""
+    """Send a Telegram message. Returns whether it was actually delivered.
+
+    Two non-delivery cases, deliberately logged differently. Switched off is
+    routine and logs at INFO; a missing or malformed token is a system that
+    believes it is alerting and is not, so it stays a WARNING. Collapsing the
+    two is what let a broken token hide for weeks.
+    """
+    if not telegram_enabled():
+        log.info("Telegram disabled (TELEGRAM_ENABLED=false); not sending")
+        return False
     if not telegram_configured():
         log.warning("Telegram not configured, printing instead:\n%s", message)
         print(f"\n[TELEGRAM PREVIEW]\n{message}\n")
@@ -58,7 +72,7 @@ def send_daily_summary(date_iso: str, results: dict) -> None:
     )
 
     if errors:
-        msg += f"\n<b>Errors:</b>\n"
+        msg += "\n<b>Errors:</b>\n"
         for e in errors:
             msg += f"  ⚠️ {e}\n"
 
@@ -66,7 +80,7 @@ def send_daily_summary(date_iso: str, results: dict) -> None:
     try:
         top_sectors = _fetch_top_sectors()
         if top_sectors:
-            msg += f"\n<b>Top FINI accumulation (5d):</b>\n"
+            msg += "\n<b>Top FINI accumulation (5d):</b>\n"
             for i, s in enumerate(top_sectors[:5], 1):
                 pillar = s.get("ai_pillar", "?")
                 node = s.get("node", "?")
@@ -109,7 +123,11 @@ def _fetch_top_sectors() -> list[dict]:
         with cur() as c:
             c.execute(sql)
             cols = [d.name for d in c.description]
-            return [dict(zip(cols, row)) for row in c.fetchall()]
+            # strict=True: the cursor's column list and each row always have the
+            # same length, so a mismatch means something is badly wrong and
+            # should raise rather than silently drop columns. The enclosing
+            # except turns that into "no sectors in the digest", not a crash.
+            return [dict(zip(cols, row, strict=True)) for row in c.fetchall()]
     except Exception:
         log.exception("Failed to fetch top sectors for daily Telegram digest")
         return []

@@ -100,6 +100,8 @@ Dates are `Asia/Taipei`, not UTC. TWSE publishes on Taipei wall-clock; UTC misla
 | `cron` | post-close chain, Risk Guard pre-market | `Dockerfile` (repo root) | supercronic, `TZ=Asia/Taipei` |
 | `worker` | `src/news/watch.py` poller | `Dockerfile.newswatch` | continuous, 180s |
 
+**Turning Telegram off:** set `TELEGRAM_ENABLED=false` (repo variable for Actions, service env var for the Zeabur `cron`/`worker`/`mcp` services). One flag silences every outbound message — Risk Guard alerts, briefs, the daily summary, thesis heartbeat and the news poller's watchlist pushes — because they all funnel through `src/config.telegram_configured()`. On the `mcp` service the same flag also stops the bot answering commands (`bot.py` re-declares it; it can't import from the repo root). **Do not "disable" by unsetting the token** — an unset token is indistinguishable from breakage at the send site, and that is exactly how every alert sat at `pushed:false` for weeks with the notify-on-failure path silently dead. The workflow preflight skips cleanly when the flag is false and warns loudly when the token is merely missing.
+
 GitHub Actions still runs the same schedules in parallel — deliberate, and safe because every
 writer upserts on composite PKs. **`TELEGRAM_TOKEN` is intentionally unset on `cron`**: the
 message layer is the one thing a double run duplicates. The cost is that a `cron` failure is
