@@ -3,7 +3,7 @@ title: Database backups & restore runbook
 type: topic
 slug: db-backups
 date: 2026-08-11
-updated: 2026-08-11
+updated: 2026-08-16
 attributed_to: [claude-agent]
 belongs_to: [system-architecture, infrastructure-accounts]
 source: chat
@@ -89,3 +89,10 @@ instance.
 - **The dump crosses the public internet in cleartext**, like every GH-Actions DB
   connection since the TLS-less Zeabur cutover — this workflow adds no new exposure, but
   inherits the existing one (see the 2026-07-31 migration decision).
+
+## History
+
+- 2026-08-16 — Scheduled backup runs from 2026-08-12 through 2026-08-14 were failing before
+  producing artifacts because the workflow installed `postgresql-client-17` while Zeabur runs
+  Postgres 18.4; `pg_dump` refuses to dump a newer server. Updated the workflow to install
+  `postgresql-client-18`.

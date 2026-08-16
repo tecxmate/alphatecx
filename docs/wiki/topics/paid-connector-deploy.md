@@ -3,7 +3,7 @@ title: Paid connector — deploy checklist
 type: topic
 slug: paid-connector-deploy
 date: 2026-08-09
-updated: 2026-08-09
+updated: 2026-08-16
 attributed_to: [antigravity-agent]
 belongs_to: [commercial-productization, system-architecture]
 source: chat
@@ -12,9 +12,9 @@ tags: [deploy, runbook, zeabur, oauth, billing, metering, mcp]
 related: [commercial-productization, infrastructure-accounts, 2026-07-31-mcp-server-vercel-to-zeabur, 2026-08-08-commercialization-direction]
 ---
 
-Runbook to take the paid-connector work (productization Layers 0–2 + metering + billing) live. Until
-every step here runs, the code sits dormant on `main` — nothing about a push changes production
-([the Zeabur `mcp` service is manual-deploy, CLI-uploaded](2026-07-31-mcp-server-vercel-to-zeabur.md)).
+Runbook to take the paid-connector work (productization Layers 0–2 + metering + billing) live.
+The `mcp` service now auto-deploys from `main`, so schema-touching PRs can ship code before the
+database is ready; run the delta migration promptly after merges.
 
 **Run order matters:** migrate the DB first (code tolerates an old schema, but the grants must exist
 before a customer hits the server), then deploy, then provision.
@@ -68,6 +68,15 @@ row — all `IF NOT EXISTS` / role-guarded / idempotent, and verifies the tables
 \dp usage_monthly    -- expect SELECT, INSERT, UPDATE for mcp_viewer
 select count(*) from customers;   -- table exists
 ```
+
+**Production status (2026-08-16):** `019–025` were applied to the Zeabur public owner endpoint
+(`8.209.197.81:32046/zeabur?sslmode=disable`) from local CLI-discovered credentials. Verification
+passed with `customers` = 3 rows, `usage_monthly` = 0 rows, required customer columns present, and
+`mcp_viewer SELECT verified on 7 backfilled tables`. Live checks passed through the deployed MCP:
+`q_valuation("2330")` returned P/E, P/B and yield from `raw_twse_valuation`; `session_state` used
+`calendar_source: calendar`; `set_my_risk_profile` saved the owner profile; `dividend_calendar`
+returned TWSE ex-dividend data; `/health?deep=1`, `/d/<token>/`, `/d/<token>/market`, and
+`/d/<token>/system` rendered. The old connector smoke-test `rg_journal` row `id=4` was deleted.
 
 ## 2. Set the new env vars on the `mcp` service (Zeabur)
 
