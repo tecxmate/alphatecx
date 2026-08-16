@@ -21,6 +21,7 @@ import sys
 import time
 from contextvars import ContextVar
 from datetime import datetime, timedelta
+from functools import wraps
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -58,6 +59,7 @@ try:
     import console_pages
     import customers as customers_mod
     import oauth as oauth_mod
+    import tiers as tiers_mod
     import usage as usage_mod
     from security import is_authorized_path, token_matches
 except ModuleNotFoundError:  # package import path used by local tests
@@ -65,6 +67,7 @@ except ModuleNotFoundError:  # package import path used by local tests
     from . import console_pages
     from . import customers as customers_mod
     from . import oauth as oauth_mod
+    from . import tiers as tiers_mod
     from . import usage as usage_mod
     from .security import is_authorized_path, token_matches
 
@@ -85,6 +88,12 @@ log = logging.getLogger("mcp")
 # all ~45 tool signatures. FastMCP runs each tool in the same asyncio task as
 # the request, so a value set before call_next is visible inside the tool.
 current_customer: ContextVar[str | None] = ContextVar("current_customer", default=None)
+
+# The authenticated customer's plan, stashed by _customer_gate — which has
+# already fetched the row, so this costs no extra query. Tier enforcement reads
+# it per tool call; looking the customer up again there would double the DB
+# reads on the hottest path in the server.
+current_plan: ContextVar[str | None] = ContextVar("current_plan", default=None)
 
 # The operator's subject. Both owner paths (the shared OAUTH_PASSWORD login and
 # the URL-as-secret mount) resolve to it, and sql/025 reserves a `customers` row
@@ -2404,9 +2413,22 @@ def sc_capabilities() -> dict:
     The system detects "trickle down" accumulation patterns as foreign
     capital flows from foundry (TSMC) → server ODMs → cooling/PCB → power.
     """
+    # What the CALLER can actually reach. Without this the model is handed the
+    # full technical map, tries a locked tool, and gets refused -- the same
+    # class of failure as the capabilities list drifting from the registry,
+    # just in the other direction.
+    _plan = current_plan.get()
+    _locked = tiers_mod.locked_for(_plan) if current_customer.get() not in (None, OWNER_SUBJECT) else []
     return {
         "server": "alphatecx-v2",
         "description": "Taiwan market intelligence — full-market flow tracking plus AI supply chain classification",
+        "your_plan": _plan or tiers_mod.PRIVATE,
+        "locked_tools": _locked,
+        "locked_note": (
+            f"{len(_locked)} tool(s) need a higher plan. They are listed below "
+            "like everything else, but calling one returns `_locked` instead of "
+            "data — tell the user it is a paid feature rather than retrying."
+        ) if _locked else "All tools on this server are available to you.",
         "data_coverage": {
             "flow_tickers": "~7000 TWSE + TPEX stocks from T86",
             "classified": "~27 stocks across 4 AI pillars",
@@ -2754,6 +2776,7 @@ async def auth_gate(request: Request, call_next):
             return await call_next(request)
         finally:
             current_customer.reset(tok)
+            current_plan.set(None)
 
     return JSONResponse(status_code=404, content={"error": "not_found"})
 
@@ -2783,7 +2806,8 @@ def _customer_gate(sub: str):
         return JSONResponse(status_code=503, content={"error": "store_unavailable"})
     if not customer or customer.get("status") not in customers_mod.USABLE_STATUSES:
         return JSONResponse(status_code=402, content={"error": "account_inactive"})
-    quota = customer.get("monthly_quota")
+    current_plan.set(customer.get("plan"))
+    quota = tiers_mod.effective_quota(customer)
     if quota is not None and usage_mod.calls_this_month(sub) >= quota:
         return JSONResponse(status_code=429, content={"error": "quota_exceeded"})
     return None
@@ -3183,6 +3207,56 @@ if not oauth_mod.SIGNING_KEY:
 # registered first, or the bare /mcp mount below swallows /mcp/<token>/ and
 # the URL-as-secret path starts demanding a bearer header — which would kill
 # Claude Code and the Desktop bridge.
+# ── Tier enforcement ──────────────────────────────────────────────────────
+#
+# Applied by wrapping every registered tool in ONE pass rather than putting a
+# decorator on 49 handlers. A decorator you must remember to add is a decorator
+# someone will forget -- the same failure that let sc_capabilities drift to 33
+# of 48. Here a tool cannot escape the gate by omission; the only way to be
+# unguarded is to not be registered at all.
+#
+# Owner traffic bypasses it, exactly as it bypasses metering: the URL-secret and
+# OAUTH_PASSWORD paths resolve to OWNER_SUBJECT, and gating the operator out of
+# their own server would be an outage, not a policy.
+def _install_tier_gate() -> None:
+    for name, tool in mcp._tool_manager._tools.items():
+        tool.fn = _tier_guarded(name, tool.fn, tool.is_async)
+
+
+def _tier_guarded(name, fn, is_async):
+    """Wrap one tool handler with the entitlement check.
+
+    Refusal is a normal return value, not an exception: FastMCP would render a
+    raise as a tool error, which reads to the model as "this broke" and invites
+    a retry. A `_locked` payload reads as "this is not yours yet" and carries
+    the upgrade path.
+    """
+    def _denial():
+        plan = current_plan.get()
+        cust = current_customer.get()
+        if cust is None or cust == OWNER_SUBJECT:
+            return None                     # owner / unauthenticated URL-secret
+        if tiers_mod.allows(plan, name):
+            return None
+        return tiers_mod.refusal(name, plan)
+
+    if is_async:
+        @wraps(fn)
+        async def _async_guard(*args, **kwargs):
+            denial = _denial()
+            return denial if denial is not None else await fn(*args, **kwargs)
+        return _async_guard
+
+    @wraps(fn)
+    def _sync_guard(*args, **kwargs):
+        denial = _denial()
+        return denial if denial is not None else fn(*args, **kwargs)
+    return _sync_guard
+
+
+_install_tier_gate()
+
+
 app.mount(f"/mcp/{MCP_BEARER_TOKEN}", mcp_app)
 
 # Same app object mounted twice, deliberately: FastMCP holds one session
