@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Install PostgreSQL 17 client
+      - name: Install PostgreSQL 18 client
         # pg_dump must be >= the server's major version, and the runner image's
         # default client can trail it. PGDG always carries current.
         run: |
@@ -42,7 +42,8 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client-17
+          sudo apt-get install -y -qq postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
 
       - name: Dump
         # --format=custom: compressed, and restorable table-by-table.
