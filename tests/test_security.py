@@ -53,3 +53,54 @@ class SecurityTests(unittest.TestCase):
         self.assertTrue(token_matches("secret", "secret"))
         self.assertFalse(token_matches("secret", ""))
         self.assertFalse(token_matches("other", "secret"))
+
+
+class TestConsoleTokenSplit:
+    """`/mcp` and the console must be able to use different secrets.
+
+    They shared one string until 2026-08-16, which made the dashboard URL an
+    API credential: anyone shown the console could also call all 49 tools,
+    several of which write. The split is opt-in via CONSOLE_TOKEN so an
+    environment that has not set it cannot break.
+    """
+
+    API = "apitoken"
+    CONSOLE = "consoletoken"
+
+    def test_console_token_does_not_open_the_api(self):
+        """The point of the whole change."""
+        assert not is_authorized_path(
+            f"/mcp/{self.CONSOLE}/", self.API, self.CONSOLE
+        )
+
+    def test_api_token_does_not_open_the_console(self):
+        assert not is_authorized_path(
+            f"/d/{self.API}/", self.API, self.CONSOLE
+        )
+
+    def test_each_token_opens_its_own_surface(self):
+        assert is_authorized_path(f"/mcp/{self.API}/", self.API, self.CONSOLE)
+        for prefix in ("/d", "/g", "/h", "/t"):
+            assert is_authorized_path(
+                f"{prefix}/{self.CONSOLE}/", self.API, self.CONSOLE
+            ), prefix
+
+    def test_omitting_console_token_preserves_old_behaviour(self):
+        """Unset CONSOLE_TOKEN must behave exactly as the single-secret gate.
+
+        This is what makes the change safe to deploy before anyone configures
+        anything: production keeps working untouched until the operator opts in.
+        """
+        for prefix in ("/mcp", "/d", "/g", "/h", "/t"):
+            assert is_authorized_path(f"{prefix}/{self.API}/", self.API)
+            assert is_authorized_path(f"{prefix}/{self.API}/", self.API, "")
+
+    def test_split_does_not_weaken_segment_matching(self):
+        """The prefix guard must still not match a token that is merely a prefix."""
+        assert not is_authorized_path(
+            f"/d/{self.CONSOLE}evil", self.API, self.CONSOLE
+        )
+
+    def test_public_and_signature_authenticated_paths_unaffected(self):
+        for path in ("/", "/health", "/bot/webhook", "/billing/hook"):
+            assert is_authorized_path(path, self.API, self.CONSOLE), path

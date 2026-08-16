@@ -21,6 +21,7 @@ import sys
 import time
 from contextvars import ContextVar
 from datetime import datetime, timedelta
+from functools import wraps
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -58,6 +59,7 @@ try:
     import console_pages
     import customers as customers_mod
     import oauth as oauth_mod
+    import tiers as tiers_mod
     import usage as usage_mod
     from security import is_authorized_path, token_matches
 except ModuleNotFoundError:  # package import path used by local tests
@@ -65,10 +67,19 @@ except ModuleNotFoundError:  # package import path used by local tests
     from . import console_pages
     from . import customers as customers_mod
     from . import oauth as oauth_mod
+    from . import tiers as tiers_mod
     from . import usage as usage_mod
     from .security import is_authorized_path, token_matches
 
 MCP_BEARER_TOKEN = os.getenv("MCP_BEARER_TOKEN", "")
+
+# The console's own secret. Optional: unset, it falls back to the MCP token and
+# nothing changes. Set, it decouples "can view the dashboard" from "can call the
+# API" -- which is the point, because the two were the same string until
+# 2026-08-16 and so sharing a dashboard URL also shared write access to all 49
+# tools. Behind Cloudflare Access the console URL stops being the only control
+# at all; this makes it stop being the API key as well.
+CONSOLE_TOKEN = os.getenv("CONSOLE_TOKEN", "") or MCP_BEARER_TOKEN
 
 log = logging.getLogger("mcp")
 
@@ -77,6 +88,12 @@ log = logging.getLogger("mcp")
 # all ~45 tool signatures. FastMCP runs each tool in the same asyncio task as
 # the request, so a value set before call_next is visible inside the tool.
 current_customer: ContextVar[str | None] = ContextVar("current_customer", default=None)
+
+# The authenticated customer's plan, stashed by _customer_gate — which has
+# already fetched the row, so this costs no extra query. Tier enforcement reads
+# it per tool call; looking the customer up again there would double the DB
+# reads on the hottest path in the server.
+current_plan: ContextVar[str | None] = ContextVar("current_plan", default=None)
 
 # The operator's subject. Both owner paths (the shared OAUTH_PASSWORD login and
 # the URL-as-secret mount) resolve to it, and sql/025 reserves a `customers` row
@@ -2396,9 +2413,22 @@ def sc_capabilities() -> dict:
     The system detects "trickle down" accumulation patterns as foreign
     capital flows from foundry (TSMC) → server ODMs → cooling/PCB → power.
     """
+    # What the CALLER can actually reach. Without this the model is handed the
+    # full technical map, tries a locked tool, and gets refused -- the same
+    # class of failure as the capabilities list drifting from the registry,
+    # just in the other direction.
+    _plan = current_plan.get()
+    _locked = tiers_mod.locked_for(_plan) if current_customer.get() not in (None, OWNER_SUBJECT) else []
     return {
         "server": "alphatecx-v2",
         "description": "Taiwan market intelligence — full-market flow tracking plus AI supply chain classification",
+        "your_plan": _plan or tiers_mod.PRIVATE,
+        "locked_tools": _locked,
+        "locked_note": (
+            f"{len(_locked)} tool(s) need a higher plan. They are listed below "
+            "like everything else, but calling one returns `_locked` instead of "
+            "data — tell the user it is a paid feature rather than retrying."
+        ) if _locked else "All tools on this server are available to you.",
         "data_coverage": {
             "flow_tickers": "~7000 TWSE + TPEX stocks from T86",
             "classified": "~27 stocks across 4 AI pillars",
@@ -2692,7 +2722,7 @@ def health(deep: bool = False):
 @app.middleware("http")
 async def auth_gate(request: Request, call_next):
     path = request.url.path
-    if is_authorized_path(path, MCP_BEARER_TOKEN):
+    if is_authorized_path(path, MCP_BEARER_TOKEN, CONSOLE_TOKEN):
         # The URL-as-secret MCP path is the owner. It used to leave
         # current_customer unset, which meant the profile tools saw no identity
         # at all and set_my_risk_profile could only answer "can't persist" —
@@ -2746,6 +2776,7 @@ async def auth_gate(request: Request, call_next):
             return await call_next(request)
         finally:
             current_customer.reset(tok)
+            current_plan.set(None)
 
     return JSONResponse(status_code=404, content={"error": "not_found"})
 
@@ -2775,7 +2806,8 @@ def _customer_gate(sub: str):
         return JSONResponse(status_code=503, content={"error": "store_unavailable"})
     if not customer or customer.get("status") not in customers_mod.USABLE_STATUSES:
         return JSONResponse(status_code=402, content={"error": "account_inactive"})
-    quota = customer.get("monthly_quota")
+    current_plan.set(customer.get("plan"))
+    quota = tiers_mod.effective_quota(customer)
     if quota is not None and usage_mod.calls_this_month(sub) >= quota:
         return JSONResponse(status_code=429, content={"error": "quota_exceeded"})
     return None
@@ -3009,42 +3041,42 @@ async def billing_lemonsqueezy(request: Request):
 
 @app.get("/g/{token}/")
 def graph_index(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_viewer_html()
 
 
 @app.get("/h/{token}/")
 def home(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_home_html(token)
 
 
 @app.get("/t/{token}/")
 def tickers(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_tickers_html(token)
 
 
 @app.get("/g/{token}/data.json")
 def graph_data(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_snapshot_json()
 
 
 @app.get("/g/{token}/graph.png")
 def graph_png(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_graph_png()
 
 
 @app.post("/g/{token}/classify")
 async def graph_classify(token: str, request: Request):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     try:
         payload = await request.json()
@@ -3055,7 +3087,7 @@ async def graph_classify(token: str, request: Request):
 
 @app.post("/t/{token}/folders")
 async def ticker_folders(token: str, request: Request):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     try:
         payload = await request.json()
@@ -3079,7 +3111,7 @@ async def ticker_folders(token: str, request: Request):
 @app.get("/d/{token}/")
 def console_overview(token: str):
     """Console home: pipeline health plus every surface, the page that was missing."""
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return HTMLResponse(console_pages.overview_html(graph_view.ticker_page_count()))
 
@@ -3087,7 +3119,7 @@ def console_overview(token: str):
 @app.get("/d/{token}/market")
 def console_market(token: str):
     """Today's risk light with every check, threshold and input explained."""
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return HTMLResponse(console_pages.market_html())
 
@@ -3095,7 +3127,7 @@ def console_market(token: str):
 @app.get("/d/{token}/system")
 def console_system(token: str):
     """How the pipeline works, generated from the live tool registry."""
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     names = [t.name for t in mcp._tool_manager.list_tools()]
     return HTMLResponse(console_pages.system_map_html(names))
@@ -3103,21 +3135,21 @@ def console_system(token: str):
 
 @app.get("/d/{token}/flow")
 def console_flow(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_dashboard_html(nav="flow")
 
 
 @app.get("/d/{token}/graph")
 def console_graph(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_viewer_html(nav="graph")
 
 
 @app.get("/d/{token}/tickers")
 def console_tickers(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_tickers_html(token, nav="tickers")
 
@@ -3125,21 +3157,21 @@ def console_tickers(token: str):
 @app.get("/d/{token}/home")
 def dashboard_home(token: str):
     """Superseded by the console overview at /d/<token>/. Kept for old links."""
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return RedirectResponse(f"/d/{token}/", status_code=307)
 
 
 @app.get("/d/{token}/dashboard.css")
 def dashboard_css(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_dashboard_css()
 
 
 @app.get("/d/{token}/dashboard.js")
 def dashboard_js(token: str):
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_dashboard_js()
 
@@ -3151,7 +3183,7 @@ def ticker_page(token: str, ticker: str):
     Pages are pre-rendered nightly by `python -m src.dashboard.build_ticker_pages`
     and read from mcp_server/api/static/ticker/{ticker}.html. Same auth as /d/.
     """
-    if not token_matches(token, MCP_BEARER_TOKEN):
+    if not token_matches(token, CONSOLE_TOKEN):
         return JSONResponse(status_code=404, content={"error": "not_found"})
     return graph_view.get_ticker_page(ticker)
 
@@ -3175,6 +3207,56 @@ if not oauth_mod.SIGNING_KEY:
 # registered first, or the bare /mcp mount below swallows /mcp/<token>/ and
 # the URL-as-secret path starts demanding a bearer header — which would kill
 # Claude Code and the Desktop bridge.
+# ── Tier enforcement ──────────────────────────────────────────────────────
+#
+# Applied by wrapping every registered tool in ONE pass rather than putting a
+# decorator on 49 handlers. A decorator you must remember to add is a decorator
+# someone will forget -- the same failure that let sc_capabilities drift to 33
+# of 48. Here a tool cannot escape the gate by omission; the only way to be
+# unguarded is to not be registered at all.
+#
+# Owner traffic bypasses it, exactly as it bypasses metering: the URL-secret and
+# OAUTH_PASSWORD paths resolve to OWNER_SUBJECT, and gating the operator out of
+# their own server would be an outage, not a policy.
+def _install_tier_gate() -> None:
+    for name, tool in mcp._tool_manager._tools.items():
+        tool.fn = _tier_guarded(name, tool.fn, tool.is_async)
+
+
+def _tier_guarded(name, fn, is_async):
+    """Wrap one tool handler with the entitlement check.
+
+    Refusal is a normal return value, not an exception: FastMCP would render a
+    raise as a tool error, which reads to the model as "this broke" and invites
+    a retry. A `_locked` payload reads as "this is not yours yet" and carries
+    the upgrade path.
+    """
+    def _denial():
+        plan = current_plan.get()
+        cust = current_customer.get()
+        if cust is None or cust == OWNER_SUBJECT:
+            return None                     # owner / unauthenticated URL-secret
+        if tiers_mod.allows(plan, name):
+            return None
+        return tiers_mod.refusal(name, plan)
+
+    if is_async:
+        @wraps(fn)
+        async def _async_guard(*args, **kwargs):
+            denial = _denial()
+            return denial if denial is not None else await fn(*args, **kwargs)
+        return _async_guard
+
+    @wraps(fn)
+    def _sync_guard(*args, **kwargs):
+        denial = _denial()
+        return denial if denial is not None else fn(*args, **kwargs)
+    return _sync_guard
+
+
+_install_tier_gate()
+
+
 app.mount(f"/mcp/{MCP_BEARER_TOKEN}", mcp_app)
 
 # Same app object mounted twice, deliberately: FastMCP holds one session

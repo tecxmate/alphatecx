@@ -150,7 +150,9 @@ class TestTickersDegradesInsteadOf503:
         from starlette.testclient import TestClient
 
         monkeypatch.setattr(graph_view, "_ticker_directory", self._boom)
-        monkeypatch.setattr(index, "MCP_BEARER_TOKEN", "tok")
+        # CONSOLE_TOKEN, not MCP_BEARER_TOKEN: the console surfaces gate on
+        # their own secret so a dashboard link is not an API credential.
+        monkeypatch.setattr(index, "CONSOLE_TOKEN", "tok")
 
         r = TestClient(index.app).get("/d/tok/tickers")
         assert r.status_code == 200, f"regressed to {r.status_code}"

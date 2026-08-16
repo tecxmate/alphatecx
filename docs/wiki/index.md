@@ -53,6 +53,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [alphatecx v1](topics/alphatecx-v1.md) — existing system: APEX TW strategy, TWSE MCP, Telegram alerts
 - [Taiwan AI Supply Chain Map](topics/taiwan-ai-supply-chain.md) — 4-pillar strategic map (Semiconductor, Equipment, Infrastructure, Energy)
 - [System Architecture (v2)](topics/system-architecture.md) — Neon-centered stateful pipeline, schema, MCP security, daily workflow
+- [Console authentication](topics/console-auth.md) — why the dashboard link was also the API key, the `CONSOLE_TOKEN` split that separates them, and the Cloudflare Access runbook for putting real SSO in front of the console
 - [Database backups & restore runbook](topics/db-backups.md) — nightly pg_dump to Actions artifacts (the self-hosted Zeabur PG has no native backups); why grants deliberately don't restore from the dump; step-by-step restore
 - [Historical Data Backfill](topics/historical-backfill.md) — 90-day backfill strategy, rate limits, storage estimates
 - [Infrastructure accounts](topics/infrastructure-accounts.md) — Neon, Vercel, Telegram: which org/account owns what, console URLs

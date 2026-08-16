@@ -20,7 +20,19 @@ _OAUTH_PATHS = frozenset({
 })
 
 PUBLIC_PATHS = frozenset({"/", "/health"}) | _OAUTH_PATHS
-TOKEN_PREFIXES = ("/mcp", "/g", "/d", "/h", "/t")
+
+# Two secrets, not one. `/mcp` is the API — the 49 tools, several of which
+# write. `/d`, `/g`, `/h`, `/t` are the human console. They shared a single
+# token until 2026-08-16, which meant **the dashboard link was the API
+# credential**: showing the console to a customer or a co-founder also handed
+# them the ability to drive every tool.
+#
+# CONSOLE_TOKEN is optional and falls back to the MCP token, so an environment
+# that has not set it behaves exactly as before — this split cannot break a
+# running deploy, it only lets one be made safer.
+MCP_PREFIXES = ("/mcp",)
+CONSOLE_PREFIXES = ("/g", "/d", "/h", "/t")
+TOKEN_PREFIXES = MCP_PREFIXES + CONSOLE_PREFIXES
 
 # The Telegram surface authenticates itself and carries no URL secret: the
 # webhook verifies Telegram's X-Telegram-Bot-Api-Secret-Token header and then
@@ -36,12 +48,16 @@ BOT_PREFIX = "/bot"
 BILLING_PREFIX = "/billing"
 
 
-def is_authorized_path(path: str, token: str) -> bool:
+def is_authorized_path(path: str, token: str, console_token: str = "") -> bool:
     """Return whether a request path should pass the app auth gate.
 
     The project uses URL-as-secret routes for the MCP, graph, and dashboard
     surfaces. Prefix matching is segment-aware so `/g/<token>evil` does not
     pass for token `<token>`.
+
+    `console_token` guards the human surfaces (`/d`, `/g`, `/h`, `/t`)
+    separately from the API. It defaults to `token`, so omitting it preserves
+    the previous single-secret behaviour exactly.
     """
     if path in PUBLIC_PATHS:
         return True
@@ -52,7 +68,9 @@ def is_authorized_path(path: str, token: str) -> bool:
     if not token:
         return False
 
-    allowed_prefixes = tuple(f"{prefix}/{token}" for prefix in TOKEN_PREFIXES)
+    console = console_token or token
+    allowed_prefixes = tuple(f"{prefix}/{token}" for prefix in MCP_PREFIXES)
+    allowed_prefixes += tuple(f"{prefix}/{console}" for prefix in CONSOLE_PREFIXES)
     return any(path == prefix or path.startswith(f"{prefix}/") for prefix in allowed_prefixes)
 
 
