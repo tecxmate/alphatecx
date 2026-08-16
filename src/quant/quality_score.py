@@ -28,7 +28,6 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-from typing import Optional
 
 import psycopg
 from dotenv import load_dotenv
@@ -174,9 +173,9 @@ def compute_quality_score(ticker_id: str, conn=None) -> dict:
 
 
 def compute_quality_screen(
-    pillar: Optional[str] = None,
-    node: Optional[str] = None,
-    tickers: Optional[list[str]] = None,
+    pillar: str | None = None,
+    node: str | None = None,
+    tickers: list[str] | None = None,
     sort_by: str = "quality_score",
     top_n: int = 30,
 ) -> list[dict]:
@@ -190,8 +189,12 @@ def compute_quality_screen(
         else:
             wh = ["ai_pillar IS NOT NULL"]
             params: list = []
-            if pillar: wh.append("ai_pillar = %s"); params.append(pillar)
-            if node:   wh.append("node = %s");      params.append(node)
+            if pillar:
+                wh.append("ai_pillar = %s")
+                params.append(pillar)
+            if node:
+                wh.append("node = %s")
+                params.append(node)
             c.execute(f"""SELECT ticker_id FROM dim_ticker WHERE {' AND '.join(wh)}
                           ORDER BY ticker_id""", tuple(params))
         targets = [r[0] for r in c.fetchall()]
@@ -214,8 +217,10 @@ def _interpret(composite, subscores, raw):
     # Highlight extremes
     high = [k for k, v in subscores.items() if v is not None and v >= 75]
     low  = [k for k, v in subscores.items() if v is not None and v <= 25]
-    if high: parts.append(f"Strong: {', '.join(high)}.")
-    if low:  parts.append(f"Weak: {', '.join(low)}.")
+    if high:
+        parts.append(f"Strong: {', '.join(high)}.")
+    if low:
+        parts.append(f"Weak: {', '.join(low)}.")
     if raw.get("latest_yoy_pct") and raw["latest_yoy_pct"] > 50:
         parts.append(f"Revenue YoY +{raw['latest_yoy_pct']:.0f}%.")
     if raw.get("pb_percentile_90d") is not None:

@@ -27,7 +27,6 @@ import argparse
 import logging
 import os
 from datetime import date, timedelta
-from typing import Optional
 
 import numpy as np
 import psycopg
@@ -50,8 +49,8 @@ PILLAR_INDEX = {
 def _date_aligned_returns(dates_a, vals_a, dates_b, vals_b):
     """Return (common_dates, ra_aligned, rb_aligned) — log returns aligned
     on the intersection of dates."""
-    map_a = dict(zip(dates_a, vals_a))
-    map_b = dict(zip(dates_b, vals_b))
+    map_a = dict(zip(dates_a, vals_a, strict=True))
+    map_b = dict(zip(dates_b, vals_b, strict=True))
     common = sorted(set(dates_a) & set(dates_b))
     if len(common) < 3:
         return common, np.array([]), np.array([])
@@ -116,7 +115,8 @@ def build_flow_factor(conn, days: int, z_window: int = 20):
     # Group by ticker
     series: dict[str, list[tuple]] = {}
     for d, tid, fn, cl in rows:
-        if cl is None: continue
+        if cl is None:
+            continue
         series.setdefault(tid, []).append((d, float(fn), float(cl)))
 
     # Per ticker: rolling z-score of foreign_net, daily log return
@@ -197,7 +197,7 @@ def _regress(target_dates_returns, factor_dicts, factor_names, days):
     days: window cap (filters to the last `days` calendar days).
     """
     target_dates, target_returns = target_dates_returns
-    by_date_target = dict(zip(target_dates, target_returns))
+    by_date_target = dict(zip(target_dates, target_returns, strict=True))
 
     common = set(by_date_target)
     for fd in factor_dicts:
@@ -273,13 +273,13 @@ def compute_factor_alpha(ticker_id: str, days: int = 120) -> dict:
         f_dates, f_ret = build_flow_factor(conn, days)
 
     # Build factor dicts and run regression via shared engine
-    factor_dicts = [dict(zip(m_dates_r, m_ret))]
+    factor_dicts = [dict(zip(m_dates_r, m_ret, strict=True))]
     factor_names = ["market"]
     if len(s_ret) > 0:
-        factor_dicts.append(dict(zip(s_dates_r, s_ret)))
+        factor_dicts.append(dict(zip(s_dates_r, s_ret, strict=True)))
         factor_names.append("sector")
     if len(f_ret) > 0:
-        factor_dicts.append(dict(zip(f_dates, f_ret)))
+        factor_dicts.append(dict(zip(f_dates, f_ret, strict=True)))
         factor_names.append("flow")
 
     res = _regress((t_dates_r, t_ret), factor_dicts, factor_names, days)
@@ -303,9 +303,9 @@ def compute_factor_alpha(ticker_id: str, days: int = 120) -> dict:
 # ── Cross-sectional version ────────────────────────────────────────────────
 
 def compute_factor_screen(
-    pillar: Optional[str] = None,
-    node: Optional[str] = None,
-    tickers: Optional[list[str]] = None,
+    pillar: str | None = None,
+    node: str | None = None,
+    tickers: list[str] | None = None,
     days: int = 90,
     min_obs: int = 30,
     sort_by: str = "alpha_tstat",
@@ -341,8 +341,12 @@ def compute_factor_screen(
         else:
             wh = ["ai_pillar IS NOT NULL"]
             params: list = []
-            if pillar: wh.append("ai_pillar = %s"); params.append(pillar)
-            if node:   wh.append("node = %s");      params.append(node)
+            if pillar:
+                wh.append("ai_pillar = %s")
+                params.append(pillar)
+            if node:
+                wh.append("node = %s")
+                params.append(node)
             c.execute(f"""SELECT ticker_id, company_name, ai_pillar, node
                           FROM dim_ticker WHERE {' AND '.join(wh)}
                           ORDER BY ticker_id""", tuple(params))
@@ -353,11 +357,11 @@ def compute_factor_screen(
         m_dates, m_close = fetch_close_series(conn, "0050", days)
         m_dates_r = m_dates[1:]
         m_ret = np.diff(np.log(np.array(m_close, dtype=float)))
-        market_dict = dict(zip(m_dates_r, m_ret))
+        market_dict = dict(zip(m_dates_r, m_ret, strict=True))
 
         # Build flow factor once
         f_dates, f_ret = build_flow_factor(conn, days)
-        flow_dict = dict(zip(f_dates, f_ret)) if len(f_ret) else {}
+        flow_dict = dict(zip(f_dates, f_ret, strict=True)) if len(f_ret) else {}
 
         # Per-pillar sector factor (cache to avoid refetching)
         sector_cache: dict[str, dict] = {}
@@ -366,7 +370,7 @@ def compute_factor_screen(
             if len(s_close) >= 5:
                 s_dates_r = s_dates[1:]
                 s_ret = np.diff(np.log(np.array(s_close, dtype=float)))
-                sector_cache[pillar_key] = dict(zip(s_dates_r, s_ret))
+                sector_cache[pillar_key] = dict(zip(s_dates_r, s_ret, strict=True))
 
         # Iterate targets
         results = []

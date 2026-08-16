@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import urllib.parse
 
-
 # ── Tier A — direct RSS endpoints ─────────────────────────────────────────
 RSS_SOURCES: list[dict] = [
     {

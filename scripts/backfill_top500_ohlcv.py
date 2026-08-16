@@ -6,11 +6,15 @@ Designed to be run once via nohup; can be safely re-run (per-ticker-per-
 month idempotent upserts).
 """
 from __future__ import annotations
-import os, time
+
+import os
+import time
 from datetime import date
-from dotenv import load_dotenv
+
 import psycopg
-from src.harvester import twse, transform, loader
+from dotenv import load_dotenv
+
+from src.harvester import loader, transform, twse
 
 load_dotenv()
 

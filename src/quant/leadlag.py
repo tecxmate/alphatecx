@@ -24,7 +24,6 @@ import argparse
 import logging
 import os
 from datetime import date, timedelta
-from typing import Optional
 
 import numpy as np
 import polars as pl
@@ -70,7 +69,7 @@ def _fetch_returns(window_days: int) -> tuple[np.ndarray, list[str]]:
     closes = wide.select(tickers).to_numpy()
     valid_frac = (~np.isnan(closes)).sum(axis=0) / max(1, closes.shape[0])
     keep = valid_frac >= 0.8
-    tickers = [t for t, k in zip(tickers, keep) if k]
+    tickers = [t for t, k in zip(tickers, keep, strict=True) if k]
     closes = closes[:, keep]
     rets = np.diff(np.log(closes), axis=0)
     col_mean = np.nanmean(rets, axis=0)
@@ -92,7 +91,7 @@ def _pearson(a: np.ndarray, b: np.ndarray) -> float:
 
 def compute_leadlag_pairs(
     rets: np.ndarray, tickers: list[str], max_lag: int = 7,
-    upstream_filter: Optional[set[str]] = None,
+    upstream_filter: set[str] | None = None,
 ) -> list[tuple[str, str, int, float, int]]:
     """Yields (upstream_id, downstream_id, lag, correlation, n_obs) tuples.
 

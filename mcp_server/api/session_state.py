@@ -22,7 +22,6 @@ Regular-session hours (Asia/Taipei), TWSE/TPEX equities:
 from __future__ import annotations
 
 from datetime import datetime, time
-from typing import Optional
 
 # Phase boundaries as naive Taipei clock times; the tz-aware `now` is compared
 # on its local wall clock.
@@ -48,7 +47,7 @@ _INDICATIVE_WARNING = (
 )
 
 
-def phase_for(now: datetime, is_trading_day: bool) -> tuple[str, bool, Optional[str]]:
+def phase_for(now: datetime, is_trading_day: bool) -> tuple[str, bool, str | None]:
     """Return (phase, price_is_indicative, warning) for a Taipei-local `now`.
 
     On a non-trading day every clock time is `closed`; a caller must resolve

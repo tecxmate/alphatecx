@@ -48,9 +48,9 @@ Local-server gotchas, all verified by hitting `/health`:
 - The MCP endpoint is `/mcp/<token>/` **with the trailing slash** — `/mcp/<token>` 307-redirects and `/mcp/<token>/mcp` is a 404.
 - `index.py` refuses to start without `MCP_BEARER_TOKEN` (an empty token would make the URL-as-secret mount path silently 404 everything).
 
-**Lint convention:** full-repo `ruff check .` fails on pre-existing debt (188 errors, nearly all in `db_v2.py`). The working gate is focused ruff on files you touched, plus `pytest -q`. Don't open a repo-wide lint cleanup unless asked.
+**Lint convention:** `ruff check .` passes repo-wide and CI enforces exactly that on every PR. The 185-error backlog was paid off on 2026-08-12 — don't reintroduce a changed-files-only gate. The one scoped exemption is `E402` on `index.py`, which is structural (see the comment in `pyproject.toml`); add a new per-file ignore only with the same kind of written justification, never a blanket disable.
 
-`.pre-commit-config.yaml` enforces exactly that gate — `pre-commit` passes the ruff hook only *staged* files, so the debt never blocks you. Run `pre-commit install` once per clone. `ruff-format` is deliberately absent: it would reformat 66 of 84 files, arriving one file at a time and burying real diffs. Enabling it needs a repo-wide format commit first.
+`.pre-commit-config.yaml` runs the ruff hook on *staged* files, which is a fast local echo of the CI gate rather than a weaker one now that the repo is clean. Run `pre-commit install` once per clone. `git config blame.ignoreRevsFile .git-blame-ignore-revs` once too, so the three mechanical cleanup commits don't bury real authorship in `git blame`. `ruff-format` is deliberately absent: it would reformat 66 of 84 files, arriving one file at a time and burying real diffs. Enabling it needs a repo-wide format commit first.
 
 ## Architecture
 

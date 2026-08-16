@@ -1,0 +1,14 @@
+# Revisions to skip when running `git blame`.
+#
+# Enable locally (once per clone):
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub honours this file automatically in its blame view.
+#
+# Only large MECHANICAL changes belong here — a commit that changed behaviour
+# must stay visible in blame even if it also touched many lines.
+
+# 2026-08-12 — repo-wide ruff cleanup, in three commits, so CI could enforce
+# `ruff check .` instead of only linting changed files.
+78644ea9e7dc354d3ebd716ee25df47596fc5b14  # chore(lint): rename ambiguous `l`, split multi-statement lines (E741/E701/E702)
+aee02bd8487981489f5d310872150fb23df60e85  # chore(lint): make every zip() explicit with strict=True (B905, 27 sites)
+b694bf2ef6209285dd97b2a71cf451c34278ac5e  # chore(lint): apply ruff's safe autofixes across the repo (110 of 185)

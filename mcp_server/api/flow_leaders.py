@@ -35,7 +35,7 @@ Two deliberate deviations from the handoff spec, both forced by 拓凱:
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Optional
+from typing import Any
 
 # ── Score weights (0-100), per handoff §3a ──────────────────────────────────
 # The two make-or-break signals — accumulation and not-yet-run — carry the most.
@@ -76,7 +76,7 @@ def clip(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
 
 
-def _f(v: Any) -> Optional[float]:
+def _f(v: Any) -> float | None:
     """Coerce a possibly-Decimal / possibly-None cell to float or None."""
     if v is None:
         return None
@@ -86,7 +86,7 @@ def _f(v: Any) -> Optional[float]:
         return None
 
 
-def _as_date(v: Any) -> Optional[date]:
+def _as_date(v: Any) -> date | None:
     """Coerce an ISO string or date to a date, or None. Used for the ex-dividend
     day math, which must stay pure (no clock reads) so score_row is testable."""
     if v is None:
@@ -99,7 +99,7 @@ def _as_date(v: Any) -> Optional[date]:
         return None
 
 
-def cash_yield_fwd(row: dict) -> Optional[float]:
+def cash_yield_fwd(row: dict) -> float | None:
     """Forward *cash* yield = next scheduled cash dividend / latest close, in %.
 
     Keys off the TWT48U forecast's cash-only figure (``upcoming_cash_value``),
@@ -114,7 +114,7 @@ def cash_yield_fwd(row: dict) -> Optional[float]:
     return None
 
 
-def cash_yield_ttm(row: dict) -> Optional[float]:
+def cash_yield_ttm(row: dict) -> float | None:
     """Trailing cash yield = latest FinMind cash dividend / close, in %. Cash-only
     (never the blended 殖利率); context, not a forward promise. None if unknown."""
     cash = _f(row.get("fm_cash_dividend"))
@@ -124,7 +124,7 @@ def cash_yield_ttm(row: dict) -> Optional[float]:
     return None
 
 
-def price_move_pct(row: dict) -> Optional[float]:
+def price_move_pct(row: dict) -> float | None:
     """Latest close vs the window *median* — how far above the recent typical
     level the price sits. Median-anchored so one corrupt print can't distort it.
     """
@@ -135,7 +135,7 @@ def price_move_pct(row: dict) -> Optional[float]:
     return None
 
 
-def price_range_pct(row: dict) -> Optional[float]:
+def price_range_pct(row: dict) -> float | None:
     """(p90 - p10) / median as a robust window range, ignoring the tails where
     a single bad tick would otherwise land."""
     p10 = _f(row.get("p10"))
@@ -146,7 +146,7 @@ def price_range_pct(row: dict) -> Optional[float]:
     return None
 
 
-def margin_usage_pct(row: dict) -> Optional[float]:
+def margin_usage_pct(row: dict) -> float | None:
     """Margin balance as a % of the exchange-set margin limit — a proxy for
     retail leverage froth. None when either side is missing."""
     bal = _f(row.get("margin_balance"))
@@ -164,7 +164,7 @@ def score_row(
     max_pe: float = 20.0,
     max_foreign_held: float = 25.0,
     min_buy_day_ratio: float = 0.65,
-    as_of: Optional[str] = None,
+    as_of: str | None = None,
 ) -> dict:
     """Score one aggregated ticker row and attach the derived signature.
 

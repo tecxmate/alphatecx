@@ -24,7 +24,6 @@ import os
 import re
 from datetime import date, datetime
 from pathlib import Path
-from typing import Optional
 
 import psycopg
 from dotenv import load_dotenv
@@ -106,7 +105,7 @@ def fetch_current(conn, ticker_id: str) -> dict:
     return out
 
 
-def fetch_close_at(conn, ticker_id: str, on: date) -> Optional[float]:
+def fetch_close_at(conn, ticker_id: str, on: date) -> float | None:
     """Most recent close on or before `on`."""
     with conn.cursor() as c:
         c.execute("""
@@ -137,7 +136,7 @@ def _fmt_int_thousands(x):
     return f"{int(x):,}"
 
 
-def format_thesis_block(fm: dict, current: dict, opened_close: Optional[float]) -> str:
+def format_thesis_block(fm: dict, current: dict, opened_close: float | None) -> str:
     ticker = fm.get("ticker", "?")
     company = fm.get("company", "")
     opened = fm.get("opened", "")

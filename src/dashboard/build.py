@@ -122,10 +122,12 @@ def _table_html(table_id: str, headers: list[str], rows: list[list[str]],
 _FM_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 def parse_frontmatter(text: str) -> dict:
     m = _FM_RE.match(text)
-    if not m: return {}
+    if not m:
+        return {}
     out = {}
     for line in m.group(1).splitlines():
-        if ":" not in line: continue
+        if ":" not in line:
+            continue
         k, _, v = line.partition(":")
         out[k.strip()] = v.strip()
     return out
@@ -164,12 +166,15 @@ def load_active_theses(conn) -> list[dict]:
     if not THESES_DIR.exists():
         return out
     for p in sorted(THESES_DIR.glob("*.md")):
-        if p.name == "README.md": continue
+        if p.name == "README.md":
+            continue
         text = p.read_text()
         fm = parse_frontmatter(text)
-        if fm.get("status", "").lower() != "active": continue
+        if fm.get("status", "").lower() != "active":
+            continue
         ticker = fm.get("ticker", "")
-        if not ticker: continue
+        if not ticker:
+            continue
         # Current signals + latest close
         with conn.cursor() as c:
             c.execute("""

@@ -16,7 +16,7 @@ close.
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import Any
 
 import requests
 
@@ -30,7 +30,7 @@ _BATCH_SLEEP = 2.0     # stay under ~3 req / 5s
 _MAX_SYMBOLS = 100     # watchlist ceiling — never a market sweep
 
 
-def _num(v: Any) -> Optional[float]:
+def _num(v: Any) -> float | None:
     """Parse a MIS numeric string. '-', '', None → None (no false zero)."""
     if v is None:
         return None
@@ -43,7 +43,7 @@ def _num(v: Any) -> Optional[float]:
         return None
 
 
-def _first(pipe: Any) -> Optional[float]:
+def _first(pipe: Any) -> float | None:
     """First level of an `_`-delimited MIS depth string (best bid/ask)."""
     if not pipe:
         return None
@@ -102,7 +102,7 @@ def _session() -> requests.Session:
     return s
 
 
-def fetch_quotes(ex_ch: list[str]) -> tuple[list[dict], Optional[str]]:
+def fetch_quotes(ex_ch: list[str]) -> tuple[list[dict], str | None]:
     """Fetch MIS quotes for pre-built `ex_ch` tokens (e.g. 'tse_2330.tw').
 
     Batches at `_BATCH`, sleeping between batches to respect the rate limit.
