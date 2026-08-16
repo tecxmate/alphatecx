@@ -72,17 +72,30 @@ browsers and will break the moment Access challenges them. A second hostname on
 the same Zeabur service avoids every path-carve-out mistake.
 
 1. **Zeabur** → `mcp` service → Networking → add custom domain
-   `console.tecxmate.com`. Leave `alphatecx-mcp.zeabur.app` in place and
+   `alpha.tecxmate.com`. Leave `alphatecx-mcp.zeabur.app` in place and
    untouched; that stays the API/webhook hostname.
-2. **Cloudflare DNS** → `CNAME console → <the target Zeabur gives you>`, proxied
-   (orange cloud). Proxying is required — Access only works on proxied records.
-3. **Cloudflare Zero Trust** → Access → Applications → Add → Self-hosted:
-   - Domain `console.tecxmate.com`, path left blank (whole hostname).
+2. **Cloudflare DNS** → `CNAME alpha → <the target Zeabur gives you>`, **DNS
+   only (grey cloud) at first**. This ordering matters: Zeabur issues the
+   certificate by HTTP validation, which needs to reach the origin directly. A
+   proxied record intercepts that and the cert never issues, which presents as
+   a TLS error rather than anything naming the cause.
+3. Wait for Zeabur to report the domain verified and the certificate issued,
+   then **switch the record to proxied (orange cloud)** — Access only works on
+   proxied records — and set SSL/TLS mode to **Full (strict)** so Cloudflare
+   validates the origin certificate it just let Zeabur obtain.
+4. **Cloudflare Zero Trust** → Access → Applications → Add → Self-hosted:
+   - Domain `alpha.tecxmate.com`, path left blank (whole hostname).
    - Policy: Allow → *Emails* → the operator addresses. Add a second identity
      provider (Google/GitHub) or leave the default one-time PIN over email.
-4. **Set `CONSOLE_TOKEN`** on the Zeabur `mcp` service to a fresh random value,
-   so the console URL is no longer the API key. Restart the service.
-5. Browse `https://console.tecxmate.com/d/<CONSOLE_TOKEN>/`.
+   - Confirm in a private window that it challenges before serving anything.
+5. **Set `CONSOLE_TOKEN`** on the Zeabur `mcp` service to a fresh random value,
+   so the console URL is no longer the API key. Restart the service. Generate it
+   locally (`openssl rand -hex 32`) — this project has already had two
+   credentials exposed by being pasted into a chat, so it should not be typed
+   anywhere it will be transcribed.
+6. Browse `https://alpha.tecxmate.com/d/<CONSOLE_TOKEN>/`, then confirm the two
+   negatives that prove the split took: the **old** token no longer opens `/d/`,
+   and the MCP connector on `alphatecx-mcp.zeabur.app` still works untouched.
 
 Result: two independent controls. Cloudflare SSO decides *who* may reach the
 hostname; the console token is what the app itself checks. Losing either one
