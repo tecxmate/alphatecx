@@ -42,6 +42,7 @@ import flow_leaders
 import fugle as fugle_mod
 import graph_view
 import limit_board
+import momentum_leaders
 import quote as quote_mod
 import session_state as session_state_mod
 from fastapi import FastAPI, Request
@@ -132,6 +133,16 @@ _GLOSS_VALUATION = {
 _GLOSS_STOCK_CARD = {
     **_GLOSS_VALUATION,
     "flow": "net shares bought minus sold by institutions (foreign / trust / dealer)",
+}
+_GLOSS_MOMENTUM = {
+    "momentum_score": "0-100 on trend QUALITY (strength, structure, volume, "
+                      "institutional backing) — not on how much it went up",
+    "trailing_stop": "the price at which the trend is considered broken and the "
+                     "position closes — momentum without a stop is just a bag of losers",
+    "extension_above_ma50_pct": "how far above its 50-day average average price has run; "
+                                "far above = late, not strong",
+    "triage": "momentum-entry = early in a confirmed trend · watch = not yet · "
+              "chase = do not enter (see flags)",
 }
 _GLOSS_RISK_LIGHT = {
     "risk_light": "green/yellow/red whole-market caution gauge (not about one stock)",
@@ -944,6 +955,166 @@ _FLOW_SORT_KEYS = {
     "sleeper_score", "foreign_net_sum", "buy_day_ratio",
     "price_move_pct", "foreign_net_z20",
 }
+
+
+@mcp.tool()
+def momentum_leaders_scan(
+    rs_window: int = 60,
+    min_rs_percentile: float = 80.0,
+    require_inst_confirm: bool = True,
+    max_extension_pct: float = 40.0,
+    min_base_days: int = 5,
+    min_turnover_twd: int = 30_000_000,
+    markets: list[str] | None = None,
+    mode: str = "entry",
+    date: str | None = None,
+    limit: int = 40,
+) -> dict:
+    """Which stocks are in a strong trend EARLY — and which held ones have broken?
+
+    When to use: the user wants growth/momentum ideas, asks "what's working", or
+    holds a momentum name and needs to know whether to still be in it. This is
+    NOT a "what's up a lot today" scanner — that finds blow-off tops, and the
+    guards below exist specifically to reject them.
+
+    Each candidate gets a `momentum_score` (0-100), a `triage`
+    (momentum-entry / watch / chase), and — for any entry — a concrete
+    `trailing_stop`. Gloss: momentum only pays if you enter trends early,
+    institutions are buying with you, and you exit on a mechanical stop. A name
+    already far above its 50-day average is `chase`, not `entry`, however strong
+    it looks.
+
+    Which screener? This one = strong-and-early trends. Cheap, quietly-bought,
+    not-yet-moved → `flow_leaders_scan` (the value/sleeper sibling — opposite
+    logic, don't mix the two books). Today's limit-up extremes →
+    `scan_limit_board`. Technical setups → `q_screener`.
+
+    `mode="monitor"` re-computes the stop for names the user already holds and
+    reports `stop_hit` — that is the exit signal, and it carries no discretion.
+    Pass the held tickers via `markets`-filtered results or read the watchlist
+    first; a name whose stop is hit is closed, never reclassified as a "sleeper"
+    to justify holding it.
+
+    Scoreable universe is NARROWER than the sleeper scan's. ATR, the breakout
+    test and the climax guard need high/low/volume, which only the OHLCV harvest
+    carries (~top 500 names), and 200 sessions of history are required for the
+    200-day mean. Small caps outside that set are not scored at all rather than
+    scored badly — `universe_scanned` reports how many were measurable.
+
+    Examples:
+      - today's early trends: momentum_leaders_scan()
+      - check held names' stops: momentum_leaders_scan(mode="monitor")
+      - looser parabola guard: max_extension_pct=55
+
+    Args:
+        rs_window: Relative-strength and flow lookback in sessions (default 60).
+        min_rs_percentile: Percentile vs the measurable market required for an
+            entry (default 80).
+        require_inst_confirm: Require foreign and/or trust net-buying with the
+            trend (default true). This is the retail-pump filter — turning it
+            off makes the tool a meme chaser.
+        max_extension_pct: Reject as `parabolic` above this % over the 50-day
+            mean (default 40). The single most important guard.
+        min_base_days: Sessions of consolidation required before the current
+            leg; fewer trips `no_base` (default 5).
+        min_turnover_twd: Liquidity floor (default 30M).
+        markets: Subset of ['TWSE','TPEX']. Default both.
+        mode: 'entry' for fresh setups, 'monitor' for held names' stops.
+        date: 'YYYY-MM-DD' as-of for a historical scan or post-mortem.
+        limit: Max candidates returned (capped at 200).
+    """
+    wanted = [m.upper() for m in (markets or ["TWSE", "TPEX"])]
+    bad = [m for m in wanted if m not in ("TWSE", "TPEX")]
+    if bad:
+        return {"error": f"markets must be 'TWSE' and/or 'TPEX'; got {bad}"}
+    if mode not in ("entry", "monitor"):
+        return {"error": f"mode must be 'entry' or 'monitor'; got {mode!r}"}
+    if not 5 <= int(rs_window) <= 250:
+        return {"error": f"rs_window must be 5-250 sessions; got {rs_window}"}
+
+    if date:
+        try:
+            parsed = datetime.strptime(date, "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return {"error": f"date must be 'YYYY-MM-DD'; got {date!r}"}
+        if parsed > datetime.now(_TPE).date():
+            return {"error": f"date {date} is in the future"}
+        as_of = parsed.isoformat()
+    else:
+        as_of = db_v2.latest_flow_date()
+        if not as_of:
+            return {"error": "no institutional-flow data has been harvested yet"}
+
+    try:
+        rows = db_v2.query_momentum_leaders(
+            as_of, rs_window=int(rs_window), markets=wanted,
+            min_turnover_twd=int(min_turnover_twd))
+    except Exception as exc:  # noqa: BLE001 — surfaced, not swallowed
+        return {"error": f"momentum query failed: {type(exc).__name__}: {exc}"}
+
+    if mode == "monitor":
+        watched = {w.get("ticker_id") for w in db_v2.query_watchlist(status="active")}
+        held = [r for r in rows if r.get("ticker_id") in watched]
+        checked = [momentum_leaders.monitor_row(r) for r in held]
+        checked.sort(key=lambda c: (not c["stop_hit"], c["ticker_id"] or ""))
+        return _stamp(
+            {
+                "as_of": as_of, "mode": "monitor",
+                "universe_scanned": len(rows),
+                "count": len(checked),
+                "stops_hit": sum(1 for c in checked if c["stop_hit"]),
+                "note": "A hit stop is an exit, not a re-evaluation. Momentum "
+                        "positions are not reclassified as value holds.",
+                "positions": checked,
+            },
+            source="raw_twse_ohlcv+raw_twse_t86+watchlist",
+            as_of=as_of, freshness="EOD",
+        )
+
+    scored = [
+        momentum_leaders.score_row(
+            r,
+            min_rs_percentile=min_rs_percentile,
+            require_inst_confirm=require_inst_confirm,
+            max_extension_pct=max_extension_pct,
+            min_base_days=int(min_base_days),
+        )
+        for r in rows
+    ]
+    scored.sort(key=lambda c: -(c.get("momentum_score") or 0))
+    truncated = len(scored) > limit
+    candidates = scored[: max(1, min(int(limit), 200))]
+
+    counts: dict[str, int] = {}
+    for c in candidates:
+        counts[c["triage"]] = counts.get(c["triage"], 0) + 1
+
+    return _stamp(
+        {
+            "as_of": as_of,
+            "mode": "entry",
+            "price_as_of": as_of,
+            # Same rule as the sleeper scan: EOD prices, so any level must be
+            # re-quoted before acting if the as-of is not today.
+            "stale_price_warning": as_of != datetime.now(_TPE).date().isoformat(),
+            "rs_window": int(rs_window),
+            "markets": wanted,
+            "universe_scanned": len(rows),
+            "universe_note": "Names with >=200 sessions of OHLCV history. ATR, "
+                             "the breakout test and the climax guard need "
+                             "high/low/volume, which only the OHLCV harvest "
+                             "carries — so this is narrower than the sleeper "
+                             "scan's priced universe.",
+            "count": len(candidates),
+            "triage_counts": counts,
+            "truncated": truncated,
+            "candidates": candidates,
+        },
+        source="raw_twse_ohlcv+raw_twse_t86+raw_twse_index+raw_twse_valuation",
+        as_of=as_of,
+        freshness="EOD",
+        glossary=_GLOSS_MOMENTUM,
+    )
 
 
 @mcp.tool()
@@ -2259,6 +2430,7 @@ def sc_capabilities() -> dict:
             {"name": "sc_accumulation_screen", "purpose": "Find tickers with sustained FINI buying"},
             {"name": "market_flow_screener", "purpose": "Full TWSE/TPEX flow screener across classified and unclassified tickers"},
             {"name": "scan_limit_board", "purpose": "Scan the TWSE/TPEX limit-up/limit-down board (EOD) and triage each hit as sleeper vs chase"},
+            {"name": "momentum_leaders_scan", "purpose": "Strong-and-early trend leaders with a mandatory trailing stop; rejects parabolic/retail-pump blow-offs as chases. mode=monitor re-checks held names' stops"},
             {"name": "flow_leaders_scan", "purpose": "Market-wide screen for quiet foreign accumulation into a still-cheap, still-flat price (generative sleeper board)"},
             {"name": "session_state", "purpose": "Taipei market phase + trading-calendar status; flags 試撮 pre-open indicative prices so a simulated quote is never read as real"},
             {"name": "quote", "purpose": "Realtime-ish watchlist quotes (Fugle preferred, TWSE MIS fallback) with authoritative limit-up/down prices; stamps 試撮 indicative prices"},
