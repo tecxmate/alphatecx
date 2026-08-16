@@ -96,4 +96,5 @@ instance.
   producing artifacts because the workflow installed `postgresql-client-17` while Zeabur runs
   Postgres 18.4; `pg_dump` refuses to dump a newer server. Updated the workflow to install
   `postgresql-client-18` and put `/usr/lib/postgresql/18/bin` on `GITHUB_PATH`, because installing
-  the package alone left Ubuntu's default `pg_dump` 16 first on `PATH`.
+  the package alone left Ubuntu's default `pg_dump` 16 first on `PATH`. Manual run
+  `31924048585` then succeeded and uploaded artifact `alphatecx-2026-08-16` (about 42 MB).
