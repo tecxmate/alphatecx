@@ -1451,6 +1451,172 @@ def query_lead_lag(
     return _serialize(_fetch(sql, tuple(params)))
 
 
+def query_momentum_leaders(
+    as_of: str,
+    rs_window: int = 60,
+    markets: list[str] | None = None,
+    min_turnover_twd: int = 30_000_000,
+) -> list[dict]:
+    """Per-ticker trend aggregation for `momentum_leaders_scan`.
+
+    One SQL pass computing everything the pure scorer in
+    ``momentum_leaders.score_row`` needs: 50/200-day means and their prior
+    values (so "rising" is measurable), the 3-month high, a 20-day volume
+    ratio, ATR(14), a recent swing low, relative strength versus TAIEX over
+    `rs_window`, institutional flow over the same window, and the length of the
+    consolidation preceding the current leg.
+
+    UNIVERSE — narrower than flow_leaders', and unavoidably so. That scan can
+    read price from ``raw_twse_valuation`` (~1.1k TWSE names, close only), but
+    momentum needs HIGH, LOW and VOLUME for ATR, the breakout test and the
+    climax guard. Only ``raw_twse_ohlcv`` carries those, and it is a top-500
+    harvest. So this reads the OHLCV set and requires ~200 sessions of history
+    for the 200-day mean, leaving a few hundred scoreable names. Small caps
+    outside that harvest cannot be scored at all rather than being scored
+    badly — see the `universe` note the tool returns.
+
+    Relative strength is return-vs-TAIEX over `rs_window`, percentile-ranked
+    across the scoreable set with PERCENT_RANK, so `rs_percentile` means "beat
+    this share of the measurable market" and not "beat this share of everything
+    listed". The distinction matters when reading a 96th percentile.
+
+    Flow comes from ``raw_twse_t86`` (all-market) like every other scanner
+    here, summed over `rs_window` so "institutions bought WITH the trend" is
+    measured over the same window the trend is.
+    """
+    mkts = markets or ["TWSE", "TPEX"]
+    sql = """
+        WITH px AS (
+          SELECT ticker_id, date, open, high, low, close, volume_shares, turnover_twd,
+                 ROW_NUMBER() OVER (PARTITION BY ticker_id ORDER BY date DESC) AS rn
+          FROM raw_twse_ohlcv
+          WHERE date <= %(d)s AND close IS NOT NULL AND close > 0
+        ),
+        -- Enough history for the 200-day mean; anything shorter cannot have a
+        -- trend structure and is dropped rather than scored on a partial mean.
+        eligible AS (
+          SELECT ticker_id FROM px GROUP BY ticker_id HAVING COUNT(*) >= 200
+        ),
+        latest AS (
+          SELECT ticker_id, close, high, low, turnover_twd
+          FROM px WHERE rn = 1
+        ),
+        mas AS (
+          SELECT ticker_id,
+                 AVG(close) FILTER (WHERE rn <= 50)                AS ma_50,
+                 AVG(close) FILTER (WHERE rn BETWEEN 6 AND 55)     AS ma_50_prev,
+                 AVG(close) FILTER (WHERE rn <= 200)               AS ma_200,
+                 AVG(close) FILTER (WHERE rn BETWEEN 6 AND 205)    AS ma_200_prev,
+                 MAX(close) FILTER (WHERE rn <= 63)                AS high_3m,
+                 MIN(low)   FILTER (WHERE rn <= 20)                AS recent_swing_low,
+                 AVG(volume_shares) FILTER (WHERE rn BETWEEN 2 AND 21) AS avg_vol_20,
+                 MAX(volume_shares) FILTER (WHERE rn = 1)          AS vol_today
+          FROM px GROUP BY ticker_id
+        ),
+        -- ATR(14) as the mean true range. The full Wilder smoothing needs a
+        -- recursive seed; over 14 sessions the simple mean is within a rounding
+        -- error of it and is one aggregate rather than a window function chain.
+        tr AS (
+          SELECT ticker_id,
+                 GREATEST(high - low,
+                          ABS(high - LAG(close) OVER (PARTITION BY ticker_id ORDER BY date)),
+                          ABS(low  - LAG(close) OVER (PARTITION BY ticker_id ORDER BY date))) AS true_range,
+                 ROW_NUMBER() OVER (PARTITION BY ticker_id ORDER BY date DESC) AS rn
+          FROM px WHERE rn <= 30
+        ),
+        atr AS (
+          SELECT ticker_id, AVG(true_range) AS atr_14
+          FROM tr WHERE rn <= 14 GROUP BY ticker_id
+        ),
+        -- Return over the RS window, and the same for TAIEX, so relative
+        -- strength is a difference of two returns over identical dates.
+        rets AS (
+          SELECT p.ticker_id,
+                 (MAX(p.close) FILTER (WHERE p.rn = 1)
+                  / NULLIF(MAX(p.close) FILTER (WHERE p.rn = %(w)s), 0) - 1) * 100 AS ret_pct
+          FROM px p WHERE p.rn <= %(w)s GROUP BY p.ticker_id
+        ),
+        taiex AS (
+          SELECT (MAX(close) FILTER (WHERE rn = 1)
+                  / NULLIF(MAX(close) FILTER (WHERE rn = %(w)s), 0) - 1) * 100 AS ret_pct
+          FROM (
+            SELECT close, ROW_NUMBER() OVER (ORDER BY date DESC) AS rn
+            FROM raw_twse_index
+            WHERE index_name = '發行量加權股價指數' AND date <= %(d)s
+          ) t WHERE rn <= %(w)s
+        ),
+        flow AS (
+          SELECT ticker_id,
+                 SUM(foreign_net) AS foreign_trend_net,
+                 SUM(trust_net)   AS trust_trend_net
+          FROM (
+            SELECT ticker_id, foreign_net, trust_net,
+                   ROW_NUMBER() OVER (PARTITION BY ticker_id ORDER BY date DESC) AS rn
+            FROM raw_twse_t86 WHERE date <= %(d)s
+          ) f WHERE rn <= %(w)s GROUP BY ticker_id
+        ),
+        -- The consolidation before the current leg: how many of the sessions
+        -- before the last 5 sat inside a +/-5% band. Vertical-from-nothing
+        -- scores 0 here and trips the no_base guard.
+        base AS (
+          SELECT ticker_id,
+                 COUNT(*) FILTER (
+                   WHERE ABS(close / NULLIF(band.med, 0) - 1) <= 0.05
+                 ) AS base_days_before_leg
+          FROM px
+          JOIN LATERAL (
+            SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY p2.close) AS med
+            FROM px p2
+            WHERE p2.ticker_id = px.ticker_id AND p2.rn BETWEEN 6 AND 40
+          ) band ON true
+          WHERE px.rn BETWEEN 6 AND 40
+          GROUP BY ticker_id
+        )
+        SELECT dt.ticker_id, dt.company_name AS name, dt.market,
+               l.close, l.high, l.low,
+               m.ma_50, m.ma_50_prev, m.ma_200, m.ma_200_prev,
+               m.high_3m, m.recent_swing_low,
+               CASE WHEN m.avg_vol_20 > 0
+                    THEN m.vol_today::float / m.avg_vol_20 END AS volume_ratio_20,
+               a.atr_14,
+               r.ret_pct AS trend_return_pct,
+               r.ret_pct - x.ret_pct AS rs_vs_taiex_pct,
+               PERCENT_RANK() OVER (ORDER BY r.ret_pct - x.ret_pct) * 100 AS rs_percentile,
+               f.foreign_trend_net, f.trust_trend_net,
+               b.base_days_before_leg,
+               val.pe_ratio, val.pb_ratio,
+               rev.yoy_pct AS rev_yoy_pct, rev.yoy_pct_prev AS rev_yoy_pct_prev
+          FROM eligible e
+          JOIN latest l USING (ticker_id)
+          JOIN mas m USING (ticker_id)
+          JOIN rets r USING (ticker_id)
+          JOIN dim_ticker dt USING (ticker_id)
+          CROSS JOIN taiex x
+          LEFT JOIN atr a USING (ticker_id)
+          LEFT JOIN flow f USING (ticker_id)
+          LEFT JOIN base b USING (ticker_id)
+          LEFT JOIN LATERAL (
+            SELECT pe_ratio, pb_ratio FROM raw_twse_valuation v
+            WHERE v.ticker_id = e.ticker_id AND v.date <= %(d)s
+            ORDER BY v.date DESC LIMIT 1
+          ) val ON true
+          LEFT JOIN LATERAL (
+            SELECT MAX(yoy_pct) FILTER (WHERE rn = 1) AS yoy_pct,
+                   MAX(yoy_pct) FILTER (WHERE rn = 2) AS yoy_pct_prev
+            FROM (
+              SELECT yoy_pct, ROW_NUMBER() OVER (ORDER BY ym DESC) AS rn
+              FROM raw_monthly_revenue rm WHERE rm.ticker_id = e.ticker_id
+            ) rr WHERE rn <= 2
+          ) rev ON true
+         WHERE dt.market = ANY(%(mkts)s)
+           AND COALESCE(l.turnover_twd, 0) >= %(min_to)s
+    """
+    return _serialize(_fetch(sql, {
+        "d": as_of, "w": int(rs_window), "mkts": mkts,
+        "min_to": int(min_turnover_twd),
+    }))
+
+
 def query_data_status() -> dict:
     table_names = [
         "raw_twse_t86", "raw_twse_holdings", "raw_twse_margin",
