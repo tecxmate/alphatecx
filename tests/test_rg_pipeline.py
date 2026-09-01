@@ -43,7 +43,7 @@ class ResendTests(unittest.TestCase):
              mock.patch.object(pipeline, "send", return_value=True) as send, \
              mock.patch.object(pipeline.store, "mark_pushed") as mark:
             self.assertEqual(pipeline.flush_undelivered(), 1)
-        send.assert_called_once_with(pending[0]["message"])
+        send.assert_called_once_with(pending[0]["message"], category="alerts")
         mark.assert_called_once_with(7)
 
     def test_a_still_failing_send_is_not_marked_pushed(self):
@@ -97,7 +97,7 @@ class ResendTests(unittest.TestCase):
              mock.patch.object(pipeline.store, "mark_pushed") as mark:
             self.assertTrue(pipeline._emit("stop_exit", "critical", "msg",
                                            ticker_id="2324"))
-        send.assert_called_once_with("🚨 出場線")
+        send.assert_called_once_with("🚨 出場線", category="alerts")
         mark.assert_called_once_with(7)
 
     def test_duplicate_retry_that_still_fails_stays_unpushed(self):

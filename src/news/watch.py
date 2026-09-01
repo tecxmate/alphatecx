@@ -35,6 +35,7 @@ import re
 import time
 from datetime import UTC, datetime, timedelta
 
+from src import quote_watch
 from src.alerts import telegram
 from src.harvester.loader import atomic, cur, log_ingestion
 from src.news.harvest import _fetch_feed, _upsert
@@ -233,8 +234,20 @@ def run(poll_seconds: int = DEFAULT_POLL_SECONDS,
                     and (ticker_id := match_terms(row, terms)) is not None
                 ]
                 if hits:
-                    telegram.send(format_alert(hits))
+                    telegram.send(format_alert(hits), category="news")
                     log.info("Alerted on %d article(s)", len(hits))
+
+            # Intraday stop check rides the same heartbeat (src/quote_watch.py
+            # says why). Own try: a Fugle or rg import problem must cost this
+            # cycle's stop check, never the news poll — and vice versa. It also
+            # runs on the priming cycle on purpose: a stop breached before a
+            # cold start is exactly the alert that must not wait for cycle 2.
+            try:
+                pushed = quote_watch.check_once()
+                if pushed:
+                    log.info("quote watch pushed %d stop alert(s)", pushed)
+            except Exception:
+                log.exception("quote watch failed — continuing")
         except Exception:
             log.exception("Poll cycle %d failed — continuing", cycle)
 

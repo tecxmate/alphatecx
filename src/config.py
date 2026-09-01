@@ -40,10 +40,46 @@ FINMIND_REQUEST_DELAY = float(os.getenv("FINMIND_REQUEST_DELAY", "0.35"))
 # the notify-on-failure path silently dead because it depended on the same
 # token. A deliberate "off" should be legible as deliberate, in the logs and in
 # the workflow preflight, so nobody spends another afternoon diagnosing it.
+def _flag_on(name: str) -> bool:
+    return os.getenv(name, "true").strip().lower() not in ("false", "0", "no", "off")
+
+
 def telegram_enabled() -> bool:
-    return os.getenv("TELEGRAM_ENABLED", "true").strip().lower() not in (
-        "false", "0", "no", "off",
-    )
+    return _flag_on("TELEGRAM_ENABLED")
+
+
+# Category switches under the master flag. "Off" proved too blunt in practice:
+# the first time TELEGRAM_ENABLED went false (2026-08-16) the reason was noise,
+# and total silence also cost the stop alerts and the morning brief — the
+# messages the noise was drowning out. One switch per kind of message means the
+# channel can carry signal without carrying everything.
+#
+# Categories, and who sends under each:
+#   briefs — pre-market/intraday/post-close briefs, thesis heartbeat, the
+#            daily harvest summary
+#   alerts — Risk Guard: stop-line breaches, light changes, settlement checks,
+#            and the intraday quote watcher
+#   news   — the news poller's watchlist pushes
+#   ops    — harvest error alerts (workflow-level 🔴 FAILED curls are gated
+#            separately in the YAML, on the master flag only)
+#
+# All default ON so that setting nothing behaves exactly as before this
+# existed: the master flag alone decides.
+TELEGRAM_CATEGORIES = ("briefs", "alerts", "news", "ops")
+
+
+def telegram_category_enabled(category: str) -> bool:
+    """Master flag AND the category's own flag (TELEGRAM_BRIEFS etc.).
+
+    Unknown categories are ON rather than off: this gate exists to reduce
+    noise, not to fail closed — a typo at a send site must degrade to "message
+    delivered" (the pre-switch behaviour), never to another silent channel.
+    """
+    if not telegram_enabled():
+        return False
+    if category not in TELEGRAM_CATEGORIES:
+        return True
+    return _flag_on(f"TELEGRAM_{category.upper()}")
 
 
 def telegram_configured() -> bool:

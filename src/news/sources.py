@@ -93,6 +93,36 @@ GOOGLE_NEWS_QUERIES: list[dict] = [
         "url": _gnews("台股 法人 外資", "zh-TW", "TW"),
         "lang": "zh-Hant",
     },
+    # ── Macro — the overnight forces a beta market wakes up to ────────────
+    # Taiwan trades as a high-beta expression of the US semi cycle and the
+    # dollar: SOX and the TSMC ADR set the open's gap, Fed policy sets the
+    # liquidity regime, USD/TWD is the foreign-flow tell. Ingested for
+    # n_recent/digests and the coming macro brief; they rarely match watchlist
+    # terms, so they add little push noise by construction.
+    {
+        "key": "gnews-macro-fed-en",
+        "feed_name": "Google News — Fed policy & US rates (EN)",
+        "url": _gnews("Federal Reserve rate decision OR FOMC OR Treasury yields", "en", "US"),
+        "lang": "en",
+    },
+    {
+        "key": "gnews-macro-semis-en",
+        "feed_name": "Google News — semiconductor cycle & SOX (EN)",
+        "url": _gnews("semiconductor cycle OR SOX index OR chip demand outlook", "en", "US"),
+        "lang": "en",
+    },
+    {
+        "key": "gnews-macro-tsm-adr-en",
+        "feed_name": "Google News — TSMC ADR (EN)",
+        "url": _gnews("TSMC ADR OR TSM stock", "en", "US"),
+        "lang": "en",
+    },
+    {
+        "key": "gnews-macro-twd-zh",
+        "feed_name": "Google News — 台幣匯率/央行 (zh-TW)",
+        "url": _gnews("台幣 匯率 OR 央行 升息 OR 熱錢", "zh-TW", "TW"),
+        "lang": "zh-Hant",
+    },
     {
         "key": "gnews-geo-tw",
         "feed_name": "Google News — Taiwan Strait geopolitics (EN)",

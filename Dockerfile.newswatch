@@ -35,6 +35,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src ./src
 
+# The intraday stop watcher (src/quote_watch.py) composes riskguard.store and
+# the PURE stop logic in mcp_server/api/rg — the same cross-tree imports the
+# root Dockerfile carries for the same reason (riskguard imports
+# mcp_server.api.rg). Dropping either line fails SILENTLY: the poller keeps
+# running and only the stop check dies, per its never-kill-the-loop guard.
+COPY riskguard ./riskguard
+COPY mcp_server ./mcp_server
+
 RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app
 USER appuser
 

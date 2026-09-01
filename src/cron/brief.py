@@ -378,7 +378,7 @@ def pre_market_brief() -> None:
     if ticker_news:
         short += f"\n<b>Top headline</b>: {ticker_news[0]['title'][:120]}\n"
     short += "\n<b>今天要做的事</b>:\n" + _format_checklist(checklist)
-    send(short)
+    send(short, category="briefs")
     with cur() as c:
         c.execute("SET search_path TO public, neon_auth")
         _mark_telegram_sent(c, "pre_market")
@@ -410,7 +410,7 @@ def intraday_alerts() -> None:
         lines.append("\n<b>指標異常(最新收盤)</b>:")
         for s in extremes[:5]:
             lines.append(f"• {_format_signal_alert(s)}")
-    send("\n".join(lines))
+    send("\n".join(lines), category="briefs")
 
     with cur() as c:
         c.execute("SET search_path TO public, neon_auth")
@@ -617,7 +617,7 @@ def post_close_brief() -> None:
             short += (f"• {ll['up']} 先動,{ll['down']} 約 {ll['lag']} 天後跟著動"
                       f"(關聯{strength} {rho})\n")
     short += "\n<b>明天要做的事</b>:\n" + _format_checklist(checklist)
-    send(short)
+    send(short, category="briefs")
 
     with cur() as c:
         c.execute("SET search_path TO public, neon_auth")

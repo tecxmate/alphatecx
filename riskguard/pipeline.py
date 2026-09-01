@@ -65,7 +65,7 @@ def _emit(kind: str, severity: str, message: str, *, ticker_id=None,
         existing = store.find_alert(kind, dedup_key or ticker_id or "",
                                     date_iso=date_iso)
         if existing and not existing["pushed"] and existing.get("message"):
-            if send(existing["message"]):
+            if send(existing["message"], category="alerts"):
                 store.mark_pushed(existing["id"])
                 log.info("alert %s/%s was recorded undelivered — sent now",
                          kind, ticker_id)
@@ -75,7 +75,7 @@ def _emit(kind: str, severity: str, message: str, *, ticker_id=None,
         log.info("alert %s/%s already recorded and delivered — not resending",
                  kind, ticker_id)
         return False
-    if send(message):
+    if send(message, category="alerts"):
         store.mark_pushed(alert_id)
         return True
     log.warning("alert %s recorded (id=%s) but Telegram send failed", kind, alert_id)
@@ -95,7 +95,7 @@ def flush_undelivered() -> int:
     for row in pending:
         if not row.get("message"):
             continue
-        if send(row["message"]):
+        if send(row["message"], category="alerts"):
             store.mark_pushed(row["id"])
             sent += 1
     if pending:

@@ -245,7 +245,7 @@ def main():
 
         persist_digest(conn, message, reports)
 
-    send(message)
+    send(message, category="briefs")
     log.info("thesis_status sent — %d theses summarised", len(reports))
 
 
