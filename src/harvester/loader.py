@@ -477,6 +477,36 @@ def upsert_market_holidays(rows: list[dict], c=None) -> int:
     return len(rows)
 
 
+def upsert_macro(rows: list[dict], c=None) -> int:
+    """Upsert macro series rows (list of dicts, not a DataFrame).
+
+    No _save_local parquet copy, matching the other list[dict] upserts: five
+    series a day is not the all-market volume the parquet snapshots exist to
+    guard against re-fetching.
+
+    Plain DO UPDATE with no protective WHERE — unlike market_holidays, there is
+    no hand-authored row to defend. A re-run of the same day is expected (the
+    same pipeline runs twice nightly, GitHub Actions and Zeabur cron) and must
+    be idempotent, which the composite PK gives for free.
+    """
+    if not rows:
+        return 0
+    sql = """
+        INSERT INTO raw_macro (date, series, close, prev_close, pct_change, source)
+        VALUES (%(date)s, %(series)s, %(close)s, %(prev_close)s, %(pct_change)s, %(source)s)
+        ON CONFLICT (date, series) DO UPDATE SET
+            close = EXCLUDED.close,
+            prev_close = EXCLUDED.prev_close,
+            pct_change = EXCLUDED.pct_change,
+            source = EXCLUDED.source,
+            ingested_at = now()
+    """
+    with _cursor_or_default(c) as cc:
+        cc.executemany(sql, rows)
+    log.info("Upserted %d rows into raw_macro", len(rows))
+    return len(rows)
+
+
 def upsert_finmind_dividend(rows: list[dict], c=None) -> int:
     """Upsert FinMind dividend-policy rows (cash/stock split per fiscal year)."""
     if not rows:

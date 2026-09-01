@@ -13,6 +13,7 @@ import requests
 from src.config import (
     TELEGRAM_CHAT_ID,
     TELEGRAM_TOKEN,
+    telegram_category_enabled,
     telegram_configured,
     telegram_enabled,
 )
@@ -20,8 +21,13 @@ from src.config import (
 log = logging.getLogger("telegram")
 
 
-def send(message: str) -> bool:
+def send(message: str, category: str = "alerts") -> bool:
     """Send a Telegram message. Returns whether it was actually delivered.
+
+    `category` is one of config.TELEGRAM_CATEGORIES; the default is "alerts"
+    because that is the send whose loss hurts most — an uncategorised new call
+    site should be silenceable only by the master flag or the alerts flag,
+    never accidentally quieter than that.
 
     Two non-delivery cases, deliberately logged differently. Switched off is
     routine and logs at INFO; a missing or malformed token is a system that
@@ -30,6 +36,9 @@ def send(message: str) -> bool:
     """
     if not telegram_enabled():
         log.info("Telegram disabled (TELEGRAM_ENABLED=false); not sending")
+        return False
+    if not telegram_category_enabled(category):
+        log.info("Telegram %s category switched off; not sending", category)
         return False
     if not telegram_configured():
         log.warning("Telegram not configured, printing instead:\n%s", message)
@@ -97,7 +106,7 @@ def send_daily_summary(date_iso: str, results: dict) -> None:
     except Exception as e:
         log.warning("Could not fetch sector momentum for alert: %s", e)
 
-    send(msg)
+    send(msg, category="briefs")
 
 
 def send_error_alert(source: str, error: str) -> None:
@@ -105,7 +114,8 @@ def send_error_alert(source: str, error: str) -> None:
     send(
         f"🔴 <b>alphatecx harvest error</b>\n"
         f"Source: {source}\n"
-        f"Error: {error}"
+        f"Error: {error}",
+        category="ops",
     )
 
 

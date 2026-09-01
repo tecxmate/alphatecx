@@ -42,7 +42,8 @@ DECLARE
     'market_holidays',              -- 015, session_state trading calendar
     'raw_twse_dividend',            -- 016, dividend_calendar
     'raw_finmind_dividend',         -- 017, dividend fill
-    'raw_finmind_news'              -- 017, news fallback
+    'raw_finmind_news',             -- 017, news fallback
+    'raw_macro'                     -- 026, q_macro / pre-market brief
   ];
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'mcp_viewer') THEN

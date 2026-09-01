@@ -24,7 +24,7 @@ import logging
 from datetime import date, timedelta
 
 from src.alerts.telegram import send_daily_summary
-from src.harvester import finmind, loader, transform, twse
+from src.harvester import finmind, loader, macro, transform, twse
 
 logging.basicConfig(
     level=logging.INFO,
@@ -336,6 +336,35 @@ def harvest_today() -> dict:
         log.error("Indices failed: %s", e)
         results["errors"].append(f"indices: {e}")
     twse._rate_limit()
+
+    # ── 5f. Macro series (US session, already closed before the Taipei open) ──
+    # Placed with the other 5x sub-steps and failure-isolated like them. Note
+    # this step does NOT gate on `target` being a Taiwan trading day: the US
+    # session runs on days the TWSE is shut, and those rows are exactly the
+    # ones the Monday pre-market brief needs.
+    try:
+        macro_rows, macro_errs = macro.fetch_series(days=7)
+        for err in macro_errs:
+            log.warning("Macro partial failure — %s", err)
+        if macro_rows:
+            with loader.atomic() as c:
+                count = loader.upsert_macro(macro_rows, c=c)
+                loader.log_ingestion(
+                    "macro", iso, count,
+                    "ok" if not macro_errs else "partial",
+                    "; ".join(macro_errs) or None, c=c,
+                )
+            results["macro"] = count
+        else:
+            # Every series failed. Recorded as an error, not "empty": empty
+            # means the source had nothing to say, and five simultaneous vendor
+            # failures is a breakage worth seeing in n_source_status.
+            loader.log_ingestion("macro", iso, 0, "error", "; ".join(macro_errs) or None)
+            results["errors"].append(f"macro: {'; '.join(macro_errs) or 'no rows'}")
+    except Exception as e:
+        log.error("Macro failed: %s", e)
+        results["errors"].append(f"macro: {e}")
+        loader.log_ingestion("macro", iso, 0, "error", str(e))
 
     # ── 5c. Market calendar (holidays) — cheap; keeps session_state honest ──
     # Current + next Gregorian year so forward dates near year-end resolve, and

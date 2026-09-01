@@ -101,3 +101,65 @@ class SendBehaviourTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CategorySwitchTests(unittest.TestCase):
+    """Per-category flags under the master (TELEGRAM_BRIEFS/ALERTS/NEWS/OPS).
+
+    The first real use of TELEGRAM_ENABLED=false (2026-08-16) was about noise,
+    and total silence also cost the stop alerts and the morning brief. These
+    pin the finer control: one category off must not touch the others, the
+    master must still kill everything, and setting nothing must behave exactly
+    as the world before categories existed.
+    """
+
+    VALID_TOKEN = {"TELEGRAM_TOKEN": "123:abc", "TELEGRAM_CHAT_ID": "42"}
+
+    def test_defaults_all_on_so_master_alone_decides(self):
+        with telegram_env(TELEGRAM_ENABLED="true", **self.VALID_TOKEN) as (config, _):
+            for cat in config.TELEGRAM_CATEGORIES:
+                self.assertTrue(config.telegram_category_enabled(cat), cat)
+
+    def test_master_off_silences_every_category(self):
+        with telegram_env(TELEGRAM_ENABLED="false", TELEGRAM_ALERTS="true",
+                          **self.VALID_TOKEN) as (config, _):
+            for cat in config.TELEGRAM_CATEGORIES:
+                self.assertFalse(config.telegram_category_enabled(cat), cat)
+
+    def test_one_category_off_leaves_the_others_alone(self):
+        with telegram_env(TELEGRAM_ENABLED="true", TELEGRAM_NEWS="false",
+                          **self.VALID_TOKEN) as (config, _):
+            self.assertFalse(config.telegram_category_enabled("news"))
+            self.assertTrue(config.telegram_category_enabled("alerts"))
+            self.assertTrue(config.telegram_category_enabled("briefs"))
+            self.assertTrue(config.telegram_category_enabled("ops"))
+
+    def test_unknown_category_fails_open_not_silent(self):
+        """A typo at a send site must degrade to 'delivered', never to a new
+        silent channel — this gate exists to reduce noise, not to fail closed."""
+        with telegram_env(TELEGRAM_ENABLED="true", **self.VALID_TOKEN) as (config, _):
+            self.assertTrue(config.telegram_category_enabled("tpyo"))
+
+    def test_send_honours_the_category_with_no_network_call(self):
+        with telegram_env(TELEGRAM_ENABLED="true", TELEGRAM_NEWS="false",
+                          **self.VALID_TOKEN) as (_, tg):
+            with mock.patch.object(tg.requests, "post") as post:
+                self.assertFalse(tg.send("hi", category="news"))
+                post.assert_not_called()
+
+    def test_send_default_category_is_alerts(self):
+        """An uncategorised call site must be silenceable only via alerts (or
+        the master) — never accidentally quieter than the loudest category."""
+        with telegram_env(TELEGRAM_ENABLED="true", TELEGRAM_ALERTS="false",
+                          **self.VALID_TOKEN) as (_, tg):
+            with mock.patch.object(tg.requests, "post") as post:
+                self.assertFalse(tg.send("hi"))
+                post.assert_not_called()
+
+    def test_other_categories_still_send_when_one_is_off(self):
+        with telegram_env(TELEGRAM_ENABLED="true", TELEGRAM_NEWS="false",
+                          **self.VALID_TOKEN) as (_, tg):
+            with mock.patch.object(tg.requests, "post") as post:
+                post.return_value.raise_for_status.return_value = None
+                self.assertTrue(tg.send("hi", category="alerts"))
+                post.assert_called_once()

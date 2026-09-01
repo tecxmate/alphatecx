@@ -96,6 +96,7 @@ TOOL_TIERS: dict[str, str] = {
     "q_factor_alpha": PRO,
     "q_factor_screen": PRO,
     "q_index_history": PRO,
+    "q_macro": PRO,
     "q_lead_lag": PRO,
     "q_pca_decompose": PRO,
     "q_quality_score": PRO,

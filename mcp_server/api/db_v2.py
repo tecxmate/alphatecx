@@ -1617,10 +1617,52 @@ def query_momentum_leaders(
     }))
 
 
+def query_macro(series: str | None = None, days: int = 30) -> list[dict]:
+    """Macro series rows, newest first.
+
+    `series` is matched with a parameter, never interpolated — the column is
+    free text written by the harvester, so it is data, not an identifier, and
+    query_safety.safe_flow_col does not apply here.
+
+    Dates are US-session dates in UTC (see src/harvester/macro._utc_date), NOT
+    Taiwan trading dates. A caller joining this to a TWSE date must decide what
+    "the same day" means; the tool docstring says so out loud.
+    """
+    days = max(1, min(int(days), 365))
+    sql = """
+        SELECT date, series, close, prev_close, pct_change, source, ingested_at
+          FROM raw_macro
+         WHERE (%s::text IS NULL OR series = %s)
+           AND date >= (CURRENT_DATE - %s::int)
+         ORDER BY date DESC, series
+    """
+    return _serialize(_fetch(sql, (series, series, days)))
+
+
+def query_macro_latest() -> list[dict]:
+    """The most recent row per series — what the pre-market brief needs.
+
+    DISTINCT ON rather than a MAX(date) subquery join: series publish on
+    different calendars (FRED skips US holidays, FX trades through them), so a
+    single global MAX would silently drop whichever series lagged by a day.
+    """
+    sql = """
+        SELECT DISTINCT ON (series)
+               date, series, close, prev_close, pct_change, source, ingested_at
+          FROM raw_macro
+         ORDER BY series, date DESC
+    """
+    return _serialize(_fetch(sql))
+
+
 def query_data_status() -> dict:
     table_names = [
         "raw_twse_t86", "raw_twse_holdings", "raw_twse_margin",
         "raw_twse_ohlcv", "raw_monthly_revenue", "dim_ticker",
+        # Without this line raw_macro is invisible in sc_data_status AND in the
+        # operator console overview (console_pages renders exactly this list),
+        # so a macro harvest that silently stopped would look like nothing at all.
+        "raw_macro",
     ]
     # Use pg_stat_user_tables for O(1) approximate counts instead of full scans.
     # Stats lag slightly behind ANALYZE; that's fine for a status endpoint.
