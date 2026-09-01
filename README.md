@@ -2,7 +2,9 @@
 
 Taiwan equity (TWSE/TPEX) supply-chain and institutional-flow intelligence.
 
-A scheduled Python harvester pulls TWSE, MOPS, and FinMind data into a self-hosted Zeabur Postgres. A FastMCP server, also on Zeabur, exposes 48 read-only MCP tools over pre-computed materialized views, so a Claude agent queries a warm database instead of rate-limited exchange APIs. Telegram carries alerts; static dashboards and a Next.js chat app are the human surfaces.
+A scheduled Python harvester pulls TWSE, MOPS, and FinMind data into a self-hosted Zeabur Postgres. A FastMCP server, also on Zeabur, exposes 50+ read-only MCP tools over pre-computed materialized views, so a Claude agent queries a warm database instead of rate-limited exchange APIs. Telegram carries alerts; static dashboards and a Next.js chat app are the human surfaces.
+
+**New here? Read [`docs/TUTORIAL.md`](docs/TUTORIAL.md)** — how to actually use the system, generated from the live tool registry so it cannot go stale (`tests/test_tutorial.py` fails CI if it drifts).
 
 The investment frame is a 4-pillar Taiwan AI supply chain map (semiconductor, equipment, infrastructure, energy) — see [`docs/wiki/topics/taiwan-ai-supply-chain.md`](docs/wiki/topics/taiwan-ai-supply-chain.md).
 
@@ -18,6 +20,7 @@ The investment frame is a 4-pillar Taiwan AI supply chain map (semiconductor, eq
 | `sql/` | Numbered migrations, applied by `apply_schema.py` |
 | `web/` | Next.js 16 + assistant-ui chat client (separate app, pnpm + biome) |
 | `skills/` | Claude Skills for ticker research and entry timing |
+| `docs/TUTORIAL.md` | User guide — **generated** by `scripts/build_tutorial.py`, never hand-edited |
 | `docs/wiki/` | Project memory — decisions, stakeholders, topics. See `AGENTS.md` |
 | `docs/theses/`, `docs/journals/`, `docs/digests/` | Agent-written analysis output |
 
