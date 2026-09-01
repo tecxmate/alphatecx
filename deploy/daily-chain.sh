@@ -38,7 +38,13 @@ hard() {
 
 echo "=== post-close chain starting $(date -Iseconds) ==="
 
-hard python -m src.harvester.daily
+# soft, NOT hard, and for the same reason daily_harvest.yml absorbs it:
+# src.harvester.daily now exits non-zero when any sub-step failed, and `hard`
+# would abort the chain before `riskguard.pipeline` — the stop-loss run. A
+# failed macro fetch must not cost the stop alerts. This service carries no
+# TELEGRAM_TOKEN by design, so GitHub Actions is the path that reports the
+# failure; here the priority is simply that the rest of the chain still runs.
+soft python -m src.harvester.daily
 soft python -m src.cron.brief --mode post_close
 hard python -m riskguard.pipeline --mode post_close
 soft python -m src.quant.leadlag --window 60 --max-lag 7

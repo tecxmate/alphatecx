@@ -86,6 +86,21 @@ jobs:
           esac
 
       - name: Run daily harvest
+        id: harvest
+        # continue-on-error + a verdict step at the very end, NOT a bare
+        # failing step. `src.harvester.daily` now exits non-zero when any of
+        # its sub-steps failed (deliberate, 2026-09-01 — it used to exit 0
+        # always, so a harvest could fail nightly behind a green run). But a
+        # failing step here would STOP THE JOB, and the next step is the Risk
+        # Guard post-close pipeline — the one this file already marks "NOT
+        # continue-on-error: a silent failure there is a stop-loss alert that
+        # never fired". Letting a flaky TWSE fetch skip Risk Guard would trade
+        # one silent failure for a strictly worse one.
+        #
+        # So: absorb the failure here, run everything downstream on the data
+        # that DID land, and fail the run at the end. The job still goes red
+        # and still alerts; nothing gets amputated to achieve that.
+        continue-on-error: true
         run: python -m src.harvester.daily
 
       - name: Generate post-close brief
@@ -171,6 +186,17 @@ jobs:
             git commit -m "chore(graph): daily refresh [skip ci]"
             git push origin main
           fi
+
+      - name: Harvest verdict
+        # Deferred failure. Runs after every downstream step, so the harvest's
+        # honest exit code reaches the run status without having cost Risk
+        # Guard, the brief or the dashboards. `ingestion_log` / sc_data_status
+        # carry the per-step detail — a red run here does NOT mean no data
+        # landed, only that at least one source failed.
+        if: steps.harvest.outcome != 'success'
+        run: |
+          echo "::error title=Harvest::One or more harvest steps failed — see the 'Run daily harvest' step log and ingestion_log."
+          exit 1
 
       - name: Notify on failure
         if: failure()
