@@ -21,6 +21,7 @@ Pipeline (each step failure-isolated; one bad step doesn't kill the rest):
 from __future__ import annotations
 
 import logging
+import sys
 from datetime import date, timedelta
 
 from src.alerts.telegram import send_daily_summary
@@ -458,9 +459,37 @@ def harvest_today() -> dict:
     return results
 
 
-def main():
-    harvest_today()
+def main() -> int:
+    """Run the harvest and return a process exit code.
+
+    Non-zero when ANY step failed. Until 2026-09-01 this discarded
+    `harvest_today()`'s return entirely, so `python -m src.harvester.daily`
+    exited 0 no matter how many steps raised — a nightly harvest could fail
+    every single night and produce a green GitHub Actions run, a green
+    `hard` in deploy/daily-chain.sh, and no `if: failure()` Telegram alert.
+    The per-step `ingestion_log` rows were the only trace, and only if you
+    went looking.
+
+    This does NOT undo the per-step failure isolation, which stays
+    deliberate: every step still runs, and a late step is not skipped because
+    an early one broke. What changes is only the verdict at the end — the run
+    reports honestly that something in it failed.
+
+    The accepted cost, stated plainly: one flaky TWSE fetch now turns the
+    whole run red even though the other steps succeeded and their data is
+    safely committed. That is the trade [niko] chose (2026-09-01) over
+    silence. Read the step-level detail in `ingestion_log` / `sc_data_status`
+    before assuming a red run means no data landed.
+    """
+    results = harvest_today()
+    errors = results.get("errors", [])
+    if errors:
+        log.error("Harvest finished with %d failed step(s):", len(errors))
+        for e in errors:
+            log.error("  - %s", e)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

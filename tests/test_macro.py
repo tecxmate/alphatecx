@@ -214,3 +214,107 @@ class TestBriefMacroBlock:
     def test_partial_series_renders_what_exists(self):
         block = self._block(rows=[("sox", "2026-08-31", 11535.05, -0.45)])
         assert "SOX" in block and "DXY" not in block
+
+
+class TestHarvestExitCode:
+    """`main()` must report failure, without undoing failure isolation.
+
+    Until 2026-09-01 main() discarded harvest_today()'s return, so a harvest
+    that failed every step still exited 0 — green Actions run, green cron,
+    no failure alert. The per-step ingestion_log rows were the only trace.
+    """
+
+    def _main_with(self, results):
+        from unittest import mock
+
+        import src.harvester.daily as daily
+        with mock.patch.object(daily, "harvest_today", return_value=results):
+            return daily.main()
+
+    def test_clean_run_exits_zero(self):
+        assert self._main_with({"t86": 900, "errors": []}) == 0
+
+    def test_any_failed_step_exits_non_zero(self):
+        assert self._main_with({"t86": 900, "errors": ["macro: blocked"]}) == 1
+
+    def test_several_failures_still_exit_one(self):
+        assert self._main_with({"errors": ["a: x", "b: y", "c: z"]}) == 1
+
+    def test_missing_errors_key_is_treated_as_success(self):
+        """Defensive: a results dict without 'errors' must not crash the
+        process wrapper on its way to reporting an exit code."""
+        assert self._main_with({"t86": 900}) == 0
+
+    def test_partial_success_still_reports_failure(self):
+        """The chosen trade, pinned so nobody 'fixes' it later by accident:
+        data landing for other steps does NOT make the run green."""
+        assert self._main_with({"t86": 900, "indices": 40,
+                                "errors": ["macro: 403"]}) == 1
+
+
+class TestHarvestFailureIsDeferredNotAmputating:
+    """The harvest may fail the RUN, but must never skip Risk Guard.
+
+    `src.harvester.daily` now exits non-zero when a sub-step failed. A bare
+    failing step in daily_harvest.yml would stop the job — and the very next
+    step is the Risk Guard post-close pipeline, which that file itself marks
+    "NOT continue-on-error: a silent failure there is a stop-loss alert that
+    never fired". So the failure is absorbed at the harvest step and re-raised
+    by a verdict step at the end.
+
+    Scanned as text rather than with PyYAML: CI installs neither requirements
+    file with PyYAML, and a test that only passes locally is worse than none
+    (see tests/test_workflow_telegram_guard.py).
+    """
+
+    import pathlib
+    WF = (pathlib.Path(__file__).resolve().parent.parent
+          / ".github" / "workflows" / "daily_harvest.yml")
+
+    def _text(self):
+        return self.WF.read_text(encoding="utf-8")
+
+    def test_harvest_step_absorbs_its_own_failure(self):
+        text = self._text()
+        i = text.index("- name: Run daily harvest")
+        j = text.index("- name: Generate post-close brief")
+        step = text[i:j]
+        assert "continue-on-error: true" in step, (
+            "the harvest step must absorb its failure, or a failing harvest "
+            "stops the job and Risk Guard never runs"
+        )
+        assert "id: harvest" in step, "the verdict step needs this id"
+
+    def test_a_verdict_step_re_raises_the_failure(self):
+        text = self._text()
+        assert "- name: Harvest verdict" in text
+        i = text.index("- name: Harvest verdict")
+        assert "steps.harvest.outcome != 'success'" in text[i:i + 800], (
+            "the verdict must read `outcome`, not `conclusion` — "
+            "continue-on-error rewrites conclusion to success"
+        )
+
+    def test_the_verdict_comes_after_risk_guard(self):
+        """Order is the whole point. A verdict before Risk Guard would be the
+        bare failing step this indirection exists to avoid."""
+        text = self._text()
+        assert text.index("- name: Risk Guard post-close pipeline") < \
+               text.index("- name: Harvest verdict")
+
+    def test_the_verdict_comes_before_notify_on_failure(self):
+        """`Notify on failure` runs `if: failure()`, so the verdict must have
+        already failed the job for the alert to fire."""
+        text = self._text()
+        assert text.index("- name: Harvest verdict") < \
+               text.index("- name: Notify on failure")
+
+    def test_zeabur_chain_does_not_abort_before_risk_guard(self):
+        import pathlib
+        chain = (pathlib.Path(__file__).resolve().parent.parent
+                 / "deploy" / "daily-chain.sh").read_text(encoding="utf-8")
+        assert "soft python -m src.harvester.daily" in chain, (
+            "`hard` would abort the chain before riskguard.pipeline"
+        )
+        assert "hard python -m riskguard.pipeline" in chain, (
+            "Risk Guard itself should stay hard — its failure IS fatal"
+        )

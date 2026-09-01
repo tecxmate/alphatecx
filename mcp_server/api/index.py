@@ -59,6 +59,8 @@ try:
     import console_pages
     import customers as customers_mod
     import oauth as oauth_mod
+    import personas as personas_mod
+    import position_risk as position_risk_mod
     import tiers as tiers_mod
     import usage as usage_mod
     from security import is_authorized_path, token_matches
@@ -67,6 +69,8 @@ except ModuleNotFoundError:  # package import path used by local tests
     from . import console_pages
     from . import customers as customers_mod
     from . import oauth as oauth_mod
+    from . import personas as personas_mod
+    from . import position_risk as position_risk_mod
     from . import tiers as tiers_mod
     from . import usage as usage_mod
     from .security import is_authorized_path, token_matches
@@ -142,6 +146,15 @@ def _stamp(payload: dict, source: str, as_of: str | None, freshness: str,
 
 # Small, response-scoped glossaries for the beginner-facing tools (passed to
 # _stamp). Kept here so the definitions stay consistent with start_here's.
+_GLOSS_RISK = {
+    "atr": "ATR — average true range; the typical daily move, used to set a stop far enough away that ordinary noise doesn't hit it",
+    "stop": "the price at which the idea is proven wrong and you exit",
+    "lots_floor": "tradeable size in 1,000-share lots, rounded DOWN so your risk budget is never exceeded",
+    "limit_down": "Taiwan's -10% daily floor; at it there is no bid, so a stop does NOT fill",
+    "sessions_to_exit": "trading days to close the position at 10% of normal volume",
+    "risk_pct": "percent of your whole account risked on this one trade if the stop is hit",
+}
+
 _MACRO_SERIES = ("sox", "tsm_adr", "us10y", "dxy", "usdtwd")
 
 _GLOSS_MACRO = {
@@ -212,10 +225,20 @@ Risk profile (establish this early):
   (conservative / balanced / aggressive), tailor EVERYTHING to it and follow the
   `how_to_adapt` it gives back. If it's null, ask the user how much risk they
   want and save it with `set_my_risk_profile`.
-- conservative → lead with capital preservation, stable dividend-paying names,
-  volatility and downside. aggressive → growth, momentum and higher-risk/
-  higher-reward ideas are in scope, but always name the risk. balanced → weigh
-  both. The same data means different emphasis for different people.
+- The profile IS a character, and `how_to_adapt` spells it out. conservative =
+  **The Steward** (owns businesses, horizon in years, leads with what could
+  permanently impair capital). aggressive = **The Opportunist** (rents momentum
+  with a pre-committed exit, horizon in days to weeks, leads with the stop and
+  the size BEFORE any upside). balanced = The Allocator. `investing_personas`
+  describes all three if the user asks what they get.
+- The Opportunist takes more risk deliberately, so it carries a rule the others
+  do not: **every aggressive answer must state a quantified downside** — call
+  `risk_estimate` for the stop, the position size against the user's own risk
+  budget, the exit liquidity, and the Taiwan limit-down case where a stop does
+  NOT fill. If you lack the inputs, say the risk is UNQUANTIFIED. Never let the
+  absence of a number read as the absence of risk.
+- Personas change what you LEAD WITH and what you INSIST ON — never whether you
+  issue an instruction. No persona says buy, sell or hold.
 
 Boundaries and honesty:
 - This is informational market data, NOT investment advice. Never tell the user to
@@ -244,21 +267,13 @@ mcp = FastMCP(
 
 # How the model should adapt its framing to each tier. Returned by the profile
 # tools so the guidance travels with the value.
+# Persona guidance, generated from mcp_server/api/personas.py rather than
+# written twice. The personas ARE the risk profiles (see that module's header):
+# conservative = The Steward, aggressive = The Opportunist. A second hand-kept
+# copy here is precisely the drift `sc_capabilities` demonstrated.
 _RISK_GUIDANCE = {
-    "conservative": (
-        "Lead with capital preservation. Favour stable, liquid, dividend-paying "
-        "names; surface volatility, drawdown and downside first; avoid "
-        "speculative or thinly-traded ideas unless explicitly asked."
-    ),
-    "balanced": (
-        "Balance growth and safety. Mix quality compounders with some momentum; "
-        "weigh upside against downside evenly."
-    ),
-    "aggressive": (
-        "Optimise for return. Momentum, accumulation and higher-risk/higher-"
-        "reward ideas are in scope — but always name the risk and a position-"
-        "sizing caveat."
-    ),
+    profile: personas_mod.guidance(profile)
+    for profile in personas_mod.PERSONAS
 }
 _ASK_RISK = ("Not set — ask whether the user is conservative, balanced, or "
              "aggressive, then call set_my_risk_profile.")
@@ -2005,6 +2020,104 @@ def q_valuation(
 
 
 @mcp.tool()
+def risk_estimate(
+    entry: float,
+    atr: float | None = None,
+    stop: float | None = None,
+    account_value: float | None = None,
+    risk_pct: float | None = None,
+    avg_daily_volume_shares: float | None = None,
+) -> dict:
+    """What a trade costs you if you are WRONG — sizing, stop, and exit risk.
+
+    This is the quantitative core behind the aggressive ("Opportunist")
+    persona, and it is useful to every profile. It answers one question only:
+    if this position goes against you to your stop, what does that cost, and
+    can you actually get out?
+
+    It does NOT forecast, and does not tell you to trade. There is no
+    probability of profit here — these numbers bound the LOSS, not the odds.
+
+    What it computes:
+      • stop      — yours if given, else `atr` × 2 below entry (the same
+                    multiple momentum_leaders uses, so the two agree)
+      • sizing    — shares/lots that risk exactly `risk_pct` of `account_value`
+                    to that stop, rounded DOWN so the budget is never exceeded
+      • limit-down risk — Taiwan-specific and the part generic risk models
+                    miss: TWSE has a ±10% daily band, and in a limit-down
+                    there is no bid, so your stop DOES NOT FILL. If the stop
+                    sits further away than one daily limit, a single
+                    limit-down day gaps past it entirely.
+      • liquidity — sessions needed to exit at 10% of average daily volume.
+                    A stop you cannot trade out of is decoration.
+
+    Anything it cannot compute is named in `missing` rather than omitted —
+    silence about an uncomputed risk reads as "no risk".
+
+    Args:
+        entry: Entry price (required).
+        atr: ATR(14) — from momentum_leaders_scan or q_indicators. Used to
+             derive a stop when you do not supply one.
+        stop: Your own stop price. Wins over the ATR-derived one.
+        account_value: Total account value in TWD, for sizing.
+        risk_pct: Percent of the account to risk on this ONE trade. Common
+                  practice is 0.5-2; the persona defaults are 0.5
+                  (conservative) and 1.0 (aggressive).
+        avg_daily_volume_shares: For the exit-liquidity check.
+    """
+    result = position_risk_mod.estimate(
+        entry=entry, atr=atr, stop=stop,
+        account_value=account_value, risk_pct=risk_pct,
+        avg_daily_volume_shares=avg_daily_volume_shares,
+    )
+    return _stamp(
+        result,
+        source="computed (pure arithmetic on your inputs — no market data read)",
+        as_of=None,
+        freshness="static",
+        glossary=_GLOSS_RISK,
+    )
+
+
+@mcp.tool()
+def investing_personas(profile: str | None = None) -> dict:
+    """The investor characters this service can adopt, and how each behaves.
+
+    Two characters over one setting. `conservative` is **The Steward** — owns
+    businesses, horizon in years, leads with what could permanently impair
+    capital. `aggressive` is **The Opportunist** — rents momentum with a
+    pre-committed exit, horizon in days to weeks, leads with the stop and the
+    size before any upside. `balanced` is the middle path.
+
+    These are the SAME values `set_my_risk_profile` accepts — the persona is
+    the profile made concrete, not a separate setting.
+
+    The Opportunist takes more risk deliberately, so it is bound by a rule the
+    others are not: every answer must carry a quantified downside from
+    `risk_estimate`, or say plainly that the risk is unquantified. No persona
+    ever tells you to buy, sell or hold.
+
+    Args:
+        profile: One of conservative | balanced | aggressive. Omit for all.
+    """
+    if profile:
+        one = personas_mod.describe(profile)
+        if not one:
+            return _stamp(
+                {"error": f"unknown profile {profile!r}",
+                 "options": sorted(personas_mod.PERSONAS)},
+                source="personas", as_of=None, freshness="static")
+        payload = {"persona": one, "how_to_adapt": personas_mod.guidance(profile)}
+    else:
+        payload = {
+            "personas": {k: personas_mod.describe(k) for k in personas_mod.PERSONAS},
+            "options": sorted(personas_mod.PERSONAS),
+        }
+    payload["set_with"] = "set_my_risk_profile"
+    return _stamp(payload, source="personas", as_of=None, freshness="static")
+
+
+@mcp.tool()
 def q_macro(series: str | None = None, days: int = 30, latest: bool = True) -> dict:
     """Global macro series that set the tone for the Taiwan open.
 
@@ -2526,6 +2639,8 @@ def sc_capabilities() -> dict:
             {"name": "q_valuation", "purpose": "Is a stock cheap or expensive — P/E, P/B and dividend yield per ticker (TWSE BWIBBU)"},
             {"name": "q_index_history", "purpose": "TAIEX / index close history for market context"},
             {"name": "q_macro", "purpose": "Global macro set before the Taipei open: SOX, TSMC ADR, US 10Y, DXY, USD/TWD"},
+            {"name": "risk_estimate", "purpose": "Position sizing, stop distance, Taiwan limit-down non-fill risk and exit liquidity — what a trade costs if you are wrong"}
+            ,{"name": "investing_personas", "purpose": "The Steward (conservative) and The Opportunist (aggressive) — how each behaves"},
             {"name": "q_regime", "purpose": "Market regime classification (trend vs chop, risk-on vs risk-off)"},
             {"name": "q_quality_score", "purpose": "Composite fundamental quality score for a ticker"},
             {"name": "q_cointegration_pair", "purpose": "Test two tickers for a mean-reverting (cointegrated) relationship"},
