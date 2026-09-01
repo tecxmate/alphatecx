@@ -16,6 +16,7 @@ Catalog of every page in `docs/wiki/`. One line per page. Update on every create
 - [Claude Agent](stakeholders/claude-agent.md) — Claude Code agent, database operations & implementation (agent)
 
 ## Decisions
+- [2026-09-01 — Investor personas + risk engine](decisions/2026-09-01-investor-personas-and-risk-engine.md) — The Steward / The Allocator / The Opportunist over the existing `risk_profile` column; `position_risk.py` sizes to a stated risk budget and models Taiwan's ±10% limit-down non-fill; the non-advice boundary moves from server `instructions` to per-persona enforcement; base rates deliberately deferred
 - [2026-08-10 — Six live-tested connector defects](decisions/2026-08-10-live-connector-defects.md) — enumerated-grant trap (003 vs later migrations) killed valuation/dividend/calendar reads; owner had no identity to hang a risk profile on; token-less cron swallowed every alert via the de-dup; margin freshness rule was unsatisfiable; `w_remove` not idempotent
 - [2026-08-09 — Risk-profile personalization](decisions/2026-08-09-risk-profile-personalization.md) — per-user risk tier (conservative/balanced/aggressive) stored on the customer; set at onboarding via `set_my_risk_profile` / `--risk`; AI reads `my_profile` and adapts framing
 - [2026-08-09 — Connector teaching UX](decisions/2026-08-09-connector-teaching-ux.md) — keep ~44 tools (context is fine on 1M); teaching lives in server `instructions` (persona) + tool descriptions + a `start_here` tool, not fewer tools

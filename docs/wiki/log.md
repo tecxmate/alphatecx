@@ -1174,3 +1174,10 @@ attributed_to: [niko, claude-agent]   belongs_to: [investing-principles, mcp-ser
 - A test also pins that no persona's `reaches_for` names a tool that does not exist — a persona pointing at a renamed tool sends the model into a dead end on every conversation.
 - One existing test legitimately broke: `test_my_profile_returns_saved_tier_with_adaptation` asserted the literal word "preservation" from the old one-liner. The Steward says "permanently impair this capital" — same doctrine, different words. Rewritten to assert meaning (persona name, "capital", the boundary sentence) rather than a keyword, so richer guidance stops reading as a regression.
 - 34 new tests; suite 676 pass, ruff clean, 52 registered = 52 advertised = 52 tiered.
+
+## [2026-09-01] wiki | Personas decision recorded; index and the 2026-08-09 page cross-linked
+attributed_to: [claude-agent]   belongs_to: [mcp-server, investing-principles]
+- PR #14 merged as `9799d3e` with a full log entry but no page under `decisions/`. The log is chronological and append-only; a decision that constrains future work needs the durable form too, per `AGENTS.md`. Written up as [2026-09-01-investor-personas-and-risk-engine](decisions/2026-09-01-investor-personas-and-risk-engine.md).
+- The load-bearing claims, so nobody has to re-derive them from a diff: the personas are the EXISTING `risk_profile` column and not a second axis; `_RISK_GUIDANCE` is generated, not copied; lots round DOWN; `estimate()` names what it could not compute because silence about an uncomputed risk reads as no risk; and the non-advice boundary is now per-persona rather than trusted to the server `instructions`.
+- [2026-08-09-risk-profile-personalization](decisions/2026-08-09-risk-profile-personalization.md) stays `active` — the column, CLIs and read path are unchanged — and gained an "Extended" section pointing forward, so a reader landing on the older page is not left with the superseded one-liner model.
+- Recorded as still-open, not done: the Opportunist has no base rates. `q_backtest` needs a look-ahead and survivorship audit before any persona quotes a win rate.
