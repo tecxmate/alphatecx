@@ -304,25 +304,27 @@ def _format_checklist(items: list[str]) -> str:
 # ── Mode: pre_market ──────────────────────────────────────────────────────
 
 def _macro_block() -> str:
-    """The overnight macro line for the pre-market brief, or '' if unavailable.
+    """The macro lines for the pre-market brief, or '' if unavailable.
 
     Reads what the harvester STORED rather than re-fetching: the brief and
     `q_macro` must not be able to disagree about last night's SOX.
+
+    Emits up to TWO lines, split by whether the market had closed before Taipei
+    opened. See the comment at the split — it is an honesty constraint, not
+    formatting.
 
     Fails soft to an empty string — the pre-market brief predates macro and
     must keep sending when the table is empty (nothing harvested yet), absent
     (migration not applied in production yet), or unreadable.
 
     Arrow convention is the TELEGRAM one — ▲ up / ▼ down with no colour — and
-    deliberately not the console's Taiwan red-up/green-down. These are US
+    deliberately not the console's Taiwan red-up/green-down. These are foreign
     instruments read by a Taiwan-based operator; colour would assert a
     convention that is wrong for half the audience either way, so it asserts
     neither.
     """
-    labels = {
-        "sox": "SOX", "tsm_adr": "TSM ADR", "us10y": "US 10Y",
-        "dxy": "DXY", "usdtwd": "USD/TWD",
-    }
+    from src.harvester import macro
+
     try:
         with cur() as c:
             c.execute("SET search_path TO public, neon_auth")
@@ -338,26 +340,49 @@ def _macro_block() -> str:
         return ""
 
     by_series = {r[0]: r for r in rows}
-    parts, as_of = [], None
-    for key in ("sox", "tsm_adr", "us10y", "dxy", "usdtwd"):
-        row = by_series.get(key)
-        if not row:
-            continue
-        _, date, close, pct = row
-        as_of = as_of or date
-        # Magnitude-aware, because one format cannot serve all five: `:g`
-        # gives 6 significant digits, which silently renders SOX 11535.05 as
-        # "11535" — precision dropped on the largest and most-read number.
-        # Indices and prices get 2 decimals with a thousands separator; yields
-        # and FX get 3, which is how both are normally quoted.
-        level = f"{close:,.2f}" if abs(close) >= 100 else f"{close:.3f}"
-        if pct is None:
-            parts.append(f"{labels[key]} {level}")
-        else:
-            parts.append(f"{labels[key]} {level} {'▲' if pct >= 0 else '▼'}{abs(pct):.2f}%")
-    if not parts:
-        return ""
-    return f"\n<b>隔夜 Macro</b> ({as_of} US): " + " • ".join(parts) + "\n"
+
+    def _render(keys: list[str]) -> tuple[list[str], str | None]:
+        parts, as_of = [], None
+        for key in keys:
+            row = by_series.get(key)
+            if not row:
+                continue
+            _, date, close, pct = row
+            as_of = as_of or date
+            # Magnitude-aware, because one format cannot serve them all: `:g`
+            # gives 6 significant digits, which silently renders SOX 11535.05
+            # as "11535" — precision dropped on the largest, most-read number.
+            # Indices and prices get 2 decimals with a thousands separator;
+            # yields and FX get 3, which is how both are normally quoted.
+            level = f"{close:,.2f}" if abs(close) >= 100 else f"{close:.3f}"
+            label = macro.SERIES_META[key]["label"]
+            if pct is None:
+                parts.append(f"{label} {level}")
+            else:
+                arrow = "▲" if pct >= 0 else "▼"
+                parts.append(f"{label} {level} {arrow}{abs(pct):.2f}%")
+        return parts, as_of
+
+    # TWO LINES, NOT ONE, and this is the point of the split rather than a
+    # layout preference. At 08:30 Taipei the US and Europe have CLOSED — that
+    # is genuinely overnight information which can inform today's open. Tokyo,
+    # Seoul, Shanghai and Hong Kong have NOT opened, so their newest row is a
+    # previous close, exactly as old as Taiwan's own. Both are worth reading;
+    # putting them on one line labelled 隔夜 would assert the regional closes
+    # are overnight news about today, which is false.
+    overnight, as_of = _render(macro.before_open_series())
+    regional, peer_as_of = _render(
+        [k for k, m in macro.SERIES_META.items()
+         if m["when_known"] == macro.SAME_SESSION]
+    )
+
+    block = ""
+    if overnight:
+        block += f"\n<b>隔夜 Macro</b> ({as_of} 收盤): " + " • ".join(overnight) + "\n"
+    if regional:
+        block += (f"<b>亞洲鄰近市場</b> ({peer_as_of} 前一日收盤,尚未開盤): "
+                  + " • ".join(regional) + "\n")
+    return block
 
 
 def pre_market_brief() -> None:

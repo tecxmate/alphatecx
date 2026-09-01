@@ -3,13 +3,13 @@ title: Risk-profile personalization — per-user investment style
 type: decision
 slug: 2026-08-09-risk-profile-personalization
 date: 2026-08-09
-updated: 2026-08-09
+updated: 2026-09-01
 attributed_to: [niko, antigravity-agent]
 belongs_to: [mcp-server, commercial-productization]
 source: chat
 status: active
 tags: [personalization, risk, onboarding, mcp, tools, instructions]
-related: [2026-08-09-connector-teaching-ux, commercial-productization, niko, brian]
+related: [2026-09-01-investor-personas-and-risk-engine, 2026-08-09-connector-teaching-ux, commercial-productization, niko, brian]
 ---
 
 ## Context
@@ -53,3 +53,11 @@ optional free-text `risk_note`) and have the AI establish and honor it.
   `usage.record`; tests that set a `current_customer` must patch `usage.record` or they hit the live
   DB. Documented in the test.
 - Dormant until the next `zeabur deploy` + `apply_schema.py` (adds 023).
+
+## Extended 2026-09-01
+
+The three tiers were given characters and arithmetic — `conservative` = The Steward,
+`aggressive` = The Opportunist — and `_RISK_GUIDANCE` is now generated from `personas.py`
+rather than living here as a hand-written one-liner per tier. This page stays `active`: the
+column, the CLIs and the read path are unchanged. See
+[Investor personas + risk engine](2026-09-01-investor-personas-and-risk-engine.md).

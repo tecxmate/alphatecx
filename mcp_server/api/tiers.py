@@ -59,6 +59,7 @@ TOOL_TIERS: dict[str, str] = {
     "sc_capabilities": FREE,
     "investing_principles": FREE,
     "investing_personas": FREE,
+    "systematic_strategies": FREE,
     "session_state": FREE,
     "sc_data_status": FREE,
     "my_profile": FREE,

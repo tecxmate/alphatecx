@@ -13,6 +13,8 @@ their two nastiest properties: nulls for no-print sessions, and FRED's literal
 
 from __future__ import annotations
 
+import pytest
+
 from src.harvester import macro
 
 
@@ -118,14 +120,20 @@ class TestSeriesRegistry:
         assert set(index._MACRO_SERIES) == set(macro.ALL_SERIES)
 
     def test_us10y_is_deliberately_not_on_yahoo(self):
-        """Two vendors is the hedge: a Yahoo outage costs four series, not five."""
+        """Two vendors is the hedge: a Yahoo outage costs every series but this one."""
         assert "us10y" in macro.FRED_SERIES
         assert "us10y" not in macro.YAHOO_SERIES
 
 
 class TestFetchSeriesErrorHandling:
+    @pytest.fixture(autouse=True)
+    def _no_pacing(self, monkeypatch):
+        """fetch_series paces its Yahoo calls (see YAHOO_REQUEST_DELAY). Real
+        for the nightly run, pure latency here."""
+        monkeypatch.setattr(macro, "YAHOO_REQUEST_DELAY", 0)
+
     def test_partial_failure_returns_rows_and_errors_not_an_exception(self, monkeypatch):
-        """One 429 must not cost the other four series."""
+        """One 429 must not cost the other ten series."""
         calls = []
 
         def fake_get(url):
@@ -147,7 +155,7 @@ class TestFetchSeriesErrorHandling:
         assert not any(r["series"] == "tsm_adr" for r in rows)
         assert len(errors) == 1 and "tsm_adr" in errors[0]
 
-    def test_total_failure_is_empty_rows_plus_five_errors_not_a_raise(self, monkeypatch):
+    def test_total_failure_is_empty_rows_plus_one_error_per_series(self, monkeypatch):
         monkeypatch.setattr(macro, "_get",
                             lambda url: (_ for _ in ()).throw(OSError("blocked")))
         rows, errors = macro.fetch_series()
@@ -318,3 +326,232 @@ class TestHarvestFailureIsDeferredNotAmputating:
         assert "hard python -m riskguard.pipeline" in chain, (
             "Risk Guard itself should stay hard — its failure IS fatal"
         )
+
+
+class TestBriefSeparatesOvernightFromRegional(TestBriefMacroBlock):
+    """The pre-market brief goes out at 08:30 Taipei.
+
+    By then the US and Europe have CLOSED — genuinely overnight, and able to
+    inform today's open. Tokyo, Seoul, Shanghai and Hong Kong have NOT OPENED,
+    so their newest stored row is a previous close, exactly as old as Taiwan's
+    own. Both are worth reading. Putting them on one line under 隔夜 would
+    assert the regional closes are overnight news about today.
+    """
+
+    ALL = [
+        ("sox", "2026-08-31", 11535.05, -0.45),
+        ("estoxx50", "2026-08-31", 5420.1, 0.22),
+        ("kospi", "2026-08-31", 3210.4, 0.80),
+        ("nikkei", "2026-08-31", 42100.0, 0.30),
+        ("hangseng", "2026-08-31", 25330.0, -0.10),
+    ]
+
+    def test_the_overnight_line_never_carries_a_same_session_market(self):
+        block = self._block(rows=self.ALL)
+        overnight = [ln for ln in block.splitlines() if "隔夜" in ln]
+        assert len(overnight) == 1
+        for label in ("KOSPI", "Nikkei", "Hang Seng"):
+            assert label not in overnight[0], (
+                f"{label} trades alongside Taipei and must not be called 隔夜"
+            )
+
+    def test_the_regional_line_says_the_market_has_not_opened_yet(self):
+        block = self._block(rows=self.ALL)
+        regional = [ln for ln in block.splitlines() if "亞洲" in ln]
+        assert len(regional) == 1
+        assert "KOSPI 3,210.40" in regional[0] and "Nikkei" in regional[0]
+        assert "尚未開盤" in regional[0]
+
+    def test_europe_counts_as_overnight_because_it_closes_before_the_open(self):
+        block = self._block(rows=self.ALL)
+        overnight = next(ln for ln in block.splitlines() if "隔夜" in ln)
+        assert "Euro Stoxx 50 5,420.10" in overnight
+
+    def test_only_overnight_data_emits_only_the_overnight_line(self):
+        block = self._block(rows=[("sox", "2026-08-31", 11535.05, -0.45)])
+        assert "隔夜" in block and "亞洲" not in block
+
+    def test_only_regional_data_emits_only_the_regional_line(self):
+        """Plausible in production: Yahoo serving Asia while the US feed 429s."""
+        block = self._block(rows=[("kospi", "2026-08-31", 3210.4, 0.8)])
+        assert "亞洲" in block and "隔夜" not in block
+
+    def test_still_empty_when_the_table_is(self):
+        assert self._block(rows=[]) == ""
+
+
+class TestGlobalMarketCoverage:
+    """Japan / Korea / China / Europe joined the table on 2026-09-01.
+
+    The additions are cheap; the CLASSIFICATION is what these tests defend.
+    """
+
+    def test_every_requested_market_is_actually_covered(self):
+        for market in ("us", "europe", "japan", "korea", "china", "hong_kong"):
+            assert macro.series_in_market(market), f"{market} has no series"
+
+    def test_the_asian_peers_trade_alongside_taipei_not_before_it(self):
+        """THE invariant of this change.
+
+        Tokyo, Seoul, Shanghai and Hong Kong are open at the same time as the
+        TWSE. Classifying one of them `before_open` would license the brief and
+        the model to call a live, still-moving index "overnight" — a false
+        statement about the world, not a formatting slip.
+        """
+        for key in ("nikkei", "kospi", "shanghai", "hangseng"):
+            assert macro.SERIES_META[key]["when_known"] == macro.SAME_SESSION, (
+                f"{key} trades during the Taipei session and cannot be "
+                f"'known before the open'"
+            )
+
+    def test_us_and_europe_had_closed_before_taipei_opened(self):
+        for key in ("sox", "nasdaq", "tsm_adr", "us10y", "estoxx50"):
+            assert macro.SERIES_META[key]["when_known"] == macro.BEFORE_OPEN
+
+    def test_before_open_series_excludes_every_same_session_market(self):
+        before = set(macro.before_open_series())
+        assert before.isdisjoint({"nikkei", "kospi", "shanghai", "hangseng"})
+        assert {"sox", "estoxx50"} <= before
+
+    def test_unknown_market_is_empty_not_an_exception(self):
+        assert macro.series_in_market("mars") == []
+        assert macro.series_in_market("") == []
+
+    def test_market_lookup_is_case_and_space_tolerant(self):
+        assert macro.series_in_market("  Korea ") == ["kospi"]
+
+    def test_every_series_carries_a_complete_metadata_row(self):
+        for key, meta in macro.SERIES_META.items():
+            for field in ("symbol", "vendor", "market", "label", "when_known"):
+                assert meta.get(field), f"{key} is missing {field}"
+            assert meta["when_known"] in (macro.BEFORE_OPEN, macro.SAME_SESSION)
+            assert meta["vendor"] in ("yahoo", "fred")
+
+    def test_vendor_maps_are_derived_from_the_metadata_not_hand_written(self):
+        """The four-parallel-maps failure mode, closed off by construction."""
+        assert set(macro.YAHOO_SERIES) | set(macro.FRED_SERIES) == set(macro.ALL_SERIES)
+        for key, symbol in macro.YAHOO_SERIES.items():
+            assert macro.SERIES_META[key]["symbol"] == symbol
+
+
+class TestUtcDateHoldsForAsianSessions:
+    """`_utc_date` stamps a bar by its UTC date, which is only the market's own
+    session date while its OPEN falls on the same UTC day. True for every
+    market here — and the reason the docstring warns about the ASX."""
+
+    def _epoch(self, y, m, d, hh, mm, tz_offset_hours):
+        from datetime import datetime, timedelta, timezone
+        tz = timezone(timedelta(hours=tz_offset_hours))
+        return int(datetime(y, m, d, hh, mm, tzinfo=tz).timestamp())
+
+    def test_tokyo_open_stamps_the_tokyo_session_date(self):
+        # 2026-08-31 09:00 JST (UTC+9) == 2026-08-31 00:00 UTC
+        assert macro._utc_date(self._epoch(2026, 8, 31, 9, 0, 9)) == "2026-08-31"
+
+    def test_seoul_open_stamps_the_seoul_session_date(self):
+        assert macro._utc_date(self._epoch(2026, 8, 31, 9, 0, 9)) == "2026-08-31"
+
+    def test_hong_kong_open_stamps_the_same_date(self):
+        # 09:30 HKT (UTC+8) == 01:30 UTC
+        assert macro._utc_date(self._epoch(2026, 8, 31, 9, 30, 8)) == "2026-08-31"
+
+    def test_frankfurt_open_stamps_the_same_date(self):
+        # 09:00 CEST (UTC+2) == 07:00 UTC
+        assert macro._utc_date(self._epoch(2026, 8, 31, 9, 0, 2)) == "2026-08-31"
+
+    def test_new_york_open_stamps_the_same_date(self):
+        # 09:30 EDT (UTC-4) == 13:30 UTC
+        assert macro._utc_date(self._epoch(2026, 8, 31, 9, 30, -4)) == "2026-08-31"
+
+    def test_a_pre_utc_midnight_open_would_be_stamped_a_day_early(self):
+        """Documents the trap rather than pretending it cannot happen: the ASX
+        opens 10:00 AEDT == 23:00 UTC the PREVIOUS day. Nothing here uses it;
+        whoever adds it must convert through the exchange timezone instead."""
+        assert macro._utc_date(self._epoch(2026, 8, 31, 10, 0, 11)) == "2026-08-30"
+
+
+class TestHarvesterServerMetadataMirror:
+    """`index.py` cannot import `src/` (the Docker build context is
+    `mcp_server/`), so the macro metadata is a MIRROR. Mirrors drift — this is
+    the same guard `tests/test_capabilities.py` puts on the tool registry."""
+
+    def _index(self):
+        import os
+        os.environ.setdefault("MCP_BEARER_TOKEN", "testtoken")
+        import index
+        return index
+
+    def test_series_match_in_both_directions(self):
+        index = self._index()
+        assert set(index._MACRO_SERIES) == set(macro.ALL_SERIES)
+
+    def test_market_and_timing_agree_for_every_series(self):
+        """A series the server calls `before_open` while the harvester calls it
+        `same_session` is worse than a missing series: it is confidently wrong."""
+        index = self._index()
+        for key, meta in macro.SERIES_META.items():
+            market, when_known = index._MACRO_META[key]
+            assert market == meta["market"], f"{key}: market disagrees"
+            assert when_known == meta["when_known"], f"{key}: when_known disagrees"
+
+    def test_every_series_is_explained_to_the_model(self):
+        index = self._index()
+        for key in macro.ALL_SERIES:
+            assert key in index._GLOSS_MACRO, f"{key} has no glossary entry"
+
+    def test_the_freshness_stamp_no_longer_claims_everything_is_overnight(self):
+        """`_freshness` used to read "US session close, known before the Taipei
+        open" — true of the original five US/FX series, false the moment Seoul
+        and Tokyo were added. It must now defer to the per-row field."""
+        from unittest import mock
+        index = self._index()
+        with mock.patch.object(index.usage_mod, "record"), \
+             mock.patch.object(index.db_v2, "query_macro_latest", return_value=[]):
+            fresh = index.q_macro()["_freshness"]
+        assert "before the Taipei open" not in fresh
+        assert "when_known" in fresh
+
+
+class TestQMacroMarketFilter:
+    def _index(self):
+        import os
+        os.environ.setdefault("MCP_BEARER_TOKEN", "testtoken")
+        import index
+        return index
+
+    _ROWS = [
+        {"date": "2026-08-31", "series": "sox", "close": 11535.05, "pct_change": -0.45},
+        {"date": "2026-08-31", "series": "kospi", "close": 3210.4, "pct_change": 0.8},
+        {"date": "2026-08-31", "series": "nikkei", "close": 42100.0, "pct_change": 0.3},
+    ]
+
+    def _call(self, **kwargs):
+        from unittest import mock
+        index = self._index()
+        with mock.patch.object(index.usage_mod, "record"), \
+             mock.patch.object(index.db_v2, "query_macro_latest",
+                               return_value=[dict(r) for r in self._ROWS]), \
+             mock.patch.object(index.db_v2, "query_macro",
+                               return_value=[dict(r) for r in self._ROWS]):
+            return index.q_macro(**kwargs)
+
+    def test_market_filter_narrows_to_that_market(self):
+        out = self._call(market="korea")
+        assert [r["series"] for r in out["macro"]] == ["kospi"]
+
+    def test_unknown_market_lists_the_real_ones_instead_of_returning_nothing(self):
+        out = self._call(market="atlantis")
+        assert "error" in out and "korea" in out["markets_available"]
+
+    def test_every_row_is_annotated_with_when_known(self):
+        """The model must be able to tell a live peer from an overnight close
+        without consulting the docstring."""
+        out = self._call()
+        by = {r["series"]: r for r in out["macro"]}
+        assert by["sox"]["when_known"] == "before_open"
+        assert by["kospi"]["when_known"] == "same_session"
+        assert by["nikkei"]["market"] == "japan"
+
+    def test_no_filter_returns_everything(self):
+        out = self._call()
+        assert out["count"] == 3
