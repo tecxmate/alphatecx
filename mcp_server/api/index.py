@@ -155,15 +155,58 @@ _GLOSS_RISK = {
     "risk_pct": "percent of your whole account risked on this one trade if the stop is hit",
 }
 
-_MACRO_SERIES = ("sox", "tsm_adr", "us10y", "dxy", "usdtwd")
+# Mirror of src/harvester/macro.SERIES_META, minus the vendor symbols the
+# server has no use for. It is a MIRROR because the deployment split forbids
+# importing src/ from here (Docker build context is mcp_server/), the same
+# constraint that makes src/quant and api/quant mirrored copies.
+# tests/test_macro.py pins the two in agreement in both directions — without
+# that, a series added to the harvester is one the model is told does not exist.
+#
+# `when_known` is the load-bearing field: BEFORE_OPEN sessions had closed before
+# Taipei opened and can inform the open; SAME_SESSION markets trade ALONGSIDE
+# Taipei, so the stored row is their previous close while today's move is still
+# happening. Reporting a same-session peer as overnight news is a false claim
+# about the world, so the tool returns this per row rather than assuming.
+_MACRO_BEFORE_OPEN = "before_open"
+_MACRO_SAME_SESSION = "same_session"
+
+_MACRO_META: dict[str, tuple[str, str]] = {
+    # series: (market, when_known)
+    "sox": ("us", _MACRO_BEFORE_OPEN),
+    "nasdaq": ("us", _MACRO_BEFORE_OPEN),
+    "tsm_adr": ("us", _MACRO_BEFORE_OPEN),
+    "us10y": ("us", _MACRO_BEFORE_OPEN),
+    "dxy": ("fx", _MACRO_BEFORE_OPEN),
+    "usdtwd": ("fx", _MACRO_BEFORE_OPEN),
+    "estoxx50": ("europe", _MACRO_BEFORE_OPEN),
+    "nikkei": ("japan", _MACRO_SAME_SESSION),
+    "kospi": ("korea", _MACRO_SAME_SESSION),
+    "shanghai": ("china", _MACRO_SAME_SESSION),
+    "hangseng": ("hong_kong", _MACRO_SAME_SESSION),
+}
+
+_MACRO_SERIES = tuple(_MACRO_META)
+_MACRO_MARKETS = tuple(dict.fromkeys(m for m, _ in _MACRO_META.values()))
 
 _GLOSS_MACRO = {
     "sox": "SOX — Philadelphia Semiconductor Index; the US chip cycle Taiwan tracks",
+    "nasdaq": "Nasdaq Composite — the US tech tape; broad risk appetite for growth",
     "tsm_adr": "TSM — TSMC's US-listed share; its overnight move usually leads the TAIEX open",
     "us10y": "US 10Y — the 10-year Treasury yield in percent; higher tends to pressure growth equities",
     "dxy": "DXY — US dollar index; a stronger dollar often coincides with foreign selling in Taiwan",
     "usdtwd": "USD/TWD — a rising number means a weaker Taiwan dollar",
-    "date": "the US SESSION date (UTC), not a Taiwan trading date",
+    "estoxx50": "Euro Stoxx 50 — the euro-area blue-chip index; Europe's close is the last read before Taipei opens",
+    "nikkei": "Nikkei 225 — Japan; carries the semiconductor-equipment complex (Tokyo Electron, Advantest)",
+    "kospi": "KOSPI — Korea; Samsung and SK Hynix make it a memory-cycle read on Taiwan's own customers",
+    "shanghai": "Shanghai Composite — mainland China A-shares; domestic demand rather than China tech",
+    "hangseng": "Hang Seng — Hong Kong; where China's large tech names are actually priced",
+    "date": "that market's OWN session date (UTC) — not a Taiwan trading date",
+    "when_known": (
+        "before_open = that session had closed before Taipei opened, so it can "
+        "inform today's open. same_session = the market trades ALONGSIDE Taipei, "
+        "so this row is its PREVIOUS close and today's move is still happening — "
+        "never present it as overnight news."
+    ),
 }
 
 _GLOSS_VALUATION = {
@@ -2118,41 +2161,90 @@ def investing_personas(profile: str | None = None) -> dict:
 
 
 @mcp.tool()
-def q_macro(series: str | None = None, days: int = 30, latest: bool = True) -> dict:
-    """Global macro series that set the tone for the Taiwan open.
+def q_macro(
+    series: str | None = None,
+    market: str | None = None,
+    days: int = 30,
+    latest: bool = True,
+) -> dict:
+    """World markets around the Taiwan session — US, Europe, Japan, Korea, China.
 
-    Taiwan trades as a high-beta expression of the US semiconductor cycle and
-    the dollar. These five series are the only data in this system that is
-    already known BEFORE the Taipei open — everything else here is Taiwan
-    domestic and T+1.
+    Taiwan trades as a high-beta expression of the US semiconductor cycle, the
+    dollar, and its regional peers. Everything else in this system is Taiwan
+    domestic and T+1; this is the outside world.
 
-        sox      Philadelphia Semiconductor Index — the cycle Taiwan tracks
-        tsm_adr  TSMC ADR (NYSE: TSM) — the usual tell for the TAIEX open gap
-        us10y    US 10-year Treasury yield, in percent — the liquidity regime
-        dxy      US dollar index — risk appetite
-        usdtwd   USD/TWD — the foreign-flow tell
+        market      series                       when
+        us          sox, nasdaq, tsm_adr, us10y  closed before Taipei opens
+        fx          dxy, usdtwd                  24h; the overnight level
+        europe      estoxx50                     closes ~00:30 Taipei
+        japan       nikkei                       TRADES ALONGSIDE TAIPEI
+        korea       kospi                        TRADES ALONGSIDE TAIPEI
+        china       shanghai                     TRADES ALONGSIDE TAIPEI
+        hong_kong   hangseng                     TRADES ALONGSIDE TAIPEI
 
-    IMPORTANT for interpretation: `date` is the US SESSION date (UTC), not a
-    Taiwan trading date. A US close on a Taiwan holiday still appears here, and
-    "today" in Taipei is usually the US session of the previous calendar day.
-    Do not align these dates to TWSE dates without saying which you mean.
+    READ `when_known` ON EVERY ROW BEFORE DESCRIBING IT. `before_open` means
+    that session had closed before Taipei opened, so it can inform today's open.
+    `same_session` means the market trades at the same time as Taipei: the row
+    you get is its PREVIOUS close, and today's move is happening right now. Do
+    not call a same-session peer "overnight" — it is a different claim about
+    the world, and the KOSPI/Nikkei rows are the ones this catches.
+
+    Why the Asian peers are worth reading at all: Korea is the closest
+    comparable (Samsung/SK Hynix sell into the same cycle as Taiwan), so a
+    KOSPI/TAIEX divergence is informative rather than noise. Japan carries the
+    semiconductor-equipment complex; Hang Seng is where China tech is priced.
+
+    IMPORTANT for interpretation: `date` is each market's OWN session date in
+    UTC, not a Taiwan trading date. A US close on a Taiwan holiday still appears
+    here. Do not align these to TWSE dates without saying which you mean.
 
     Args:
-        series: One of sox | tsm_adr | us10y | dxy | usdtwd. Omit for all.
+        series: One series key (e.g. 'kospi'). Omit for all.
+        market: One of us | fx | europe | japan | korea | china | hong_kong —
+                returns every series in that market. Ignored if `series` is set.
         days: Trailing calendar days of history (1-365, default 30).
         latest: True (default) returns just the most recent row per series —
                 the pre-market snapshot. False returns the `days` history.
     """
+    wanted: set[str] | None = None
+    if series is None and market:
+        key = market.strip().lower()
+        wanted = {s for s, (m, _) in _MACRO_META.items() if m == key}
+        if not wanted:
+            return _stamp(
+                {"error": f"unknown market {market!r}",
+                 "markets_available": list(_MACRO_MARKETS),
+                 "series_available": list(_MACRO_SERIES)},
+                source="raw_macro", as_of=None, freshness="static",
+            )
+
     if latest and series is None:
         rows = db_v2.query_macro_latest()
     else:
         rows = db_v2.query_macro(series=series, days=days)
+    if wanted is not None:
+        rows = [r for r in rows if r.get("series") in wanted]
+
+    # Annotate rather than assume. A caller that only reads `close` is unchanged;
+    # one that reads `when_known` cannot mistake a live peer for overnight news.
+    for r in rows:
+        meta = _MACRO_META.get(r.get("series"))
+        if meta:
+            r["market"], r["when_known"] = meta
+
     asof = max((r["date"] for r in rows), default=None)
     return _stamp(
-        {"macro": rows, "count": len(rows), "series_available": list(_MACRO_SERIES)},
+        {
+            "macro": rows,
+            "count": len(rows),
+            "series_available": list(_MACRO_SERIES),
+            "markets_available": list(_MACRO_MARKETS),
+        },
         source="raw_macro",
         as_of=asof,
-        freshness="daily (US session close, known before the Taipei open)",
+        # Deliberately NOT "known before the Taipei open" any more: that was true
+        # of the original five US/FX series and is false for the Asian peers.
+        freshness="daily close per market; see when_known on each row",
         glossary=_GLOSS_MACRO,
     )
 
@@ -2638,7 +2730,7 @@ def sc_capabilities() -> dict:
             {"name": "q_backtest_compound", "purpose": "Backtest multi-condition (AND) compound rules; up to 4 conditions"},
             {"name": "q_valuation", "purpose": "Is a stock cheap or expensive — P/E, P/B and dividend yield per ticker (TWSE BWIBBU)"},
             {"name": "q_index_history", "purpose": "TAIEX / index close history for market context"},
-            {"name": "q_macro", "purpose": "Global macro set before the Taipei open: SOX, TSMC ADR, US 10Y, DXY, USD/TWD"},
+            {"name": "q_macro", "purpose": "World markets around the Taiwan session — US (SOX, Nasdaq, TSMC ADR, 10Y), FX (DXY, USD/TWD), Europe (Euro Stoxx 50), and the Asian peers that trade ALONGSIDE Taipei (Nikkei, KOSPI, Shanghai, Hang Seng). Filter with market=; read when_known on each row before calling anything 'overnight'"},
             {"name": "risk_estimate", "purpose": "Position sizing, stop distance, Taiwan limit-down non-fill risk and exit liquidity — what a trade costs if you are wrong"}
             ,{"name": "investing_personas", "purpose": "The Steward (conservative) and The Opportunist (aggressive) — how each behaves"},
             {"name": "q_regime", "purpose": "Market regime classification (trend vs chop, risk-on vs risk-off)"},
