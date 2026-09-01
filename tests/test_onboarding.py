@@ -119,7 +119,15 @@ class RiskProfileToolTests(unittest.TestCase):
                           return_value={"risk_profile": "conservative", "risk_note": None}):
             out = index.my_profile()
         self.assertEqual(out["risk_profile"], "conservative")
-        self.assertIn("preservation", out["how_to_adapt"].lower())
+        # Asserts MEANING, not a keyword. This used to pin the literal word
+        # "preservation" from a one-line guidance string; that string became a
+        # generated persona (mcp_server/api/personas.py) which says "permanently
+        # impair this capital" instead — same doctrine, different words, and a
+        # keyword assertion made a richer guidance read as a regression.
+        adapt = out["how_to_adapt"].lower()
+        self.assertIn("the steward", adapt)          # the conservative persona
+        self.assertIn("capital", adapt)              # what it protects
+        self.assertIn("never tell the user to buy, sell or hold", adapt)
 
     def test_my_profile_unset_tells_model_to_ask(self):
         index.current_customer.set("cust_1")
