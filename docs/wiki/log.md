@@ -1132,3 +1132,11 @@ attributed_to: [niko, claude-agent]   belongs_to: [risk-guard, system-architectu
 - **Worker image now carries `riskguard/` + `mcp_server/`** (Dockerfile.newswatch) — the same cross-tree imports the root Dockerfile documents. Failure mode if dropped is silent by design: the poller keeps running, only the stop check dies.
 - **4 macro Google News sources** (Fed/rates, semi cycle/SOX, TSMC ADR, 台幣/央行) — ingest-only; they rarely match watchlist terms so they add no push noise; the macro brief (phase 2) is their surface.
 - Needs from [niko] to go live: `TELEGRAM_ENABLED=true` (with category flags to taste) and `FUGLE_API_KEY` on the `worker` service. Without the key the watcher idles with one log line. 24 new tests; suite 613 pass.
+
+## [2026-09-01] decision | Notification channels split: Claude for analysis, Telegram for automation
+attributed_to: [niko]   belongs_to: [system-architecture, infrastructure-accounts]
+- [niko]: "I prefer to chat in claude rather than in telegram. Probably telegram is for automated messages." Recorded as the routing rule for everything that notifies: **Telegram carries the machine's own voice** (stop alerts, briefs, failure notices — the category switches from the realtime PR), **Claude carries analysis a human talks back to**.
+- Two **Claude Routines** created on [niko]'s account (managed at claude.ai/code → Routines, or by asking any session to list/pause/update them):
+  - `trig_01XZ1yCpDWWQ4AMvXvzjFSbA` — pre-market macro brief, weekdays ~07:30 Taipei (`30 23 * * 0-4` UTC): overnight SOX/ADR/rates/USD-TWD research via web search + active theses from `docs/theses/`, push-notified.
+  - `trig_01Hu4h2p8Jz9WedFvRxzHqiK` — post-close wrap, weekdays ~17:30 Taipei (`30 9 * * 1-5` UTC): timed AFTER the 16:30 harvest commits `chore(graph): daily refresh`, so the fired session's fresh clone carries the day's flow data in `mcp_server/api/static/` — repo-first, web-search second.
+- Constraints future-you should know: fired sessions run **without MCP connectors** (they research via web + repo, by design), they are read-only toward the repo by instruction, and they spend [niko]'s Claude quota — they are his personal analyst layer, not product infrastructure. The product's own realtime path stays the worker/Telegram stack.
