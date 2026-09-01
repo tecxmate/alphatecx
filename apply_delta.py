@@ -30,6 +30,12 @@ DELTA_FILES = [
     "sql/021_watchlist_grant.sql",
     "sql/022_customers_status_grant.sql",
     "sql/023_customers_risk_profile.sql",
+    # 026 BEFORE 024, and the order is load-bearing: 024's grant loop skips any
+    # table that does not yet exist (it guards on information_schema.tables), so
+    # applying 024 first would silently leave raw_macro ungranted — and the
+    # read-back below would then fail the run, which is the good outcome but the
+    # wrong reason. Create the table, then grant on it.
+    "sql/026_macro.sql",
     "sql/024_read_grants_backfill.sql",
     "sql/025_owner_profile.sql",
 ]
@@ -40,6 +46,7 @@ DELTA_FILES = [
 READ_TABLES = [
     "lead_lag", "raw_twse_valuation", "raw_twse_index", "market_holidays",
     "raw_twse_dividend", "raw_finmind_dividend", "raw_finmind_news",
+    "raw_macro",
 ]
 
 

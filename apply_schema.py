@@ -56,6 +56,10 @@ sql_files = [
     "sql/022_customers_status_grant.sql",
     "sql/023_customers_risk_profile.sql",
     "sql/025_owner_profile.sql",
+    # 026 is DDL only — its mcp_viewer grant lives in 024, for the reason the
+    # file's own trailing comment spells out. Safe in the base list because it
+    # creates the table without touching a role that may not exist yet.
+    "sql/026_macro.sql",
 ]
 # 024 is deliberately absent from the base list: every statement in it is guarded
 # on mcp_viewer existing, so a base pass would be a pure no-op. It only belongs

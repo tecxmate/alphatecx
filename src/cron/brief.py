@@ -303,6 +303,63 @@ def _format_checklist(items: list[str]) -> str:
 
 # ── Mode: pre_market ──────────────────────────────────────────────────────
 
+def _macro_block() -> str:
+    """The overnight macro line for the pre-market brief, or '' if unavailable.
+
+    Reads what the harvester STORED rather than re-fetching: the brief and
+    `q_macro` must not be able to disagree about last night's SOX.
+
+    Fails soft to an empty string — the pre-market brief predates macro and
+    must keep sending when the table is empty (nothing harvested yet), absent
+    (migration not applied in production yet), or unreadable.
+
+    Arrow convention is the TELEGRAM one — ▲ up / ▼ down with no colour — and
+    deliberately not the console's Taiwan red-up/green-down. These are US
+    instruments read by a Taiwan-based operator; colour would assert a
+    convention that is wrong for half the audience either way, so it asserts
+    neither.
+    """
+    labels = {
+        "sox": "SOX", "tsm_adr": "TSM ADR", "us10y": "US 10Y",
+        "dxy": "DXY", "usdtwd": "USD/TWD",
+    }
+    try:
+        with cur() as c:
+            c.execute("SET search_path TO public, neon_auth")
+            c.execute(
+                "SELECT DISTINCT ON (series) series, date, close, pct_change "
+                "  FROM raw_macro ORDER BY series, date DESC"
+            )
+            rows = c.fetchall()
+    except Exception as e:
+        log.warning("macro block unavailable: %s", e)
+        return ""
+    if not rows:
+        return ""
+
+    by_series = {r[0]: r for r in rows}
+    parts, as_of = [], None
+    for key in ("sox", "tsm_adr", "us10y", "dxy", "usdtwd"):
+        row = by_series.get(key)
+        if not row:
+            continue
+        _, date, close, pct = row
+        as_of = as_of or date
+        # Magnitude-aware, because one format cannot serve all five: `:g`
+        # gives 6 significant digits, which silently renders SOX 11535.05 as
+        # "11535" — precision dropped on the largest and most-read number.
+        # Indices and prices get 2 decimals with a thousands separator; yields
+        # and FX get 3, which is how both are normally quoted.
+        level = f"{close:,.2f}" if abs(close) >= 100 else f"{close:.3f}"
+        if pct is None:
+            parts.append(f"{labels[key]} {level}")
+        else:
+            parts.append(f"{labels[key]} {level} {'▲' if pct >= 0 else '▼'}{abs(pct):.2f}%")
+    if not parts:
+        return ""
+    return f"\n<b>隔夜 Macro</b> ({as_of} US): " + " • ".join(parts) + "\n"
+
+
 def pre_market_brief() -> None:
     """Run at 07:30 Taipei (23:30 UTC). Summarises overnight US news +
     last close's signal extremes. Always sends Telegram."""
@@ -377,6 +434,7 @@ def pre_market_brief() -> None:
             short += f"• {_format_signal_alert(s)}\n"
     if ticker_news:
         short += f"\n<b>Top headline</b>: {ticker_news[0]['title'][:120]}\n"
+    short += _macro_block()
     short += "\n<b>今天要做的事</b>:\n" + _format_checklist(checklist)
     send(short, category="briefs")
     with cur() as c:

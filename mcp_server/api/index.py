@@ -142,6 +142,17 @@ def _stamp(payload: dict, source: str, as_of: str | None, freshness: str,
 
 # Small, response-scoped glossaries for the beginner-facing tools (passed to
 # _stamp). Kept here so the definitions stay consistent with start_here's.
+_MACRO_SERIES = ("sox", "tsm_adr", "us10y", "dxy", "usdtwd")
+
+_GLOSS_MACRO = {
+    "sox": "SOX — Philadelphia Semiconductor Index; the US chip cycle Taiwan tracks",
+    "tsm_adr": "TSM — TSMC's US-listed share; its overnight move usually leads the TAIEX open",
+    "us10y": "US 10Y — the 10-year Treasury yield in percent; higher tends to pressure growth equities",
+    "dxy": "DXY — US dollar index; a stronger dollar often coincides with foreign selling in Taiwan",
+    "usdtwd": "USD/TWD — a rising number means a weaker Taiwan dollar",
+    "date": "the US SESSION date (UTC), not a Taiwan trading date",
+}
+
 _GLOSS_VALUATION = {
     "pe": "P/E — price per $1 of yearly earnings; lower can mean cheaper, or slower growth",
     "pb": "P/B — price per $1 of net assets (book value)",
@@ -1994,6 +2005,46 @@ def q_valuation(
 
 
 @mcp.tool()
+def q_macro(series: str | None = None, days: int = 30, latest: bool = True) -> dict:
+    """Global macro series that set the tone for the Taiwan open.
+
+    Taiwan trades as a high-beta expression of the US semiconductor cycle and
+    the dollar. These five series are the only data in this system that is
+    already known BEFORE the Taipei open — everything else here is Taiwan
+    domestic and T+1.
+
+        sox      Philadelphia Semiconductor Index — the cycle Taiwan tracks
+        tsm_adr  TSMC ADR (NYSE: TSM) — the usual tell for the TAIEX open gap
+        us10y    US 10-year Treasury yield, in percent — the liquidity regime
+        dxy      US dollar index — risk appetite
+        usdtwd   USD/TWD — the foreign-flow tell
+
+    IMPORTANT for interpretation: `date` is the US SESSION date (UTC), not a
+    Taiwan trading date. A US close on a Taiwan holiday still appears here, and
+    "today" in Taipei is usually the US session of the previous calendar day.
+    Do not align these dates to TWSE dates without saying which you mean.
+
+    Args:
+        series: One of sox | tsm_adr | us10y | dxy | usdtwd. Omit for all.
+        days: Trailing calendar days of history (1-365, default 30).
+        latest: True (default) returns just the most recent row per series —
+                the pre-market snapshot. False returns the `days` history.
+    """
+    if latest and series is None:
+        rows = db_v2.query_macro_latest()
+    else:
+        rows = db_v2.query_macro(series=series, days=days)
+    asof = max((r["date"] for r in rows), default=None)
+    return _stamp(
+        {"macro": rows, "count": len(rows), "series_available": list(_MACRO_SERIES)},
+        source="raw_macro",
+        as_of=asof,
+        freshness="daily (US session close, known before the Taipei open)",
+        glossary=_GLOSS_MACRO,
+    )
+
+
+@mcp.tool()
 def q_index_history(
     index_name: str | None = None,
     days: int = 30,
@@ -2474,6 +2525,7 @@ def sc_capabilities() -> dict:
             {"name": "q_backtest_compound", "purpose": "Backtest multi-condition (AND) compound rules; up to 4 conditions"},
             {"name": "q_valuation", "purpose": "Is a stock cheap or expensive — P/E, P/B and dividend yield per ticker (TWSE BWIBBU)"},
             {"name": "q_index_history", "purpose": "TAIEX / index close history for market context"},
+            {"name": "q_macro", "purpose": "Global macro set before the Taipei open: SOX, TSMC ADR, US 10Y, DXY, USD/TWD"},
             {"name": "q_regime", "purpose": "Market regime classification (trend vs chop, risk-on vs risk-off)"},
             {"name": "q_quality_score", "purpose": "Composite fundamental quality score for a ticker"},
             {"name": "q_cointegration_pair", "purpose": "Test two tickers for a mean-reverting (cointegrated) relationship"},
