@@ -11,7 +11,10 @@ from psycopg_pool import ConnectionPool
 
 try:
     from query_safety import safe_flow_col
+
+    from quant import evidence
 except ModuleNotFoundError:  # package import path used by local tests
+    from .quant import evidence
     from .query_safety import safe_flow_col
 
 DATABASE_URL = os.getenv("MCP_DATABASE_URL") or os.getenv("DATABASE_URL", "")
@@ -887,14 +890,95 @@ def query_screener(
     return _serialize(_fetch(sql, tuple(params)))
 
 
+# Entry timing. THE DEFAULT CHANGED on 2026-09-01 and this is the whole point.
+#
+# `same_close` measures (close_t+N / close_t): it buys at the very close used to
+# COMPUTE the signal. RSI_14 on date t is a function of that day's close, so the
+# old default assumed you could see the close, decide, and transact at it. You
+# cannot. It systematically flatters mean-reversion rules, which trigger on a
+# down-close and then capture a bounce a real trader buying the next day misses.
+#
+# `next_close` buys at the following session's close — the earliest price
+# actually reachable by someone acting on the signal. It is the honest default.
+# `same_close` is kept because comparing the two MEASURES the look-ahead, which
+# is more useful than pretending the old numbers never existed.
+#
+# value = (entry_lead, exit_lead_offset)
+_ENTRY_MODES: dict[str, tuple[int, int]] = {
+    "next_close": (1, 1),
+    "same_close": (0, 0),
+}
+
+
+def _entry_expr(entry_lead: int) -> str:
+    """SQL for the entry price. `entry_lead` is a trusted int from
+    _ENTRY_MODES, never caller text — the placeholder still parameterises it."""
+    if entry_lead:
+        return "LEAD(close, %s) OVER (PARTITION BY ticker_id ORDER BY date)"
+    return "close"
+
+
+def query_backtest_baseline(
+    forward_days: int, lookback_days: int, entry: str = "next_close",
+) -> dict | None:
+    """Unconditional forward return over the same window and universe.
+
+    THE most important number the old backtest lacked. A 58% hit rate is not a
+    result until you know what fraction of ALL bars rose over the same horizon;
+    if the answer is 56%, the rule found the market, not an edge.
+
+    Aggregated in SQL rather than fetched row-by-row — this is every bar in the
+    window, tens of thousands of rows, and only three scalars are wanted.
+    """
+    entry_lead, exit_lead = _ENTRY_MODES.get(entry, _ENTRY_MODES["next_close"])
+    sql = f"""
+        WITH bars AS (
+            SELECT ticker_id, date,
+                   {_entry_expr(entry_lead)} AS entry_close,
+                   LEAD(close, %s) OVER (PARTITION BY ticker_id ORDER BY date)
+                       AS exit_close
+            FROM raw_twse_ohlcv
+            WHERE date >= current_date - (%s || ' days')::interval
+        ),
+        r AS (
+            SELECT (exit_close / entry_close - 1.0) * 100.0 AS pct_return
+            FROM bars
+            WHERE exit_close IS NOT NULL AND entry_close IS NOT NULL
+              AND entry_close > 0
+        )
+        SELECT count(*) AS n,
+               avg(pct_return) AS avg_return_pct,
+               100.0 * count(*) FILTER (WHERE pct_return > 0) / NULLIF(count(*), 0)
+                   AS hit_rate_pct
+        FROM r
+    """
+    params: tuple = (forward_days + exit_lead, str(lookback_days))
+    if entry_lead:
+        params = (entry_lead, *params)
+    rows = _fetch(sql, params)
+    if not rows or not rows[0].get("n"):
+        return None
+    row = rows[0]
+    return {
+        "n": int(row["n"]),
+        "avg_return_pct": float(row["avg_return_pct"] or 0.0),
+        "hit_rate_pct": float(row["hit_rate_pct"] or 0.0),
+    }
+
+
 def query_backtest(
     signal_name: str,
     threshold: float,
     direction: str = "below",
     forward_days: int = 5,
     lookback_days: int = 365,
+    entry: str = "next_close",
 ) -> dict:
-    """Backtest a single-threshold signal rule. Mirrors src/quant/backtest.py."""
+    """Backtest a single-threshold signal rule, honestly.
+
+    `src/quant/backtest.py` is an older standalone CLI that nothing imports; it
+    still carries the same-close look-ahead. This is the live path.
+    """
     if signal_name not in _ALLOWED_SIGNALS:
         return {"error": f"Unknown signal '{signal_name}'. "
                          f"Allowed: {sorted(_ALLOWED_SIGNALS)}"}
@@ -902,73 +986,74 @@ def query_backtest(
         return {"error": "direction must be 'below' or 'above'"}
     op = "<" if direction == "below" else ">"
 
+    if entry not in _ENTRY_MODES:
+        return {"error": f"entry must be one of {sorted(_ENTRY_MODES)}"}
+    entry_lead, exit_lead = _ENTRY_MODES[entry]
+
     sql = f"""
-        WITH triggers AS (
+        WITH bars AS (
+            SELECT ticker_id, date,
+                   {_entry_expr(entry_lead)} AS entry_close,
+                   LEAD(close, %s) OVER (PARTITION BY ticker_id ORDER BY date)
+                       AS exit_close
+            FROM raw_twse_ohlcv
+        ),
+        triggers AS (
             SELECT s.ticker_id, s.date AS trigger_date, s.value AS signal_value
             FROM signal_value s
             WHERE s.signal_name = %s
               AND s.value {op} %s
               AND s.date >= current_date - (%s || ' days')::interval
-        ),
-        bars AS (
-            SELECT ticker_id, date, close,
-                   LEAD(close, %s) OVER (PARTITION BY ticker_id ORDER BY date) AS forward_close
-            FROM raw_twse_ohlcv
         )
         SELECT t.ticker_id, t.trigger_date,
-               (b.forward_close / b.close - 1.0) * 100.0 AS pct_return
+               (b.exit_close / b.entry_close - 1.0) * 100.0 AS pct_return
         FROM triggers t
         JOIN bars b ON b.ticker_id = t.ticker_id AND b.date = t.trigger_date
-        WHERE b.forward_close IS NOT NULL
+        WHERE b.exit_close IS NOT NULL AND b.entry_close IS NOT NULL
+          AND b.entry_close > 0
     """
-    rows = _fetch(sql, (signal_name, threshold, str(lookback_days), forward_days))
+    params: tuple = (forward_days + exit_lead, signal_name, threshold,
+                     str(lookback_days))
+    if entry_lead:
+        params = (entry_lead, *params)
+    rows = _fetch(sql, params)
 
     if not rows:
         return {
             "signal": signal_name,
             "rule": f"{signal_name} {op} {threshold}",
+            "entry": entry,
             "n_observations": 0,
             "sample_warning": "No triggers in lookback window",
         }
 
-    returns = [float(r["pct_return"]) for r in rows]
-    n = len(returns)
-    n_winners = sum(1 for r in returns if r > 0)
+    observations = [
+        {"ticker_id": r["ticker_id"], "date": r["trigger_date"],
+         "pct_return": r["pct_return"]}
+        for r in rows
+    ]
     by_ticker: dict[str, int] = {}
     for r in rows:
         by_ticker[r["ticker_id"]] = by_ticker.get(r["ticker_id"], 0) + 1
 
-    sample_warning = None
-    if n < 30:
-        sample_warning = (
-            f"Only {n} observations — illustrative, not predictive. "
-            f"More history needed for robust validation."
-        )
-
-    avg = sum(returns) / n
-    sorted_r = sorted(returns)
-    median = sorted_r[n // 2] if n % 2 == 1 else (sorted_r[n//2 - 1] + sorted_r[n//2]) / 2
-
-    return {
+    baseline = query_backtest_baseline(forward_days, lookback_days, entry)
+    out = evidence.summarize(observations, baseline=baseline)
+    out.update({
         "signal": signal_name,
         "rule": f"{signal_name} {op} {threshold}",
+        "entry": entry,
         "forward_days": forward_days,
         "lookback_days": lookback_days,
-        "n_observations": n,
-        "hit_rate_pct": round(100.0 * n_winners / n, 2),
-        "avg_return_pct": round(avg, 3),
-        "median_return_pct": round(median, 3),
-        "best_return_pct": round(max(returns), 3),
-        "worst_return_pct": round(min(returns), 3),
-        "sample_warning": sample_warning,
         "samples_by_ticker": dict(sorted(by_ticker.items())),
-    }
+    })
+    return out
 
 
 def query_backtest_compound(
     conditions: list[dict],
     forward_days: int = 5,
     lookback_days: int = 365,
+    entry: str = "next_close",
 ) -> dict:
     """AND-combined multi-condition backtest. Each condition self-joins
     signal_value once; capped at 4 conditions to keep planner happy."""
@@ -1002,53 +1087,65 @@ def query_backtest_compound(
     params.append(str(lookback_days))
 
     rule = " AND ".join(f"{c['signal']} {c['op']} {c['threshold']}" for c in conditions)
+    if entry not in _ENTRY_MODES:
+        return {"error": f"entry must be one of {sorted(_ENTRY_MODES)}"}
+    entry_lead, exit_lead = _ENTRY_MODES[entry]
+
+    # Same look-ahead fix as the single-condition path. A compound rule is MORE
+    # exposed to it, not less: every extra AND makes the trigger set smaller and
+    # more selective, so a spurious entry advantage is spread over fewer, more
+    # confidently-quoted observations.
+    bar_params: list = []
+    if entry_lead:
+        bar_params.append(entry_lead)
+    bar_params.append(forward_days + exit_lead)
+
     sql = f"""
-        WITH triggers AS (
+        WITH bars AS (
+            SELECT ticker_id, date,
+                   {_entry_expr(entry_lead)} AS entry_close,
+                   LEAD(close, %s) OVER (PARTITION BY ticker_id ORDER BY date)
+                       AS exit_close
+            FROM raw_twse_ohlcv
+        ),
+        triggers AS (
             SELECT s0.ticker_id, s0.date AS trigger_date
             {' '.join(joins)}
             WHERE {' AND '.join(where_clauses)}
-        ),
-        bars AS (
-            SELECT ticker_id, date, close,
-                   LEAD(close, %s) OVER (PARTITION BY ticker_id ORDER BY date) AS forward_close
-            FROM raw_twse_ohlcv
         )
         SELECT t.ticker_id, t.trigger_date,
-               (b.forward_close / b.close - 1.0) * 100.0 AS pct_return
+               (b.exit_close / b.entry_close - 1.0) * 100.0 AS pct_return
         FROM triggers t
         JOIN bars b ON b.ticker_id = t.ticker_id AND b.date = t.trigger_date
-        WHERE b.forward_close IS NOT NULL
+        WHERE b.exit_close IS NOT NULL AND b.entry_close IS NOT NULL
+          AND b.entry_close > 0
     """
-    params.append(forward_days)
-    rows = _fetch(sql, tuple(params))
+    # bars is the first CTE, so its placeholders bind before the trigger ones.
+    rows = _fetch(sql, tuple(bar_params + params))
 
     if not rows:
-        return {"rule": rule, "n_observations": 0,
+        return {"rule": rule, "entry": entry, "n_observations": 0,
                 "sample_warning": "No triggers met all conditions"}
 
-    returns = [float(r["pct_return"]) for r in rows]
-    n = len(returns)
-    n_winners = sum(1 for r in returns if r > 0)
+    observations = [
+        {"ticker_id": r["ticker_id"], "date": r["trigger_date"],
+         "pct_return": r["pct_return"]}
+        for r in rows
+    ]
     by_ticker: dict[str, int] = {}
     for r in rows:
         by_ticker[r["ticker_id"]] = by_ticker.get(r["ticker_id"], 0) + 1
 
-    sorted_r = sorted(returns)
-    median = sorted_r[n // 2] if n % 2 == 1 else (sorted_r[n // 2 - 1] + sorted_r[n // 2]) / 2
-
-    return {
+    baseline = query_backtest_baseline(forward_days, lookback_days, entry)
+    out = evidence.summarize(observations, baseline=baseline)
+    out.update({
         "rule": rule,
+        "entry": entry,
         "forward_days": forward_days,
         "lookback_days": lookback_days,
-        "n_observations": n,
-        "hit_rate_pct": round(100.0 * n_winners / n, 2),
-        "avg_return_pct": round(sum(returns) / n, 3),
-        "median_return_pct": round(median, 3),
-        "best_return_pct": round(max(returns), 3),
-        "worst_return_pct": round(min(returns), 3),
-        "sample_warning": (f"Only {n} obs — illustrative" if n < 30 else None),
         "samples_by_ticker": dict(sorted(by_ticker.items())),
-    }
+    })
+    return out
 
 
 # ── News (Phase 2a — ingestion only, no sentiment yet) ───────────────────

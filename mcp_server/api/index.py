@@ -61,6 +61,7 @@ try:
     import oauth as oauth_mod
     import personas as personas_mod
     import position_risk as position_risk_mod
+    import strategies as strategies_mod
     import tiers as tiers_mod
     import usage as usage_mod
     from security import is_authorized_path, token_matches
@@ -71,6 +72,7 @@ except ModuleNotFoundError:  # package import path used by local tests
     from . import oauth as oauth_mod
     from . import personas as personas_mod
     from . import position_risk as position_risk_mod
+    from . import strategies as strategies_mod
     from . import tiers as tiers_mod
     from . import usage as usage_mod
     from .security import is_authorized_path, token_matches
@@ -1775,16 +1777,34 @@ def q_backtest(
     direction: str = "below",
     forward_days: int = 5,
     lookback_days: int = 365,
+    entry: str = "next_close",
 ) -> dict:
     """Backtest a single-threshold signal rule on the classified universe.
 
-    Returns hit-rate (% of triggers that produced positive returns N days
-    later), average / median / best / worst return, and per-ticker sample
-    counts. If n_observations < 30, a sample_warning is included — treat
-    such results as illustrative, not predictive.
+    READ `verdict` FIRST, THEN `net_edge_vs_baseline_pct`. A hit rate on its own
+    is not a result and must never be quoted as one:
 
-    Use this BEFORE acting on any signal idea to know whether the rule
-    has historically had positive expectancy on this universe.
+      baseline          the same window and universe with NO condition applied —
+                        what picking at random would have returned. A 58% hit
+                        rate against a 56% baseline is a 2-point edge, not a 58%
+                        one. This is the number the tool used to omit.
+      net_edge_vs_
+      baseline_pct      that edge after Taiwan round-trip friction (0.585%:
+                        0.1425% brokerage each way + 0.30% sell-side
+                        transaction tax). Short-horizon rules routinely go
+                        NEGATIVE here while looking profitable gross.
+      n_effective       independent observations, clustered by DATE. Triggers
+                        sharing a date share a market and their forward windows
+                        overlap, so 400 raw triggers may be 25 real ones. The
+                        confidence interval uses this, not n_observations.
+      hit_rate_ci95_pct 95% Wilson interval. If it straddles the baseline, the
+                        rule has shown nothing.
+      caveats           survivorship and in-sample tuning, which are NOT
+                        corrected and both bias upward. Repeat them if you
+                        quote a number.
+
+    Use this BEFORE acting on any signal idea — and be willing to report that a
+    rule has no edge. That is the common outcome and a useful answer.
 
     Args:
         signal_name: One of rsi_14, macd_line, macd_signal_line,
@@ -1794,6 +1814,10 @@ def q_backtest(
         direction: 'below' (signal < threshold) or 'above' (signal > threshold).
         forward_days: Trading days to measure forward return (default 5).
         lookback_days: Calendar days of history to scan (default 365).
+        entry: 'next_close' (default, honest) buys the session AFTER the signal.
+               'same_close' buys at the close the signal was computed from,
+               which is not reachable in practice — it is kept only so the two
+               can be compared, and that difference IS the look-ahead.
 
     Examples:
         q_backtest('rsi_14', 30, 'below', 5)   — oversold mean reversion
@@ -1801,7 +1825,7 @@ def q_backtest(
         q_backtest('macd_histogram', 0, 'above', 5)  — bullish momentum
     """
     payload = db_v2.query_backtest(
-        signal_name, threshold, direction, forward_days, lookback_days,
+        signal_name, threshold, direction, forward_days, lookback_days, entry,
     )
     if "error" in payload:
         return payload
@@ -1820,21 +1844,28 @@ def q_backtest_compound(
     conditions: list[dict],
     forward_days: int = 5,
     lookback_days: int = 365,
+    entry: str = "next_close",
 ) -> dict:
     """Backtest a multi-condition AND rule. Up to 4 conditions.
 
     Each condition is {'signal': str, 'op': '<' | '>', 'threshold': float}.
     All must hold on the same (ticker, date) to count as a trigger.
 
-    Use this to test combined hypotheses that single signals miss. For
-    example: naive RSI < 30 has weak edge in a strong uptrend, but
-    "RSI < 40 AND MACD histogram > 0" (oversold dip within an uptrend)
-    historically has stronger expectancy.
+    Same output contract as `q_backtest` — read `verdict` and
+    `net_edge_vs_baseline_pct`, not the bare hit rate — and the same caveats.
+
+    ONE EXTRA HAZARD, and it is the reason this tool is easy to misuse: every
+    condition you add shrinks the trigger set. Adding conditions until the
+    numbers look good is how a rule gets fitted to noise, and `n_effective`
+    falling as you add them is the tell. A four-condition rule with 12
+    independent observations has discovered nothing, however good it looks.
 
     Args:
         conditions: list of {'signal','op','threshold'} dicts.
         forward_days: trading days to measure forward return (default 5).
         lookback_days: history to scan (default 365).
+        entry: 'next_close' (default, honest) or 'same_close' (look-ahead;
+               see q_backtest).
 
     Example:
         q_backtest_compound(
@@ -1842,7 +1873,9 @@ def q_backtest_compound(
            {"signal":"macd_histogram","op":">","threshold":0}],
           forward_days=5)
     """
-    payload = db_v2.query_backtest_compound(conditions, forward_days, lookback_days)
+    payload = db_v2.query_backtest_compound(
+        conditions, forward_days, lookback_days, entry,
+    )
     if "error" in payload:
         return payload
     return _stamp(
@@ -2120,6 +2153,70 @@ def risk_estimate(
         freshness="static",
         glossary=_GLOSS_RISK,
     )
+
+
+@mcp.tool()
+def systematic_strategies(
+    strategy: str | None = None, status: str | None = None,
+) -> dict:
+    """What quant funds actually do, and which parts work on THIS data.
+
+    Use when the user asks about hedge-fund strategies, quant investing, or
+    whether something like Renaissance / Citadel / Millennium / AQR / Two Sigma
+    / Man AHL / the Chinese quant houses can be copied.
+
+    ANSWER THE `status` FIELD HONESTLY. It is the point of the tool:
+
+      available     implemented here; the listed tools do it today
+      buildable     the data exists; engineering, not research
+      out_of_reach  the required input does not exist in this system
+
+    Do NOT soften an `out_of_reach` entry into "a simplified version". High
+    frequency market making and ML alpha ensembles are listed as unreachable
+    for stated reasons — sample size, execution, exchange position — and a
+    moving-average crossover wearing a famous fund's name is a worse answer
+    than "that cannot be done here, and here is why".
+
+    The through-line worth telling the user: **what transfers from quant
+    investing is the rigor, not the signals.** The published premia (factors,
+    trend) work on daily data. The legendary returns come from infrastructure
+    and capital structure that cannot be copied. The genuinely transferable
+    idea is mechanical risk discipline — which is the least glamorous item on
+    the list and the one this system already implements.
+
+    `quant_principles` are narrower than `investing_principles`: they are what
+    systematic practitioners converge on, each with the tool that enforces it
+    (or an explicit "nothing — it is a reason for humility").
+
+    Args:
+        strategy: One key, e.g. 'trend_following', 'pod_risk_discipline',
+                  'statistical_arbitrage'. Omit for all.
+        status: Filter by 'available' | 'buildable' | 'out_of_reach'.
+    """
+    if strategy:
+        one = strategies_mod.describe(strategy)
+        if not one:
+            return _stamp(
+                {"error": f"unknown strategy {strategy!r}",
+                 "options": sorted(strategies_mod.STRATEGIES)},
+                source="strategies", as_of=None, freshness="static")
+        payload: dict = {"strategy": one}
+    else:
+        keys = (strategies_mod.by_status(status) if status
+                else list(strategies_mod.STRATEGIES))
+        if status and not keys:
+            return _stamp(
+                {"error": f"unknown status {status!r}",
+                 "options": [strategies_mod.AVAILABLE, strategies_mod.BUILDABLE,
+                             strategies_mod.OUT_OF_REACH]},
+                source="strategies", as_of=None, freshness="static")
+        payload = {
+            "strategies": {k: strategies_mod.STRATEGIES[k] for k in keys},
+            "options": sorted(strategies_mod.STRATEGIES),
+        }
+    payload["quant_principles"] = strategies_mod.QUANT_PRINCIPLES
+    payload["data_reality"] = strategies_mod.DATA_REALITY
+    return _stamp(payload, source="strategies", as_of=None, freshness="static")
 
 
 @mcp.tool()
@@ -2706,6 +2803,7 @@ def sc_capabilities() -> dict:
             {"name": "sc_capabilities", "purpose": "This map: every tool, what it is for, and the data behind it"},
             {"name": "my_profile", "purpose": "The current user's saved risk profile (conservative/balanced/aggressive) and how to adapt framing to it"},
             {"name": "set_my_risk_profile", "purpose": "Persist the user's risk tolerance once they state it (writes to DB)"},
+            {"name": "systematic_strategies", "purpose": "What quant funds (Renaissance, Citadel, Millennium, AQR, Man AHL, Two Sigma, Chinese quant) actually do and which parts work on THIS data — each marked available / buildable / out_of_reach, plus the principles systematic practitioners converge on"},
             {"name": "investing_principles", "purpose": "Durable school-neutral investing principles to ground reasoning, emphasised by the user's risk tier"},
             {"name": "ticker_lookup", "purpose": "Find a ticker id from a company name or partial code — the usual first step"},
             {"name": "sc_sector_momentum", "purpose": "Sector-level flow aggregation by pillar/node"},
