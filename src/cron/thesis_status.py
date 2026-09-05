@@ -195,16 +195,29 @@ def build_message(reports: list[dict]) -> str:
 
 # ── persistence ────────────────────────────────────────────────────────────
 def persist_digest(conn, message: str, payload: list[dict]) -> None:
-    """Insert one row into daily_digest with kind='thesis_status'."""
+    """Insert one row into daily_digest with kind='thesis_status'.
+
+    This statement was wrong in two ways since it was written, and both were
+    invisible because the workflow step is `continue-on-error`: it named a
+    column `inputs` that does not exist (the schema calls it `source_inputs`)
+    and omitted `title`, which is NOT NULL with no default. Every nightly run
+    raised UndefinedColumn here, so the thesis heartbeat has never persisted a
+    single row — the Telegram message went out and the digest silently did not.
+    `src/cron/brief.py` writes the same table correctly; this one drifted from
+    it. tests/test_digest_writers.py now pins every writer against the schema.
+    """
     with conn.cursor() as c:
         c.execute("""
-            INSERT INTO daily_digest (digest_date, kind, body, inputs, telegram_sent_at)
-            VALUES (%s, %s, %s, %s, now())
+            INSERT INTO daily_digest
+                (digest_date, kind, title, body, source_inputs, telegram_sent_at)
+            VALUES (%s, %s, %s, %s, %s, now())
             ON CONFLICT (digest_date, kind) DO UPDATE SET
+                title = EXCLUDED.title,
                 body = EXCLUDED.body,
-                inputs = EXCLUDED.inputs,
+                source_inputs = EXCLUDED.source_inputs,
                 telegram_sent_at = now()
-        """, (date.today(), "thesis_status", message,
+        """, (date.today(), "thesis_status",
+              f"Thesis status — {len(payload)} active", message,
               ["docs/theses", "view_latest_signals", "raw_twse_ohlcv"]))
     conn.commit()
 
