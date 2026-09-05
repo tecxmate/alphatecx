@@ -32,6 +32,14 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("news.harvest")
 
+# raw_news.url is the PRIMARY KEY, so every URL becomes a btree index row.
+# Postgres caps those at 2704 bytes ("index row size N exceeds btree version 4
+# maximum 2704"). 2000 leaves headroom for index overhead and is far above any
+# real article URL — the only things near the cap are Google News redirect URLs,
+# which carry a base64 payload rather than a readable path. Dropping one costs a
+# single article; letting it raise costs the entire run (see _upsert).
+MAX_URL_BYTES = 2000
+
 # Reasonable timeouts — feeds take seconds, not minutes. Network hangs are
 # the most common failure mode when running daily.
 HTTP_TIMEOUT = 20.0
@@ -230,6 +238,28 @@ def _upsert(c, rows: list[dict]) -> tuple[list[dict], int]:
     for row in rows:
         h = row["title_hash"]
         if h in seen_titles:
+            skipped += 1
+            continue
+        # Drop over-long URLs BEFORE the INSERT, not with a try/except around
+        # it. `url` is the PRIMARY KEY, and Postgres refuses a btree index row
+        # over 2704 bytes — a Google News redirect embeds a long base64 payload
+        # and has been observed at 2848. The exception is not the real damage:
+        # harvest() wraps EVERY source in one atomic() transaction, so a raise
+        # here rolls back the whole run and every article from every feed is
+        # lost, not just this one. Six of forty runs died that way over
+        # 2026-09-02..04, and `src.news.watch` imports this function, so the
+        # Zeabur poller crashed on the same articles every cycle.
+        #
+        # It must be a filter rather than a caught exception: a failed
+        # statement poisons the surrounding transaction, so every later row
+        # would fail with "current transaction is aborted" anyway.
+        if len(row["url"].encode("utf-8")) > MAX_URL_BYTES:
+            log.warning(
+                "skipping %s article — URL is %d bytes, over the %d-byte "
+                "index limit: %.120s...",
+                row.get("source", "?"), len(row["url"].encode("utf-8")),
+                MAX_URL_BYTES, row["url"],
+            )
             skipped += 1
             continue
         seen_titles.add(h)
