@@ -9,9 +9,12 @@ name: CI
 # `test` check. Turn that on (Settings → Branches → main → require status
 # checks) or this is advisory.
 #
-# Lint follows the repo convention (CLAUDE.md): focused ruff on the files the
-# PR touched, never repo-wide — full-repo ruff fails on ~188 pre-existing
-# errors, nearly all in db_v2.py, and that debt must not block unrelated work.
+# Lint follows the repo convention (CLAUDE.md): `ruff check .`, repo-wide and
+# unconditional. This comment used to say the opposite — "focused ruff on the
+# files the PR touched, never repo-wide", describing the ~185-error backlog that
+# was paid off on 2026-08-12. The Lint step below was updated then and this
+# header was not, so for three weeks the file's own preamble told readers to
+# reintroduce the changed-files gate that CLAUDE.md explicitly forbids.
 
 on:
   pull_request:
@@ -29,7 +32,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history so the lint step can diff against the PR base.
+          # Vestigial: this existed so the old changed-files lint could diff
+          # against the PR base. Nothing in the job reads git history any more
+          # (the suite does not shell out to git), so this is now only a slower
+          # checkout. Left in place rather than changed in a PR about something
+          # else — but it can go.
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
