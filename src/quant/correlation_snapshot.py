@@ -1052,6 +1052,26 @@ def build_combined_png(snap: dict, corr: np.ndarray, tickers: list[str]) -> byte
     return fig.to_image(format="png", width=1400, height=1100, scale=2)
 
 
+def write_png_best_effort(png_path, snapshot, corr, tickers) -> bool:
+    """Render the static PNG, or log why not. Never raises.
+
+    Isolated into its own function so the failure mode is testable without a
+    browser: the property that matters is that a rendering problem returns
+    False rather than propagating, because everything written after this point
+    is more important than the image.
+    """
+    try:
+        png_path.write_bytes(build_combined_png(snapshot, corr, tickers))
+        return True
+    except Exception as e:
+        log.warning(
+            "static PNG not written (%s: %s) — continuing; the JSON snapshot "
+            "and the HTML viewer do not depend on it",
+            type(e).__name__, str(e).strip().splitlines()[0] if str(e).strip() else "",
+        )
+        return False
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--window", type=int, default=120)
@@ -1068,8 +1088,16 @@ def main():
     json_path.write_text(json.dumps(snapshot, indent=2))
 
     # PNG (static, Telegram/reports) — same Plotly figure as the web viewer.
+    #
+    # BEST EFFORT, deliberately. This raised on every nightly run from the
+    # plotly>=6 upgrade until 2026-09-05 (kaleido 0.2.1 vs the >=1 plotly 6
+    # needs), and because it sits between the JSON and the HTML it took
+    # graph-view.html down with it — the interactive 2D viewer silently stopped
+    # regenerating while the JSON kept updating. A missing static image must
+    # never cost a page that would otherwise render, so the ordering hazard is
+    # removed rather than just the version conflict.
     png_path = Path(args.out_json).parent / "graph-image.png"
-    png_path.write_bytes(build_combined_png(snapshot, corr, tickers))
+    png_ok = write_png_best_effort(png_path, snapshot, corr, tickers)
 
     # HTML (interactive, web viewer) — plotly 2D with linked axes
     html_path = Path(args.out_html)
@@ -1078,7 +1106,8 @@ def main():
     html_path.write_text(build_plotly_2d_html(snapshot, corr, tickers, directory))
 
     log.info("Wrote %s + %s + %s (%d nodes, %d edges, %d corr_edges)",
-             json_path, html_path, png_path,
+             json_path, html_path,
+             png_path if png_ok else f"{png_path} SKIPPED",
              len(snapshot["nodes"]), len(snapshot["edges"]),
              len(snapshot["corr_edges"]))
 

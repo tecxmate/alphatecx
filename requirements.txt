@@ -5,5 +5,10 @@ psycopg[binary]>=3.1
 psycopg-pool>=3.1
 feedparser>=6.0
 plotly>=6.0
-kaleido==0.2.1
+# kaleido >=1 is REQUIRED by plotly>=6 — the old 0.2.1 pin raised
+# "Image export requires the Kaleido package, v1.0.0 or greater" on every
+# nightly run. v1 shells out to Chrome instead of bundling a renderer, so it
+# needs a browser on PATH; GitHub runners ship one. Set BROWSER_PATH to
+# override (that is how it is exercised in this container).
+kaleido>=1.0.0
 numpy>=2.0

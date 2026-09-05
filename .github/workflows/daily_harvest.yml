@@ -167,9 +167,21 @@ jobs:
         run: python -m src.quant.correlation_snapshot --window 120
 
       - name: Commit & push refreshed snapshot + dashboard
-        # All four static artefacts are sources of truth for the Vercel
-        # routes (/g/, /d/, etc.). Push triggers a Vercel redeploy with the
-        # new data. Skipped silently on no-change days (weekends/holidays).
+        # All four static artefacts are sources of truth for the console
+        # routes (/d/, /g/, ...). Skipped silently on no-change days.
+        #
+        # continue-on-error, so a push problem must ANNOUNCE ITSELF or it is
+        # invisible: a failing step inside a green run is exactly the shape of
+        # bug this pipeline keeps producing. Branch protection (enabled
+        # 2026-08-16, when the repo went public) rejects this push outright —
+        # "Changes must be made through a pull request" — so the dashboards
+        # silently stopped regenerating and nothing said so for three weeks;
+        # the runs were red for an unrelated reason, which hid it further.
+        #
+        # The real fix is a repository-settings one: allow the Actions actor to
+        # bypass the ruleset for this [skip ci] data commit. Until that is in
+        # place the warning annotation is the deliverable, and it names the
+        # cause rather than leaving a raw git rejection in the log.
         if: success()
         continue-on-error: true
         run: |
@@ -182,10 +194,22 @@ jobs:
                   mcp_server/api/static/ticker/
           if git diff --cached --quiet; then
             echo "no static-asset changes to commit"
-          else
-            git commit -m "chore(graph): daily refresh [skip ci]"
-            git push origin main
+            exit 0
           fi
+          git commit -m "chore(graph): daily refresh [skip ci]"
+          if push_log=$(git push origin main 2>&1); then
+            echo "$push_log"
+            echo "dashboard artefacts pushed"
+            exit 0
+          fi
+          echo "$push_log"
+          case "$push_log" in
+            *GH013*|*"protected branch"*|*"repository rule violations"*)
+              echo "::warning title=Dashboard frozen::Branch protection rejected the daily static-asset push to main, so the console dashboards are now STALE. Allow the Actions actor to bypass the ruleset for this [skip ci] commit, or the pages stop updating while this run stays green." ;;
+            *)
+              echo "::warning title=Dashboard push failed::Could not push the refreshed dashboards; the console will serve stale pages until this succeeds." ;;
+          esac
+          exit 1
 
       - name: Harvest verdict
         # Deferred failure. Runs after every downstream step, so the harvest's
